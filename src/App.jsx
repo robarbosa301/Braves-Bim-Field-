@@ -11,7 +11,13 @@ import {
 import { safeGet, safeSet, safeList, safeDelete } from "./storage.js";
 
 // ---- BRAVES brand tokens (dark metallic theme) -----------------------------
-const SYMBOL_LOGO = "data:image/png;base64,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";
+const SYMBOL_LOGO = "data:image/svg+xml," + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path d="M8 33 L32 12 L56 33" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 29 V52 H47 V29" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="27" y="35" width="10" height="17" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+`.trim());
 
 const C = {
   chalk: "#F3F1EA",
@@ -283,10 +289,16 @@ function wallToM(w, toM) {
   };
 }
 function doorToM(d, toM) {
-  return { wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1) };
+  return {
+    id: d.id, wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1),
+    panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0],
+  };
 }
 function windowToM(w, toM) {
-  return { wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0) };
+  return {
+    id: w.id, wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0),
+    panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0],
+  };
 }
 function stairToM(s2, toM) { return { x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
 function luminariaToM(l, toM) { return { x: toM(l.x), y: toM(l.y) }; }
@@ -444,13 +456,18 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
           const ux = dx / len, uz = dz / len;
           const thickness = 0.2;
 
-          const openings = openState === "open" ? [] : [
+          // The physical opening in the wall always exists — "open" only
+          // changes how the door/window leaf itself is posed, never removes
+          // the hole (that used to make windows vanish and doors clip through
+          // solid wall when toggled open).
+          const openings = [
             ...lvl.doors.filter(d => d.wallId === w.id).map(d => ({ kind: "door", ...d })),
             ...lvl.windows.filter(win => win.wallId === w.id).map(win => ({ kind: "window", ...win })),
           ].map(o => {
             const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uz;
             const halfW = Math.max(0.15, o.width / 2);
             return {
+              ...o, pos,
               start: Math.max(0, pos - halfW), end: Math.min(len, pos + halfW),
               yBottom: o.kind === "door" ? 0 : o.peitoril,
               yTop: o.kind === "door" ? o.height : o.peitoril + o.height,
@@ -487,39 +504,57 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
             scene.add(mesh);
           });
 
+          // Door/window leaves: split into their real panel ("folha") count,
+          // always rotated flush with this wall's own angle so they never
+          // clip through or poke out of it. Sliding ("Correr") panels slide
+          // sideways in the wall plane when open; hinged panels swing on a
+          // vertical hinge into the room.
+          openings.forEach(o => {
+            const panels = Math.max(1, o.panels || 1);
+            const panelWidth = o.width / panels;
+            const gap = Math.min(0.03, panelWidth * 0.08);
+            const isSliding = /correr/i.test(o.doorType || o.windowType || "");
+            const isDoorKind = o.kind === "door";
+            const color = isDoorKind ? 0x4A4A46 : 0xC7C5BE;
+            const matOpts = isDoorKind
+              ? { roughness: 0.5 }
+              : { roughness: 0.2, transparent: true, opacity: 0.75 };
+
+            for (let i = 0; i < panels; i++) {
+              const segStart = o.pos - o.width / 2 + i * panelWidth;
+              const segEnd = segStart + panelWidth;
+              const segMid = (segStart + segEnd) / 2;
+              const leafW = Math.max(0.15, panelWidth - gap);
+              const leafH = Math.max(0.2, o.height - 0.04);
+              let cx, cz, leafAngle = angle;
+
+              if (openState === "open" && isSliding) {
+                const slidPos = segMid + (panelWidth - gap) * 0.92;
+                cx = w.x1 + ux * slidPos; cz = w.y1 + uz * slidPos;
+              } else if (openState === "open") {
+                const hingePos = segStart;
+                leafAngle = angle + Math.PI * 0.42; // ~75° swung open
+                const hx = w.x1 + ux * hingePos, hz = w.y1 + uz * hingePos;
+                cx = hx + Math.cos(leafAngle) * (leafW / 2);
+                cz = hz + Math.sin(leafAngle) * (leafW / 2);
+              } else {
+                cx = w.x1 + ux * segMid; cz = w.y1 + uz * segMid;
+              }
+
+              const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(leafW, leafH, 0.05),
+                new THREE.MeshStandardMaterial({ color, ...matOpts })
+              );
+              mesh.position.set(cx, elev + o.yBottom + o.height / 2, cz);
+              mesh.rotation.y = -leafAngle;
+              scene.add(mesh);
+            }
+          });
+
           minX = Math.min(minX, w.x1, w.x2); maxX = Math.max(maxX, w.x1, w.x2);
           minZ = Math.min(minZ, w.y1, w.y2); maxZ = Math.max(maxZ, w.y1, w.y2);
           maxY = Math.max(maxY, elev + h);
         });
-
-        if (openState !== "open") {
-          lvl.doors.forEach(d => {
-            const mesh = new THREE.Mesh(
-              new THREE.BoxGeometry(Math.max(0.3, d.width - 0.04), Math.max(0.5, d.height - 0.04), 0.05),
-              new THREE.MeshStandardMaterial({ color: 0x4A4A46, roughness: 0.5 })
-            );
-            mesh.position.set(d.x, elev + d.height / 2, d.y);
-            scene.add(mesh);
-          });
-          lvl.windows.forEach(w => {
-            const mesh = new THREE.Mesh(
-              new THREE.BoxGeometry(Math.max(0.3, w.width - 0.04), Math.max(0.3, w.height - 0.04), 0.05),
-              new THREE.MeshStandardMaterial({ color: 0xC7C5BE, roughness: 0.2, transparent: true, opacity: 0.75 })
-            );
-            mesh.position.set(w.x, elev + w.peitoril + w.height / 2, w.y);
-            scene.add(mesh);
-          });
-        } else {
-          lvl.doors.forEach(d => {
-            const mesh = new THREE.Mesh(
-              new THREE.BoxGeometry(Math.max(0.3, d.width - 0.04), Math.max(0.5, d.height - 0.04), 0.05),
-              new THREE.MeshStandardMaterial({ color: 0x4A4A46, roughness: 0.5 })
-            );
-            mesh.position.set(d.x - d.width / 2, elev + d.height / 2, d.y);
-            mesh.rotation.y = Math.PI / 2.1;
-            scene.add(mesh);
-          });
-        }
 
         (lvl.rooms || []).forEach(r => {
           if (r.points.length < 3) return;
@@ -667,7 +702,7 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
   if (empty) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Ainda não há paredes desenhadas para mostrar em 3D. Desenhe no Croqui primeiro.</div>;
   return (
     <div>
-      <div ref={mountRef} style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#DCDCD8" }} />
+      <div ref={mountRef} style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880" }} />
       <p className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>
     </div>
   );
@@ -1458,6 +1493,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           const widthPx = Math.max(6, (toNum(el.width, 0.8) / scale) * GRID);
           const isDoor = el.type === "door";
           const isSel = selectedId === el.id;
+          const panels = Math.max(1, Math.round(toNum(el.panels, isDoor ? 1 : 2)));
+          const panelWidthPx = widthPx / panels;
           return (
             <g key={el.id} transform={`rotate(${angleDeg} ${el.x} ${el.y})`}>
               <rect x={el.x - widthPx / 2 - 4} y={el.y - 14} width={widthPx + 8} height={28} fill="rgba(0,0,0,0.001)"
@@ -1465,7 +1502,12 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               <rect x={el.x - widthPx / 2} y={el.y - 3.5} width={widthPx} height={7}
                 fill={isDoor ? "#4A4A46" : "#B9B6AE"} stroke={isSel ? "#726F68" : "#1B1E1A"} strokeWidth={isSel ? 2.5 : 1} opacity={isDoor ? 1 : 0.85}
                 style={{ pointerEvents: "none" }} />
-              <text x={el.x} y={el.y - 8} fontSize="9" fill="#6b6660" textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height}</text>
+              {Array.from({ length: panels - 1 }).map((_, i) => (
+                <line key={i} x1={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y1={el.y - 3.5}
+                  x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
+                  stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
+              ))}
+              <text x={el.x} y={el.y - 8} fontSize="9" fill="#6b6660" textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height} · {panels}f</text>
             </g>
           );
         })}
