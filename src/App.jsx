@@ -8,6 +8,7 @@ import {
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, GitBranch, SlidersHorizontal, Box, Home, ZoomIn, ZoomOut, Maximize2,
   MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors
 } from "lucide-react";
+import { safeGet, safeSet, safeList, safeDelete } from "./storage.js";
 
 // ---- BRAVES brand tokens (dark metallic theme) -----------------------------
 const SYMBOL_LOGO = "data:image/png;base64,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";
@@ -154,20 +155,7 @@ function buildLevelsFromCount(count) {
   return lv;
 }
 
-// ---- storage helpers -------------------------------------------------------
-async function safeGet(key, shared) {
-  try { const r = await window.storage.get(key, shared); return r ? r.value : null; } catch (e) { return null; }
-}
-async function safeSet(key, value, shared) {
-  try { await window.storage.set(key, value, shared); return true; } catch (e) { return false; }
-}
-async function safeList(prefix, shared) {
-  try { const r = await window.storage.list(prefix, shared); return r ? r.keys : []; } catch (e) { return []; }
-}
-async function safeDelete(key, shared) {
-  try { await window.storage.delete(key, shared); return true; } catch (e) { return false; }
-}
-
+// ---- local device cache (IndexedDB) ----------------------------------------
 function openLocalDB() {
   return new Promise((resolve, reject) => {
     if (!("indexedDB" in window)) { reject(new Error("no-indexeddb")); return; }
