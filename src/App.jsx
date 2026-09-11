@@ -1407,7 +1407,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             <input type="text" inputMode="decimal" value={scale} onChange={e => onMeta({ sketchScale: e.target.value })}
               className="w-12 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
           </span>
-          <span className="flex items-center gap-1">Pé-direito novas paredes
+          <span className="flex items-center gap-1" title="Pé-direito das novas paredes">PD
             <input type="text" inputMode="decimal" value={wallHeightDefault} onChange={e => onMeta({ wallHeightDefault: e.target.value })}
               className="w-14 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
           </span>
