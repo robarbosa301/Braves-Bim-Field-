@@ -28,9 +28,18 @@
     </None>
   </ItemGroup>
 
+  <!-- Ribbon button icons (Braves logo + a small badge per function) — baked
+       into the DLL so there's nothing extra to copy when installing. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\*.png" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Net.Http" />
+    <!-- PushButtonData images are WPF ImageSource (BitmapImage). -->
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
 
     <!-- These ship with Revit itself — never redistribute them, hence Private=false. -->
     <Reference Include="RevitAPI">

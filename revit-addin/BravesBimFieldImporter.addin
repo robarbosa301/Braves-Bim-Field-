@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Braves BIM Field</Name>
+    <Assembly>.\BravesBimFieldImporter.dll</Assembly>
+    <AddInId>7a2b1e4d-6f3c-4a8e-9d5b-1c4f8e2a9b60</AddInId>
+    <FullClassName>BravesBimFieldImporter.BravesApplication</FullClassName>
+    <VendorId>BRAVES</VendorId>
+    <VendorDescription>Braves Engenharia</VendorDescription>
+  </AddIn>
   <AddIn Type="Command">
     <Name>Braves BIM Field - Importar de arquivo</Name>
     <Assembly>.\BravesBimFieldImporter.dll</Assembly>

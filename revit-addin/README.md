@@ -84,10 +84,15 @@ a mensagem de erro (do Visual Studio ou do Revit) que eu corrijo.
    [Configurar a importação pela nuvem](#configurar-a-importação-pela-nuvem)
    abaixo) — só precisa disso se for usar o comando "Importar da nuvem".
 5. Abra (ou reabra) o Revit.
-6. Vá na aba **Complementos (Add-Ins)** → **Ferramentas Externas (External
-   Tools)** → deve aparecer dois comandos:
-   - **Braves BIM Field - Importar de arquivo**
-   - **Braves BIM Field - Importar da nuvem**
+6. Deve aparecer uma aba própria **"Braves BIM Field"** na faixa de opções
+   (ribbon), com dois botões grandes:
+   - **Braves Cloud** — importa direto da nuvem (mesmo comando "Importar da
+     nuvem" abaixo)
+   - **Braves Import** — importa de um arquivo `levantamento_bim.json`
+
+   Os mesmos dois comandos também continuam disponíveis em
+   **Complementos → Ferramentas Externas**, caso a aba não apareça por algum
+   motivo (ex: versão do Revit mais restrita quanto a plugins de interface).
 
 ## Importar da nuvem (recomendado — sem precisar de arquivo)
 
