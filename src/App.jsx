@@ -784,7 +784,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     function measure() {
       if (!svgRef.current) return;
       const w = svgRef.current.parentElement.clientWidth || 340;
-      const h = Math.max(280, (window.innerHeight || 700) - 480);
+      const safeArea = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-area-tb")) || 0;
+      const h = Math.max(240, (window.innerHeight || 700) - 500 - safeArea);
       setDims({ w, h });
       setVb(v => v || { x: 0, y: 0, w, h });
     }

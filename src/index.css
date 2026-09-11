@@ -18,3 +18,10 @@ body {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
+
+/* Combined top+bottom safe-area inset, in px, readable from JS (App.jsx
+   reads this to size the Croqui canvas so it never pushes the bottom nav
+   off-screen on notched phones). */
+:root {
+  --safe-area-tb: calc(env(safe-area-inset-top) + env(safe-area-inset-bottom));
+}
