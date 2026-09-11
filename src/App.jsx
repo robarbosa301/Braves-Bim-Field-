@@ -277,26 +277,27 @@ function mergeWallPair(a, b) {
 }
 function wallToM(w, toM) {
   return {
-    id: w.id, x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2), height: toNum(w.height, 2.8),
+    id: w.id, tag: w.tag || "", x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2), height: toNum(w.height, 2.8),
+    wallType: w.wallType || WALL_TYPES[0], condition: w.condition || "A confirmar",
     finishA: w.finishA || w.finish || "A definir", paintColorA: w.paintColorA || w.paintColor || "#E8E4DA",
     finishB: w.finishB || w.finish || "A definir", paintColorB: w.paintColorB || w.paintColor || "#E8E4DA",
   };
 }
 function doorToM(d, toM) {
   return {
-    id: d.id, wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1),
-    panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0],
+    id: d.id, tag: d.tag || "", wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1),
+    panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0], condition: d.condition || "A confirmar",
   };
 }
 function windowToM(w, toM) {
   return {
-    id: w.id, wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0),
-    panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0],
+    id: w.id, tag: w.tag || "", wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0),
+    panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0], condition: w.condition || "A confirmar",
   };
 }
-function stairToM(s2, toM) { return { x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
-function luminariaToM(l, toM) { return { x: toM(l.x), y: toM(l.y) }; }
-function roomToM(r, toM) { return { points: r.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), ceilingFinish: r.ceilingFinish, floorFinish: r.floorFinish, floorColor: r.floorColor, name: r.name }; }
+function stairToM(s2, toM) { return { id: s2.id, tag: s2.tag || "", x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
+function luminariaToM(l, toM) { return { id: l.id, tag: l.tag || "", x: toM(l.x), y: toM(l.y) }; }
+function roomToM(r, toM) { return { id: r.id, roomId: r.roomId || null, points: r.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: r.area, ceilingFinish: r.ceilingFinish, floorFinish: r.floorFinish, floorColor: r.floorColor, name: r.name }; }
 
 function levelToMeters(level) {
   const s = toNum(level.sketchScale, 0.5);
@@ -2300,11 +2301,42 @@ export default function PranchetaBIM() {
     setTimeout(() => { pushLog("Sincronização concluída — modelo Revit e desenho CAD atualizados.", "done"); setSyncing(false); }, delay);
   }
   function buildSchema() {
+    // schema_version 1: all geometry in meters (plan X/Y + level elevation),
+    // ready for the Revit add-in to consume directly — no grid/pixel math needed downstream.
     return {
-      projeto: { empresa: "BRAVES", codigo: session?.code, data: new Date().toISOString() },
-      niveis: levels.map(l => ({ nome: l.name, cota: l.elevation, pe_direito_padrao: l.wallHeightDefault, escala_m_por_quadro: l.sketchScale, elementos: l.sketchElements })),
+      schema_version: 1,
+      projeto: { empresa: "BRAVES", codigo: session?.code, nome: buildingInfo?.name || "", data: new Date().toISOString(), unidade: "metros" },
+      niveis: levels.map(l => {
+        const m = levelToMeters(l);
+        return {
+          id: l.id, nome: l.name, cota_m: m.elevation, pe_direito_padrao_m: toNum(l.wallHeightDefault, 2.8),
+          paredes: m.walls.map(w => ({
+            id: w.id, tag: w.tag, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, altura_m: w.height,
+            tipo: w.wallType, condicao: w.condition,
+            acabamento_face_a: w.finishA, cor_face_a: w.paintColorA,
+            acabamento_face_b: w.finishB, cor_face_b: w.paintColorB,
+          })),
+          portas: m.doors.map(d => ({
+            id: d.id, tag: d.tag, parede_id: d.wallId, x: d.x, y: d.y,
+            largura_m: d.width, altura_m: d.height, folhas: d.panels, tipo: d.doorType, condicao: d.condition,
+          })),
+          janelas: m.windows.map(w => ({
+            id: w.id, tag: w.tag, parede_id: w.wallId, x: w.x, y: w.y,
+            largura_m: w.width, altura_m: w.height, peitoril_m: w.peitoril, folhas: w.panels, tipo: w.windowType, condicao: w.condition,
+          })),
+          escadas: m.stairs.map(s => ({
+            id: s.id, tag: s.tag, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, largura_m: s.width,
+            nivel_destino_id: s.toLevelId, tem_patamar: s.hasLanding, posicao_patamar: s.landingPos, altura_patamar_m: s.landingHeight,
+          })),
+          luminarias: m.luminarias.map(lm => ({ id: lm.id, tag: lm.tag, x: lm.x, y: lm.y })),
+          ambientes_croqui: m.rooms.map(r => ({
+            id: r.id, ambiente_id: r.roomId, nome: r.name, area_m2: r.area,
+            pontos: r.points, acabamento_piso: r.floorFinish, cor_piso: r.floorColor, acabamento_forro: r.ceilingFinish,
+          })),
+        };
+      }),
       coberturas: roofs,
-      ambientes: rooms.map(r => ({ nome: r.name, nivel: r.level, area_m2: r.area, uso: r.use, condicao: r.condition, observacoes: r.notes, geo: r.geo, fotos: r.photos, pisos: r.floors })),
+      ambientes: rooms.map(r => ({ id: r.id, nome: r.name, nivel: r.level, area_m2: r.area, uso: r.use, condicao: r.condition, observacoes: r.notes, geo: r.geo, fotos: r.photos, pisos: r.floors })),
     };
   }
   function download(filename, content, type) {
