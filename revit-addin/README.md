@@ -49,26 +49,69 @@ a mensagem de erro (do Visual Studio ou do Revit) que eu corrijo.
 
 1. Localize a pasta de add-ins do Revit 2024 (crie se não existir):
    `%APPDATA%\Autodesk\Revit\Addins\2024\`
-   (cole esse caminho no Explorer de arquivos — `%APPDATA%` já expande sozinho)
-2. Copie para essa pasta:
-   - `BravesBimFieldImporter.addin` (está na raiz de `revit-addin/`)
-   - `BravesBimFieldImporter.dll` (gerado no passo anterior)
-   - `Newtonsoft.Json.dll` (também vai estar na pasta `bin\x64\Release\net48\`
-     junto com o .dll do add-in — copie ela também, pro Revit conseguir
-     carregar a dependência)
-3. Abra (ou reabra) o Revit.
-4. Vá na aba **Complementos (Add-Ins)** → **Ferramentas Externas (External
-   Tools)** → **Braves BIM Field - Importar levantamento**.
-5. Escolha o arquivo `levantamento_bim.json` que você exportou do app.
+   (cole esse caminho no Explorer de arquivos — `%APPDATA%` já expande sozinho.
+   Repare que é `Addins\2024\` — não crie uma subpasta `Addins` **dentro**
+   de `2024`, os arquivos ficam soltos direto ali.)
+2. Copie para essa pasta, da pasta `BravesBimFieldImporter\bin\x64\Release\net48\`:
+   - `BravesBimFieldImporter.dll`
+   - `Newtonsoft.Json.dll` (dependência — o Revit precisa dela junto)
+   - `firebase.config.json.example`
+   
+   E da raiz de `revit-addin/`:
+   - `BravesBimFieldImporter.addin`
+3. **Se os arquivos vieram de um ZIP baixado da internet**, clique com o
+   botão direito em `BravesBimFieldImporter.dll` e `Newtonsoft.Json.dll` →
+   **Propriedades** → marque **"Desbloquear"** (se aparecer essa opção) → OK.
+   O Windows marca arquivos baixados como "bloqueados" e o Revit ignora
+   add-ins bloqueados sem avisar nada.
+4. Renomeie `firebase.config.json.example` para `firebase.config.json` e
+   edite ele com as mesmas credenciais do `.env` do app (veja
+   [Configurar a importação pela nuvem](#configurar-a-importação-pela-nuvem)
+   abaixo) — só precisa disso se for usar o comando "Importar da nuvem".
+5. Abra (ou reabra) o Revit.
+6. Vá na aba **Complementos (Add-Ins)** → **Ferramentas Externas (External
+   Tools)** → deve aparecer dois comandos:
+   - **Braves BIM Field - Importar de arquivo**
+   - **Braves BIM Field - Importar da nuvem**
 
-## Fluxo de uso recomendado
+## Importar da nuvem (recomendado — sem precisar de arquivo)
+
+Com o Firebase já configurado no app (veja o README principal do repositório),
+o levantamento sincroniza sozinho pra nuvem a cada alteração. O comando
+**"Importar da nuvem"**:
+
+1. Pede as credenciais do seu Firebase (arquivo `firebase.config.json` — passo
+   4 acima)
+2. Mostra uma janela com todos os projetos já sincronizados, com uma caixa de
+   busca por nome
+3. Digite parte do nome do projeto, escolha na lista (ou dê duplo clique) e
+   clique em **Abrir**
+4. Importa direto — sem precisar exportar/transferir nenhum arquivo
+
+### Configurar a importação pela nuvem
+
+Abra o arquivo `.env` que você criou pra configurar o Firebase do app (na
+raiz do repositório principal) e copie dois valores pro
+`firebase.config.json` do add-in:
+
+```json
+{
+  "apiKey": "valor de VITE_FIREBASE_API_KEY no seu .env",
+  "projectId": "valor de VITE_FIREBASE_PROJECT_ID no seu .env"
+}
+```
+
+Esse arquivo precisa estar na **mesma pasta** do `BravesBimFieldImporter.dll`
+(dentro de `Addins\2024\`).
+
+## Importar de arquivo (alternativa, sem Firebase)
 
 1. No app (celular/tablet), faça o levantamento normalmente.
 2. Na aba **Sincronização**, clique em **JSON** para baixar `levantamento_bim.json`.
 3. Transfira esse arquivo pro computador com Revit (e-mail, nuvem, cabo USB — como preferir).
 4. Abra o projeto Revit onde quer importar (de preferência um projeto que já
    tenha os níveis certos, já que você escolheu reaproveitar níveis existentes).
-5. Rode o comando do add-in e selecione o arquivo.
+5. Rode o comando **"Importar de arquivo"** e selecione o arquivo.
 
 ## Personalizando o casamento de tipos
 

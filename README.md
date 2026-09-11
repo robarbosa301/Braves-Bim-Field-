@@ -33,13 +33,16 @@ Sem configurar o Firebase, o app funciona normalmente, mas cada dispositivo salv
 
 #### Regras de segurança do Firestore
 
-O app não tem autenticação de usuário (o "código do projeto" de 4 letras é o único controle de acesso, assim como no app original). Para uso pessoal/testes, regras abertas por tempo limitado (modo de teste) já bastam. Para produção, restrinja pelo menos a estrutura de chaves usadas (coleção `kv`), por exemplo:
+O app não tem autenticação de usuário (o "código do projeto" de 4 letras é o único controle de acesso, assim como no app original). Para uso pessoal/testes, regras abertas por tempo limitado (modo de teste) já bastam. Para produção, restrinja pelo menos a estrutura de chaves usadas — coleção `kv` (dados dos projetos) e `projects` (índice pesquisável por nome, usado pelo add-in de Revit) — por exemplo:
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /kv/{key} {
+      allow read, write: if true; // ajuste conforme sua necessidade de segurança
+    }
+    match /projects/{code} {
       allow read, write: if true; // ajuste conforme sua necessidade de segurança
     }
   }
