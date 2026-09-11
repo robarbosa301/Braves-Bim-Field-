@@ -2061,7 +2061,7 @@ function JoinScreen({ onJoin }) {
           <button onClick={() => setMode("create")} className="py-3.5 rounded-xl text-sm font-medium"
             style={{ background: mode === "create" ? C.goldTint : "transparent", color: mode === "create" ? C.gold : C.chalk, border: `1px solid ${mode === "create" ? "#FFFFFF" : C.line}` }}>Novo levantamento</button>
           <button onClick={() => setMode("join")} className="py-3.5 rounded-xl text-sm font-medium"
-            style={{ background: mode === "join" ? C.goldTint : "transparent", color: mode === "join" ? C.gold : C.chalk, border: `1px solid ${mode === "join" ? "#FFFFFF" : C.line}` }}>Entrar com código</button>
+            style={{ background: mode === "join" ? C.goldTint : "transparent", color: mode === "join" ? C.gold : C.chalk, border: `1px solid ${mode === "join" ? "#FFFFFF" : C.line}` }}>Meus Projetos</button>
         </div>
         {mode === "join" && (
           <>
