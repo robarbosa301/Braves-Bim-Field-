@@ -48,13 +48,27 @@ namespace BravesBimFieldImporter
         private static string BaseUrl(FirestoreConfig cfg) =>
             $"https://firestore.googleapis.com/v1/projects/{cfg.projectId}/databases/(default)/documents";
 
+        // HttpClient.GetStringAsync only reports the status code on failure — the
+        // Firestore error body (which names the real reason: rules, disabled API,
+        // bad key, etc.) gets silently discarded. Read it ourselves so failures are
+        // diagnosable from the Revit error dialog alone.
+        private static string GetJsonOrThrow(HttpClient http, string url)
+        {
+            HttpResponseMessage response = http.GetAsync(url).GetAwaiter().GetResult();
+            string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException(
+                    $"Firestore respondeu {(int)response.StatusCode} ({response.ReasonPhrase}):\n{body}");
+            return body;
+        }
+
         public static List<ProjectMeta> ListProjects(FirestoreConfig cfg)
         {
             var result = new List<ProjectMeta>();
             using (var http = new HttpClient())
             {
                 string url = $"{BaseUrl(cfg)}/projects?key={Uri.EscapeDataString(cfg.apiKey)}&pageSize=300";
-                string json = http.GetStringAsync(url).GetAwaiter().GetResult();
+                string json = GetJsonOrThrow(http, url);
                 JObject obj = JObject.Parse(json);
                 if (!(obj["documents"] is JArray documents)) return result;
 
@@ -85,7 +99,7 @@ namespace BravesBimFieldImporter
             {
                 string docId = Uri.EscapeDataString($"bim-project:{code}:data");
                 string url = $"{BaseUrl(cfg)}/kv/{docId}?key={Uri.EscapeDataString(cfg.apiKey)}";
-                string json = http.GetStringAsync(url).GetAwaiter().GetResult();
+                string json = GetJsonOrThrow(http, url);
                 JObject obj = JObject.Parse(json);
 
                 string outerValue = (string)obj["fields"]?["value"]?["stringValue"];

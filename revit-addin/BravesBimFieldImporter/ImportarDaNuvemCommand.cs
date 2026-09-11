@@ -28,7 +28,17 @@ namespace BravesBimFieldImporter
                 return Result.Cancelled;
             }
 
-            var projects = FirestoreClient.ListProjects(config);
+            System.Collections.Generic.List<ProjectMeta> projects;
+            try
+            {
+                projects = FirestoreClient.ListProjects(config);
+            }
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Braves BIM Field", "Erro ao buscar projetos na nuvem:\n\n" + ex.Message);
+                return Result.Cancelled;
+            }
+
             if (projects.Count == 0)
             {
                 TaskDialog.Show("Braves BIM Field", "Nenhum projeto encontrado na nuvem ainda. Faça algum levantamento no app primeiro (ele sincroniza sozinho).");
