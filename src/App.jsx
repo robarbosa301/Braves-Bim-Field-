@@ -1033,7 +1033,10 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       const wallCount = elements.filter(x => x.type === "wall").length;
       const el = { id: uid(), type: "wall", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar" };
       commitElements([...elements, el]);
-      setPending(null);
+      // Chain mode: keep drawing from this wall's endpoint instead of
+      // requiring a fresh start tap for every segment. Tap the same point
+      // again (or reselect the Parede tool) to end the chain.
+      setPending(p);
       return;
     }
 
@@ -1114,6 +1117,16 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
 
   function undoLast() {
     if (tool === "ambiente" && polygon.length > 0) { setPolygon(polygon.slice(0, -1)); return; }
+    if (tool === "parede" && pending && elements.length) {
+      const last = elements[elements.length - 1];
+      // Mid-chain: undo the last segment but keep the chain going from its
+      // start point, instead of just dropping the pending point.
+      if (last.type === "wall" && last.x2 === pending.x && last.y2 === pending.y) {
+        commitElements(elements.slice(0, -1));
+        setPending({ x: last.x1, y: last.y1 });
+        return;
+      }
+    }
     if (pending) { setPending(null); return; }
     commitElements(elements.slice(0, -1));
   }
