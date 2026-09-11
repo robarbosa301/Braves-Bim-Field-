@@ -1040,12 +1040,12 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     near.sort((a, b) => a.len - b.len);
     return { wall: near[0].wall, proj: near[0].proj };
   }
-  // Snaps to an existing wall/stair endpoint within tolerance so two
-  // segments can be made to share an exact point (closing a shape) even
-  // when that point doesn't land on a grid intersection — angled walls in
-  // particular rarely meet the grid exactly. Falls back to the plain grid
-  // snap when nothing is close enough.
-  function snapToEndpoint(p, excludeWallId) {
+  // Finds an existing wall/stair endpoint within tolerance so two segments
+  // can be made to share an exact point (closing a shape) even when that
+  // point doesn't land on a grid intersection — angled walls in particular
+  // rarely meet the grid exactly. Returns null (not a fallback point) when
+  // nothing is close, so callers can still try angle-snapping first.
+  function findNearbyEndpoint(p, excludeWallId) {
     const TOL = 14;
     let best = null, bestD = TOL;
     elements.forEach(e => {
@@ -1056,7 +1056,22 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         if (d < bestD) { bestD = d; best = pt; }
       });
     });
-    return best || { x: snap(p.x), y: snap(p.y) };
+    return best;
+  }
+  // Snaps freePt's angle relative to fixedPt to the nearest 45° step
+  // whenever it's already close (within tolDeg) — the same "ortho" nudge
+  // any CAD sketch tool needs, since a freehand drag on a touchscreen
+  // essentially never lands on an exactly horizontal/vertical/diagonal
+  // angle on its own. Leaves genuinely off-angle points untouched.
+  function angleSnap(fixedPt, freePt, tolDeg = 6) {
+    const dx = freePt.x - fixedPt.x, dy = freePt.y - fixedPt.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-6) return freePt;
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const nearest = Math.round(angle / step) * step;
+    if (Math.abs(angle - nearest) > tolDeg * Math.PI / 180) return freePt;
+    return { x: fixedPt.x + Math.cos(nearest) * d, y: fixedPt.y + Math.sin(nearest) * d };
   }
   function findAt(p) {
     const dw = elements.filter(e => e.type === "door" || e.type === "window" || e.type === "luminaria");
@@ -1085,7 +1100,15 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     // Ambiente needs this too — its polygon vertices are meant to trace
     // existing wall corners, and missing them by a few px (same issue
     // walls had) leaves gaps that never actually close the shape.
-    const p = (tool === "parede" || tool === "escada" || tool === "ambiente") ? snapToEndpoint(rawP) : rawP;
+    let p = rawP;
+    if (tool === "parede" || tool === "escada" || tool === "ambiente") {
+      const hit = findNearbyEndpoint(rawP, null);
+      p = hit || { x: snap(rawP.x), y: snap(rawP.y) };
+      // A freehand second tap almost never lands on an exact 0/45/90°
+      // angle from the first point — nudge it there when it's already
+      // close, so walls stay orthogonal instead of drifting off-angle.
+      if (!hit && pending && (tool === "parede" || tool === "escada")) p = angleSnap(pending, p);
+    }
 
     if (tool === "selecionar") { const hit = findAt(p); setSelectedId(hit ? hit.id : null); return; }
 
@@ -1451,7 +1474,13 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         return el;
       }));
     } else if (dragSession.kind === "wall-endpoint") {
-      const sp = snapToEndpoint(p, dragSession.id);
+      const w = wallsById[dragSession.id];
+      const hit = w && findNearbyEndpoint(p, dragSession.id);
+      let sp = hit || { x: snap(p.x), y: snap(p.y) };
+      if (!hit && w) {
+        const fixedPt = dragSession.which === "start" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
+        sp = angleSnap(fixedPt, sp);
+      }
       commitElements(elements.map(el => {
         if (el.id !== dragSession.id) return el;
         const next = dragSession.which === "start" ? { ...el, x1: sp.x, y1: sp.y } : { ...el, x2: sp.x, y2: sp.y };
