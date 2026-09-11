@@ -1905,7 +1905,7 @@ function JoinScreen({ onJoin }) {
 
   if (step === "building") {
     return (
-      <div className="relative w-full min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden" style={METAL_BG}>
+      <div className="braves-app-root relative w-full min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden" style={METAL_BG}>
         <Watermark />
         <div className="relative w-full max-w-sm">
           <div className="flex flex-col items-center gap-2 mb-6">
@@ -1964,7 +1964,7 @@ function JoinScreen({ onJoin }) {
   }
 
   return (
-    <div className="relative w-full min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden" style={METAL_BG}>
+    <div className="braves-app-root relative w-full min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden" style={METAL_BG}>
       <Watermark />
       <div className="relative w-full max-w-sm">
         <div className="flex flex-col items-center gap-4 mb-7">

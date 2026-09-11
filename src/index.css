@@ -8,3 +8,13 @@ html, body, #root {
 body {
   margin: 0;
 }
+
+/* Keep content clear of the phone's notch/status bar and home indicator —
+   viewport-fit=cover (index.html) is what makes these env() vars non-zero;
+   they're 0 everywhere else, so this is a no-op outside a real notch/cutout. */
+.braves-app-root {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
