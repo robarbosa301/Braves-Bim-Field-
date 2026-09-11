@@ -13,8 +13,20 @@ namespace BravesBimFieldImporter
     {
         public int Niveis, Paredes, Portas, Janelas, Ambientes;
 
-        public override string ToString() =>
-            $"{Niveis} nível(is)\n{Paredes} parede(s)\n{Portas} porta(s)\n{Janelas} janela(s)\n{Ambientes} ambiente(s)";
+        // Counts openings where no loaded Revit family/type really matched the
+        // surveyed "tipo"/"folhas" — a generic stand-in was used instead. The
+        // real values are never lost even then: they're written to each
+        // element's "Comentários" field. See PickBestSymbol/SetSurveyComments.
+        public int PortasParaRevisar, JanelasParaRevisar;
+
+        public override string ToString()
+        {
+            string revisar = (PortasParaRevisar + JanelasParaRevisar) > 0
+                ? $"\n\n⚠ {PortasParaRevisar + JanelasParaRevisar} porta(s)/janela(s) sem família correspondente no projeto — " +
+                  "o tipo/folhas real do levantamento foi gravado no campo \"Comentários\" de cada uma; ajuste a família manualmente."
+                : "";
+            return $"{Niveis} nível(is)\n{Paredes} parede(s)\n{Portas} porta(s)\n{Janelas} janela(s)\n{Ambientes} ambiente(s)" + revisar;
+        }
     }
 
     // Shared by both the file-based and the cloud-based (Firestore) import
@@ -88,7 +100,7 @@ namespace BravesBimFieldImporter
 
                         foreach (PortaInfo porta in nivel.portas ?? new List<PortaInfo>())
                         {
-                            FamilySymbol doorSymbol = PickBestSymbol(doorSymbols, porta.tipo, porta.folhas);
+                            FamilySymbol doorSymbol = PickBestSymbol(doorSymbols, porta.tipo, porta.folhas, out bool doorMatched);
                             if (doorSymbol == null || !wallIdByParedeId.TryGetValue(porta.parede_id, out ElementId hostId)) continue;
                             Wall host = doc.GetElement(hostId) as Wall;
                             XYZ pos = new XYZ(MetersToFeet(porta.x), MetersToFeet(porta.y), level.Elevation);
@@ -99,12 +111,14 @@ namespace BravesBimFieldImporter
                             TrySetDimension(inst, new[] { "Height", "Altura", "Altura da porta" }, porta.altura_m);
                             TrySetDimension(inst, new[] { "Width", "Largura", "Largura da porta" }, porta.largura_m);
                             SetMark(inst, porta.tag);
+                            SetSurveyComments(inst, porta.tipo, porta.folhas, porta.largura_m, porta.altura_m, null, doorMatched);
+                            if (!doorMatched) result.PortasParaRevisar++;
                             result.Portas++;
                         }
 
                         foreach (JanelaInfo janela in nivel.janelas ?? new List<JanelaInfo>())
                         {
-                            FamilySymbol windowSymbol = PickBestSymbol(windowSymbols, janela.tipo, janela.folhas);
+                            FamilySymbol windowSymbol = PickBestSymbol(windowSymbols, janela.tipo, janela.folhas, out bool windowMatched);
                             if (windowSymbol == null || !wallIdByParedeId.TryGetValue(janela.parede_id, out ElementId hostId)) continue;
                             Wall host = doc.GetElement(hostId) as Wall;
                             double sillFeet = MetersToFeet(janela.peitoril_m);
@@ -113,6 +127,8 @@ namespace BravesBimFieldImporter
                             TrySetDimension(inst, new[] { "Height", "Altura", "Altura da janela" }, janela.altura_m);
                             TrySetDimension(inst, new[] { "Width", "Largura", "Largura da janela" }, janela.largura_m);
                             SetMark(inst, janela.tag);
+                            SetSurveyComments(inst, janela.tipo, janela.folhas, janela.largura_m, janela.altura_m, janela.peitoril_m, windowMatched);
+                            if (!windowMatched) result.JanelasParaRevisar++;
                             result.Janelas++;
                         }
 
@@ -185,14 +201,30 @@ namespace BravesBimFieldImporter
         // window types in your template so their names mention the opening style
         // (e.g. "correr") and panel count (e.g. "4 folhas") — same idea as the
         // exact-name matching already used for wall types.
-        private static FamilySymbol PickBestSymbol(List<FamilySymbol> symbols, string tipo, int folhas)
+        // `matched` tells the caller whether the chosen family/type actually looks
+        // like the surveyed opening (true), or is just a fallback stand-in because
+        // nothing loaded in the project resembled it (false) — callers use this to
+        // flag the element for manual review, since the real tipo/folhas/dimensões
+        // are recorded separately (see SetSurveyComments) regardless either way.
+        private static FamilySymbol PickBestSymbol(List<FamilySymbol> symbols, string tipo, int folhas, out bool matched)
         {
+            matched = false;
             if (symbols.Count == 0) return null;
 
             FamilySymbol best = symbols[0];
-            if (symbols.Count > 1)
+            string[] keywords = ExtractKeywords(tipo);
+            bool hasCriteria = keywords.Length > 0 || folhas > 0;
+
+            if (!hasCriteria)
             {
-                string[] keywords = ExtractKeywords(tipo);
+                matched = true; // nothing specific was surveyed to compare against
+            }
+            else if (symbols.Count == 1)
+            {
+                matched = false; // only one type loaded — no way to tell if it actually fits
+            }
+            else
+            {
                 int bestScore = 0;
                 foreach (FamilySymbol sym in symbols)
                 {
@@ -202,10 +234,31 @@ namespace BravesBimFieldImporter
                         score += 3;
                     if (score > bestScore) { bestScore = score; best = sym; }
                 }
+                matched = bestScore > 0;
             }
 
             if (!best.IsActive) best.Activate();
             return best;
+        }
+
+        // The Revit family placed may not really look like what was surveyed (see
+        // `matched` above) — so the actual tipo/folhas/dimensões/peitoril are always
+        // written out as plain text in "Comentários" too, on every door/window,
+        // so that information is never lost even when no matching family exists.
+        private static void SetSurveyComments(FamilyInstance inst, string tipo, int folhas, double larguraM, double alturaM, double? peitorilM, bool familyMatched)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(tipo)) parts.Add(tipo);
+            if (folhas > 0) parts.Add($"{folhas} folha(s)");
+            parts.Add($"{larguraM:0.00}×{alturaM:0.00} m");
+            if (peitorilM.HasValue && peitorilM.Value > 0) parts.Add($"peitoril {peitorilM.Value:0.00} m");
+
+            string text = "Levantamento: " + string.Join(" · ", parts);
+            if (!familyMatched)
+                text += " — família/tipo não encontrado no projeto, AJUSTAR MANUALMENTE.";
+
+            Parameter p = inst.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+            if (p != null && !p.IsReadOnly) p.Set(text);
         }
 
         private static string[] ExtractKeywords(string tipo)

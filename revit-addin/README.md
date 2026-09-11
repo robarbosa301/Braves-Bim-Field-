@@ -149,3 +149,20 @@ Já a **largura e altura** de cada porta/janela são sempre ajustadas para bater
 com o que foi medido no app (tentando os parâmetros `Height`/`Width` e também
 `Altura`/`Largura`, seja como parâmetro de instância ou de tipo) — isso
 funciona independente do casamento de família ter sido perfeito ou não.
+
+#### Nenhuma informação do levantamento é perdida
+
+Mesmo quando nenhuma família carregada no projeto parece com o que foi
+levantado (ex: você levantou uma porta de correr de 4 folhas mas só tem uma
+porta genérica de 1 folha no Revit), o add-in **nunca descarta** o que foi
+medido: o tipo real (`"Correr — alumínio"`), o número de folhas, as dimensões
+e (nas janelas) o peitoril são sempre escritos no campo **Comentários** de
+cada porta/janela importada, por exemplo:
+
+> Levantamento: Correr — alumínio · 4 folha(s) · 1.60×2.10 m — família/tipo
+> não encontrado no projeto, AJUSTAR MANUALMENTE.
+
+Ao final da importação, a mensagem de resumo do Revit avisa quantas
+portas/janelas caíram nesse caso. Pra revisar todas de uma vez, crie uma
+**Tabela de quantidades** de Portas (ou Janelas) no Revit e adicione a coluna
+"Comentários" — as que precisam de ajuste manual aparecem com o aviso.
