@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, Box, Home, ZoomIn, ZoomOut, Maximize2,
-  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Blinds
+  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors
 } from "lucide-react";
 
 // lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
@@ -16,6 +16,19 @@ function StairsIcon({ size = 16, color = "currentColor" }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 20h4v-4h4v-4h4v-4h4" />
       <path d="M4 20V4" />
+    </svg>
+  );
+}
+
+// lucide-react also has no "building window" icon — Blinds reads as
+// horizontal slats at 16px, not a window. A framed pane with a cross of
+// mullions plus a sill reads unambiguously as a window instead.
+function WindowIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="4" width="14" height="15" rx="1" />
+      <path d="M12 4v15M5 11.5h14" />
+      <path d="M3 20h18" />
     </svg>
   );
 }
@@ -1387,7 +1400,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     { id: "parede", label: "Parede", Icon: BrickWall },
     { id: "ambiente", label: "Ambiente", Icon: LayoutPanelTop },
     { id: "porta", label: "Porta", Icon: DoorClosed },
-    { id: "janela", label: "Janela", Icon: Blinds },
+    { id: "janela", label: "Janela", Icon: WindowIcon },
     { id: "escada", label: "Escada", Icon: StairsIcon },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
