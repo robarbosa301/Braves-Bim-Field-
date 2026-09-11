@@ -33,6 +33,15 @@ namespace BravesBimFieldImporter
     // commands. v1 scope: Levels, Walls, Doors, Windows, Rooms (from closed
     // "ambiente" outlines drawn in the app's Croqui). Roofs, stairs and
     // luminárias are in the schema but not created yet — future work.
+    //
+    // Re-importing the same project updates existing elements in place instead
+    // of duplicating them: every wall/door/window/room created by this add-in
+    // gets a hidden "[[categoria:id]]" token written into its Comentários field
+    // (see SetToken/ExtractToken), matching the schema's own stable ids. On a
+    // later import, an element whose token is found is updated (position, type,
+    // dimensions) rather than recreated. Elements removed from the survey since
+    // the last import are NOT auto-deleted from Revit — that's left to the user,
+    // to avoid silently discarding anything they may have adjusted in Revit.
     public static class LevantamentoImporter
     {
         public static ImportResult Importar(Document doc, LevantamentoSchema schema)
@@ -58,14 +67,21 @@ namespace BravesBimFieldImporter
                     // Cache every loaded door/window type once — each opening below picks
                     // whichever of these best matches its own "tipo"/"folhas" (e.g. a
                     // "Correr — alumínio" door with folhas=4 favors a loaded type whose
-                    // family/type name mentions "correr" and "4 folhas"), instead of the
-                    // previous behavior of using just the first loaded type for everything.
+                    // family/type name mentions "correr" and "4 folhas").
                     List<FamilySymbol> doorSymbols = new FilteredElementCollector(doc)
                         .OfClass(typeof(FamilySymbol)).OfCategory(BuiltInCategory.OST_Doors)
                         .Cast<FamilySymbol>().ToList();
                     List<FamilySymbol> windowSymbols = new FilteredElementCollector(doc)
                         .OfClass(typeof(FamilySymbol)).OfCategory(BuiltInCategory.OST_Windows)
                         .Cast<FamilySymbol>().ToList();
+
+                    // Index elements created by a previous import of this project, by the
+                    // hidden id token in their Comentários — so this pass can update them
+                    // in place instead of creating duplicates on top.
+                    Dictionary<string, ElementId> existingWallsByToken = IndexExistingByToken(doc, BuiltInCategory.OST_Walls, "parede");
+                    Dictionary<string, ElementId> existingDoorsByToken = IndexExistingByToken(doc, BuiltInCategory.OST_Doors, "porta");
+                    Dictionary<string, ElementId> existingWindowsByToken = IndexExistingByToken(doc, BuiltInCategory.OST_Windows, "janela");
+                    Dictionary<string, ElementId> existingRoomsByToken = IndexExistingByToken(doc, BuiltInCategory.OST_Rooms, "ambiente");
 
                     // Pass 1: walls (so pass 2 has a host wall to place doors/windows on).
                     var wallIdByParedeId = new Dictionary<string, ElementId>();
@@ -84,8 +100,29 @@ namespace BravesBimFieldImporter
                                 ? wtId : defaultWallTypeId;
                             double heightFeet = parede.altura_m > 0 ? MetersToFeet(parede.altura_m) : defaultHeightFeet;
 
-                            Wall wall = Wall.Create(doc, Line.CreateBound(p1, p2), wallTypeId, levelId, heightFeet, 0, false, false);
+                            Wall wall = null;
+                            if (!string.IsNullOrEmpty(parede.id) && existingWallsByToken.TryGetValue(parede.id, out ElementId existingWallId))
+                                wall = doc.GetElement(existingWallId) as Wall;
+
+                            if (wall != null)
+                            {
+                                if (wall.Location is LocationCurve lc)
+                                    lc.Curve = Line.CreateBound(p1, p2);
+                                if (wall.GetTypeId() != wallTypeId)
+                                {
+                                    ElementId changedId = wall.ChangeTypeId(wallTypeId);
+                                    if (changedId != ElementId.InvalidElementId && changedId != wall.Id)
+                                        wall = doc.GetElement(changedId) as Wall;
+                                }
+                                wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM)?.Set(heightFeet);
+                            }
+                            else
+                            {
+                                wall = Wall.Create(doc, Line.CreateBound(p1, p2), wallTypeId, levelId, heightFeet, 0, false, false);
+                            }
+
                             SetMark(wall, parede.tag);
+                            SetToken(wall, "parede", parede.id);
                             wallIdByParedeId[parede.id] = wall.Id;
                             result.Paredes++;
                         }
@@ -104,14 +141,16 @@ namespace BravesBimFieldImporter
                             if (doorSymbol == null || !wallIdByParedeId.TryGetValue(porta.parede_id, out ElementId hostId)) continue;
                             Wall host = doc.GetElement(hostId) as Wall;
                             XYZ pos = new XYZ(MetersToFeet(porta.x), MetersToFeet(porta.y), level.Elevation);
-                            // If this 5-arg overload (location, symbol, host, level, structuralType) doesn't
-                            // resolve for your Revit API version, drop `level` — the 4-arg host overload
-                            // (location, symbol, host, structuralType) hosts it on the wall just as well.
-                            FamilyInstance inst = doc.Create.NewFamilyInstance(pos, doorSymbol, host, level, StructuralType.NonStructural);
+
+                            FamilyInstance inst = UpdateOrRecreateOpening(
+                                doc, existingDoorsByToken, porta.id, hostId, doorSymbol,
+                                () => doc.Create.NewFamilyInstance(pos, doorSymbol, host, level, StructuralType.NonStructural),
+                                pos);
+
                             TrySetDimension(inst, new[] { "Height", "Altura", "Altura da porta" }, porta.altura_m);
                             TrySetDimension(inst, new[] { "Width", "Largura", "Largura da porta" }, porta.largura_m);
                             SetMark(inst, porta.tag);
-                            SetSurveyComments(inst, porta.tipo, porta.folhas, porta.largura_m, porta.altura_m, null, doorMatched);
+                            SetSurveyComments(inst, "porta", porta.id, porta.tipo, porta.folhas, porta.largura_m, porta.altura_m, null, doorMatched);
                             if (!doorMatched) result.PortasParaRevisar++;
                             result.Portas++;
                         }
@@ -123,11 +162,16 @@ namespace BravesBimFieldImporter
                             Wall host = doc.GetElement(hostId) as Wall;
                             double sillFeet = MetersToFeet(janela.peitoril_m);
                             XYZ pos = new XYZ(MetersToFeet(janela.x), MetersToFeet(janela.y), level.Elevation + sillFeet);
-                            FamilyInstance inst = doc.Create.NewFamilyInstance(pos, windowSymbol, host, level, StructuralType.NonStructural);
+
+                            FamilyInstance inst = UpdateOrRecreateOpening(
+                                doc, existingWindowsByToken, janela.id, hostId, windowSymbol,
+                                () => doc.Create.NewFamilyInstance(pos, windowSymbol, host, level, StructuralType.NonStructural),
+                                pos);
+
                             TrySetDimension(inst, new[] { "Height", "Altura", "Altura da janela" }, janela.altura_m);
                             TrySetDimension(inst, new[] { "Width", "Largura", "Largura da janela" }, janela.largura_m);
                             SetMark(inst, janela.tag);
-                            SetSurveyComments(inst, janela.tipo, janela.folhas, janela.largura_m, janela.altura_m, janela.peitoril_m, windowMatched);
+                            SetSurveyComments(inst, "janela", janela.id, janela.tipo, janela.folhas, janela.largura_m, janela.altura_m, janela.peitoril_m, windowMatched);
                             if (!windowMatched) result.JanelasParaRevisar++;
                             result.Janelas++;
                         }
@@ -139,11 +183,22 @@ namespace BravesBimFieldImporter
                             double cy = ambiente.pontos.Average(p => p.y);
                             try
                             {
-                                Room room = doc.Create.NewRoom(level, new UV(MetersToFeet(cx), MetersToFeet(cy)));
+                                Room room = null;
+                                if (!string.IsNullOrEmpty(ambiente.id) && existingRoomsByToken.TryGetValue(ambiente.id, out ElementId existingRoomId))
+                                    room = doc.GetElement(existingRoomId) as Room;
+
+                                // A previously-imported Room that's still validly placed tracks its
+                                // host walls automatically (Revit recomputes its boundary at Regenerate
+                                // when they move) — no need to recreate it. Only make a new one if it's
+                                // missing (deleted in Revit) or fell outside its wall loop (Area <= 0).
+                                if (room == null || room.Area <= 0)
+                                    room = doc.Create.NewRoom(level, new UV(MetersToFeet(cx), MetersToFeet(cy)));
+
                                 if (room != null)
                                 {
                                     if (!string.IsNullOrEmpty(ambiente.nome))
                                         room.get_Parameter(BuiltInParameter.ROOM_NAME)?.Set(ambiente.nome);
+                                    SetToken(room, "ambiente", ambiente.id);
                                     result.Ambientes++;
                                 }
                             }
@@ -191,6 +246,38 @@ namespace BravesBimFieldImporter
             }
 
             return result;
+        }
+
+        // Reuses a previously-imported door/window instance (matched by its hidden
+        // id token) when it's still hosted on the same wall — repositioning it and
+        // swapping its type in place. If the host wall changed (or nothing matched),
+        // the old instance (if any) is deleted and a fresh one created via `create`,
+        // since Revit doesn't support re-hosting a family instance onto another wall.
+        private static FamilyInstance UpdateOrRecreateOpening(
+            Document doc, Dictionary<string, ElementId> existingByToken, string id, ElementId hostId,
+            FamilySymbol symbol, Func<FamilyInstance> create, XYZ pos)
+        {
+            FamilyInstance inst = null;
+            if (!string.IsNullOrEmpty(id) && existingByToken.TryGetValue(id, out ElementId existingId))
+                inst = doc.GetElement(existingId) as FamilyInstance;
+
+            bool sameHost = inst != null && inst.Host != null && inst.Host.Id == hostId;
+            if (inst != null && sameHost)
+            {
+                if (inst.Symbol.Id != symbol.Id)
+                {
+                    ElementId changedId = inst.ChangeTypeId(symbol.Id);
+                    if (changedId != ElementId.InvalidElementId && changedId != inst.Id)
+                        inst = doc.GetElement(changedId) as FamilyInstance;
+                }
+                if (inst.Location is LocationPoint lp)
+                    lp.Point = pos;
+                return inst;
+            }
+
+            if (inst != null)
+                doc.Delete(inst.Id);
+            return create();
         }
 
         // Picks whichever loaded family/type best matches the surveyed opening's
@@ -245,7 +332,9 @@ namespace BravesBimFieldImporter
         // `matched` above) — so the actual tipo/folhas/dimensões/peitoril are always
         // written out as plain text in "Comentários" too, on every door/window,
         // so that information is never lost even when no matching family exists.
-        private static void SetSurveyComments(FamilyInstance inst, string tipo, int folhas, double larguraM, double alturaM, double? peitorilM, bool familyMatched)
+        // The hidden "[[categoria:id]]" token is prepended so a later import can
+        // find this exact element again (see SetToken/IndexExistingByToken).
+        private static void SetSurveyComments(FamilyInstance inst, string tokenCategory, string id, string tipo, int folhas, double larguraM, double alturaM, double? peitorilM, bool familyMatched)
         {
             var parts = new List<string>();
             if (!string.IsNullOrEmpty(tipo)) parts.Add(tipo);
@@ -257,8 +346,44 @@ namespace BravesBimFieldImporter
             if (!familyMatched)
                 text += " — família/tipo não encontrado no projeto, AJUSTAR MANUALMENTE.";
 
-            Parameter p = inst.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+            SetToken(inst, tokenCategory, id, text);
+        }
+
+        // Writes a hidden "[[categoria:id]]" marker (plus optional visible text)
+        // into an element's Comentários field, so a later import recognizes this
+        // exact element again instead of creating a duplicate. See ExtractToken.
+        private static void SetToken(Element el, string tokenCategory, string id, string extraText = null)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            string token = $"[[{tokenCategory}:{id}]]";
+            string text = string.IsNullOrEmpty(extraText) ? token : $"{token} {extraText}";
+            Parameter p = el.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
             if (p != null && !p.IsReadOnly) p.Set(text);
+        }
+
+        private static string ExtractToken(string comments, string tokenCategory)
+        {
+            if (string.IsNullOrEmpty(comments)) return null;
+            string marker = $"[[{tokenCategory}:";
+            int start = comments.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0) return null;
+            start += marker.Length;
+            int end = comments.IndexOf("]]", start, StringComparison.Ordinal);
+            return end < 0 ? null : comments.Substring(start, end - start);
+        }
+
+        // Finds elements this add-in created on a previous import of the same
+        // project, by the hidden id token in their Comentários field.
+        private static Dictionary<string, ElementId> IndexExistingByToken(Document doc, BuiltInCategory category, string tokenCategory)
+        {
+            var result = new Dictionary<string, ElementId>();
+            foreach (Element el in new FilteredElementCollector(doc).OfCategory(category).WhereElementIsNotElementType())
+            {
+                string comments = el.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString();
+                string id = ExtractToken(comments, tokenCategory);
+                if (!string.IsNullOrEmpty(id)) result[id] = el.Id;
+            }
+            return result;
         }
 
         private static string[] ExtractKeywords(string tipo)

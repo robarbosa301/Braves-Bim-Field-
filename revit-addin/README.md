@@ -15,6 +15,21 @@ pelo app (aba **Sincronização → JSON**) e cria no Revit, no projeto aberto:
 **Ainda não implementado** (fica para uma próxima etapa): coberturas, escadas,
 luminárias, e pisos/acabamentos como parâmetros de material.
 
+### Importar de novo não duplica
+
+Rodar qualquer um dos dois comandos de novo no mesmo projeto Revit
+**atualiza** as paredes/portas/janelas/ambientes já importados (posição,
+tipo, dimensões) em vez de criar um segundo conjunto por cima do primeiro —
+o add-in reconhece cada elemento por um identificador oculto gravado no
+campo Comentários dele. Elementos **novos** no levantamento (ex: uma porta
+que você acabou de adicionar no app) são criados normalmente.
+
+Importante: se você **apagar** algo no app (uma parede, porta, etc.) e
+importar de novo, o elemento correspondente **não é apagado automaticamente**
+do Revit — isso é proposital, pra nunca descartar sem avisar algo que você
+possa ter ajustado manualmente lá. Nesse caso, apague-o você mesmo no Revit
+(pode identificar pelo texto em Comentários).
+
 ## ⚠️ Aviso importante
 
 Este código foi escrito consultando a documentação da API do Revit, mas
