@@ -61,6 +61,32 @@ function useLoadFonts() {
   }, []);
 }
 
+// `100dvh` alone is unreliable right after load on some Android/iOS browsers
+// (it can report a taller height than what's actually visible once the
+// address bar settles), leaving a blank gap below the app instead of the
+// bottom nav sitting flush with the real screen edge. Track the real
+// visible height via visualViewport (falling back to innerHeight) and
+// expose it as a CSS var so the root container always matches it exactly.
+function useRealViewportHeight() {
+  useEffect(() => {
+    function update() {
+      const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      document.documentElement.style.setProperty("--app-vh", `${h}px`);
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
+  }, []);
+}
+
 const METAL_BG = {
   backgroundColor: "#0B0B0A",
   backgroundImage:
@@ -2064,6 +2090,7 @@ function JoinScreen({ onJoin }) {
 // ---- main app --------------------------------------------------------------
 export default function PranchetaBIM() {
   useLoadFonts();
+  useRealViewportHeight();
   const [session, setSession] = useState(null);
   const [tab, setTab] = useState("ambientes");
   const [modeloSub, setModeloSub] = useState("elementos");
@@ -2405,7 +2432,7 @@ export default function PranchetaBIM() {
   ];
 
   return (
-    <div className="braves-app-root relative w-full h-dvh overflow-hidden flex flex-col" style={{ ...METAL_BG, fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
+    <div className="braves-app-root relative w-full overflow-hidden flex flex-col" style={{ ...METAL_BG, height: "var(--app-vh, 100dvh)", fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
       <Watermark />
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhotoCaptured} />
 
