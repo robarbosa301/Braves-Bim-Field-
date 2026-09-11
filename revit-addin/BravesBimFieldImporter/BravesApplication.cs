@@ -18,21 +18,6 @@ namespace BravesBimFieldImporter
         {
             try
             {
-                return OnStartupCore(application);
-            }
-            catch (Exception ex)
-            {
-                // If anything below throws, Revit otherwise just silently disables
-                // the add-in with no visible clue — surface it instead.
-                TaskDialog.Show("Braves BIM Field — erro ao iniciar", ex.ToString());
-                return Result.Failed;
-            }
-        }
-
-        private Result OnStartupCore(UIControlledApplication application)
-        {
-            try
-            {
                 application.CreateRibbonTab(TabName);
             }
             catch (Exception)
@@ -43,58 +28,34 @@ namespace BravesBimFieldImporter
             RibbonPanel panel = application.CreateRibbonPanel(TabName, "Levantamento");
             string assemblyPath = Assembly.GetExecutingAssembly().Location;
 
-            // Source bitmaps are 128/64px — well above the ~32/16 DIP slot Revit
-            // actually renders these in — so WPF always downscales rather than
-            // upscales, which is what keeps the icon crisp on displays running
-            // above 100% Windows scaling (common on CAD workstations).
+            // Revit's ribbon does not scale these — LargeImage must be exactly
+            // 32x32 and Image exactly 16x16, or it silently shows no icon at all
+            // (confirmed: a 128/64px source loaded fine in memory but never
+            // rendered). Keep the source vector-traced (see the icon generator
+            // in scratch history) so 32/16 still comes out crisp, not blurry.
             var cloudButton = new PushButtonData(
                 "BravesCloudButton", "Cloud", assemblyPath, typeof(ImportarDaNuvemCommand).FullName)
             {
                 ToolTip = "Importa o levantamento direto da nuvem (Firebase) — escolha o projeto pelo nome, sem precisar de arquivo.",
-                LargeImage = LoadImage("braves_cloud_128.png"),
-                Image = LoadImage("braves_cloud_64.png"),
+                LargeImage = LoadImage("braves_cloud_32.png"),
+                Image = LoadImage("braves_cloud_16.png"),
             };
 
             var importButton = new PushButtonData(
                 "BravesImportButton", "Import", assemblyPath, typeof(ImportLevantamentoCommand).FullName)
             {
                 ToolTip = "Importa o levantamento a partir de um arquivo levantamento_bim.json exportado do app.",
-                LargeImage = LoadImage("braves_import_128.png"),
-                Image = LoadImage("braves_import_64.png"),
+                LargeImage = LoadImage("braves_import_32.png"),
+                Image = LoadImage("braves_import_16.png"),
             };
 
             panel.AddItem(cloudButton);
             panel.AddItem(importButton);
 
-            // TEMPORARY diagnostic — the icons aren't showing up and every code
-            // path looks correct, so report exactly what LoadImage found instead
-            // of guessing further. Safe to remove once the cause is confirmed.
-            ShowIconDiagnostics(cloudButton.LargeImage, cloudButton.Image, importButton.LargeImage, importButton.Image);
-
             return Result.Succeeded;
         }
 
         public Result OnShutdown(UIControlledApplication application) => Result.Succeeded;
-
-        private static void ShowIconDiagnostics(params System.Windows.Media.ImageSource[] images)
-        {
-            string[] labels = { "cloud LargeImage (128)", "cloud Image (64)", "import LargeImage (128)", "import Image (64)" };
-            var lines = new System.Collections.Generic.List<string>();
-            for (int i = 0; i < images.Length; i++)
-            {
-                var bmp = images[i] as BitmapSource;
-                lines.Add(bmp == null
-                    ? $"{labels[i]}: NULL (recurso não encontrado)"
-                    : $"{labels[i]}: OK — {bmp.PixelWidth}x{bmp.PixelHeight}");
-            }
-
-            string[] allResources = Assembly.GetExecutingAssembly().GetManifestResourceNames();
-            lines.Add("");
-            lines.Add("Todos os recursos embutidos no .dll:");
-            lines.AddRange(allResources.Length == 0 ? new[] { "(nenhum!)" } : allResources);
-
-            TaskDialog.Show("Braves BIM Field — diagnóstico de ícones", string.Join("\n", lines));
-        }
 
         private static BitmapImage LoadImage(string fileName)
         {
