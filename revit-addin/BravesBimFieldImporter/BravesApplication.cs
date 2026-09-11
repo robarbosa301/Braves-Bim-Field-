@@ -6,10 +6,11 @@ using Autodesk.Revit.UI;
 
 namespace BravesBimFieldImporter
 {
-    // Registers the "Braves BIM Field" ribbon tab with two buttons (Braves
-    // Cloud / Braves Import) that run the same commands already exposed under
-    // Complementos → Ferramentas Externas — this just gives them a dedicated,
-    // branded home instead of being buried in that generic dropdown.
+    // Registers the "Braves BIM Field" ribbon tab with the Cloud/Import
+    // buttons (running the same commands already exposed under Complementos
+    // → Ferramentas Externas — this just gives them a dedicated, branded
+    // home instead of being buried in that generic dropdown) plus a third,
+    // purely informational "Braves BIM Field" button showing the logo.
     public class BravesApplication : IExternalApplication
     {
         private const string TabName = "Braves BIM Field";
@@ -49,8 +50,18 @@ namespace BravesBimFieldImporter
                 Image = LoadImage("braves_import_16.png"),
             };
 
+            var aboutButton = new PushButtonData(
+                "BravesAboutButton", "Braves BIM\nField", assemblyPath, typeof(AboutCommand).FullName)
+            {
+                ToolTip = "BRAVES Engenharia — Levantamento de campo integrado ao Revit.",
+                LargeImage = LoadImage("braves_logo_32.png"),
+                Image = LoadImage("braves_logo_16.png"),
+            };
+
             panel.AddItem(cloudButton);
             panel.AddItem(importButton);
+            panel.AddSeparator();
+            panel.AddItem(aboutButton);
 
             return Result.Succeeded;
         }
