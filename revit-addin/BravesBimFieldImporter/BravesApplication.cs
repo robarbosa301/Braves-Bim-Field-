@@ -29,7 +29,7 @@ namespace BravesBimFieldImporter
             string assemblyPath = Assembly.GetExecutingAssembly().Location;
 
             var cloudButton = new PushButtonData(
-                "BravesCloudButton", "Braves\nCloud", assemblyPath, typeof(ImportarDaNuvemCommand).FullName)
+                "BravesCloudButton", "Cloud", assemblyPath, typeof(ImportarDaNuvemCommand).FullName)
             {
                 ToolTip = "Importa o levantamento direto da nuvem (Firebase) — escolha o projeto pelo nome, sem precisar de arquivo.",
                 LargeImage = LoadImage("braves_cloud_32.png"),
@@ -37,7 +37,7 @@ namespace BravesBimFieldImporter
             };
 
             var importButton = new PushButtonData(
-                "BravesImportButton", "Braves\nImport", assemblyPath, typeof(ImportLevantamentoCommand).FullName)
+                "BravesImportButton", "Import", assemblyPath, typeof(ImportLevantamentoCommand).FullName)
             {
                 ToolTip = "Importa o levantamento a partir de um arquivo levantamento_bim.json exportado do app.",
                 LargeImage = LoadImage("braves_import_32.png"),
