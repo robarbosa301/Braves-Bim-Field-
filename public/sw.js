@@ -33,9 +33,12 @@ self.addEventListener("fetch", (event) => {
   if (req.mode === "navigate") {
     // Network-first so an online app always gets the latest index.html;
     // falls back to the precached shell so the app still opens with zero
-    // connectivity (airplane mode, no signal in the field).
+    // connectivity (airplane mode, no signal in the field). "reload" forces
+    // this past the browser's own HTTP cache — without it a plain fetch()
+    // can be satisfied straight from disk cache and never actually reach
+    // the network, which would silently serve an old build forever.
     event.respondWith(
-      fetch(req).catch(() => caches.match(req).then((cached) => cached || caches.match(`${self.registration.scope}index.html`)))
+      fetch(req, { cache: "reload" }).catch(() => caches.match(req).then((cached) => cached || caches.match(`${self.registration.scope}index.html`)))
     );
     return;
   }

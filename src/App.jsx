@@ -1472,7 +1472,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               style={{ cursor: "pointer" }}
               onClick={e => { e.stopPropagation(); setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy }); }} />
           )}
-          <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle" style={editable ? { cursor: "pointer" } : undefined}
+          <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: editable ? "auto" : "none", cursor: editable ? "pointer" : undefined }}
             onClick={editable ? (e => { e.stopPropagation(); setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy }); }) : undefined}>{lenM}</text>
         </g>
       );
@@ -1668,7 +1668,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               const canEdit = tool === "selecionar" && selectedId === el.id;
               return (
                 <text x={(el.x1 + el.x2) / 2} y={(el.y1 + el.y2) / 2 - 6} fontSize="10" fill="#6b6660" textAnchor="middle"
-                  style={canEdit ? { cursor: "pointer" } : undefined}
+                  style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
                   {el.length} m{canEdit && " ✎"}
                 </text>
@@ -1708,7 +1708,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               )}
               <rect x={midX - 15} y={midY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
               <text x={midX} y={midY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
-                style={editable ? { cursor: "pointer" } : undefined}
+                style={{ pointerEvents: editable ? "auto" : "none", cursor: editable ? "pointer" : undefined }}
                 onClick={editable ? (e => { e.stopPropagation(); startEdit(); }) : undefined}>{faceDistM} m</text>
             </g>
           );

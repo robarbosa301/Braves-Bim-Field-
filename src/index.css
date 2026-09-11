@@ -7,6 +7,12 @@ html, body, #root {
 }
 body {
   margin: 0;
+  /* Matches the app's own dark theme. The virtual keyboard opening/closing
+     shrinks the visual viewport (which --app-vh tracks) faster than the
+     layout can settle on some Android/iOS browsers, briefly exposing the
+     page underneath our fixed-height root — with the default white body
+     background that showed up as a jarring white flash/gap. */
+  background: #0B0B0A;
 }
 
 /* Keep content clear of the phone's notch/status bar and side cutouts —
