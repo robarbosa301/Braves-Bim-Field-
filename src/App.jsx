@@ -12,10 +12,15 @@ import { safeGet, safeSet, safeList, safeDelete } from "./storage.js";
 
 // ---- BRAVES brand tokens (dark metallic theme) -----------------------------
 const SYMBOL_LOGO = "data:image/svg+xml," + encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <path d="M8 33 L32 12 L56 33" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M17 29 V52 H47 V29" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="27" y="35" width="10" height="17" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 460">
+  <polygon points="45,160 138,108 138,136 45,188" fill="#FFFFFF"/>
+  <path d="M60 158 L152 98 L245 158" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="190" y1="50" x2="190" y2="248" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <line x1="209" y1="116" x2="240" y2="252" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <line x1="227" y1="126" x2="256" y2="255" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <rect x="60" y="156" width="48" height="248" fill="#FFFFFF"/>
+  <path d="M108 262 C195 262 240 296 240 335 C240 382 188 410 132 410 C108 410 92 404 84 396"
+    fill="none" stroke="#FFFFFF" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 `.trim());
 
