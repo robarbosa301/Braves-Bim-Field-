@@ -8,7 +8,7 @@ import {
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, SlidersHorizontal, Box, Home, ZoomIn, ZoomOut, Maximize2,
   MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors
 } from "lucide-react";
-import { safeGet, safeSet, safeList, safeDelete } from "./storage.js";
+import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta } from "./storage.js";
 
 // ---- BRAVES brand tokens (dark metallic theme) -----------------------------
 const SYMBOL_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAAEsCAYAAACVLbxKAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAgAElEQVR42u1dCdxUZdVn3i1Q0TQ3ciPLMjXRSk1cSs2vMk1t8XPLVks0rayszw9zqfRDCik3JFHTwg0ERdKwckFUDNyXRBNREwU0eAHfZZz7fOc45+E9PN6ZuTNz7zz3zvzP73d+d973nXfmLuf/nP08gwaBQELGmDY5bk+8lNgEQfCWKdJjxHvp94FAzQaADjn+XoQ+74DgHgAA1AoAmFgCAHcBACBoAAAABACAQAAACAQAgEAAAAgEAIBAAAAIBACAQAAACAQAgEAAAAgEAIBAAAAIBACAQAAACAQAgEAAAAgEAIBAAAAIBACAQAAACAQAgEAAAAgEAIBAAACo5IPLZf38WfgU5wAAUKQHZgWGuDOLQJDzbwv5fXujBQ0AyI7QtKtJxvx6SNY0gYC2XV4PJiE7ho4nEn+HeJj8fc17AACQK/i8ch5GPIUe0KN0PIv4PWkHAp+/XvXpeBTxsyJgAXGBeDXxbXRdH1bXnbhpBACkW2ja1Mp5KPF8KzTqAU1J8wNyAPxu4htF6Jn6FRfkwv5D/AOtMZK8NgAgvaulffi84s8zA1SQh9QvP89L4wOSc++U1yOIf0G8SAlXwaxNFtQWHHcRn0C8oXxGZxLXCACkS/Db1c/D6SHcaYXeFRr7gOj4YJoekLti0+tTiJc511GOAuda/0E8UmvFOM0iACA9QmOdw/fJw+i1D6SE0GgzYgffD0mFNd8WTjrnT9Lrvylh6lfnXJHkf/rkx1XEvyPewr1fAED2Q5pW8LeQh7BKmTqFCnJi/76PFQyPgm+vY6QIfkEJVMHUSCyIShh7iH8S5lgDABmNg9NxHeJvEj+vHkA+onxYwRrpAwCOo/5e4nMlmlNOc5kS2iwooyEC5/P+SfyFOMwiAMBfRISdum8RL1A3PF+NmeBLAzgO7sbEYzh6UwOAS11ToRwQlOk3ud6wadIAsOZaKW5FG38I8Tes4Ic4faaKVZNpGf3/lo3IBajIVE5+3la2Eq0VwPa9KySv8bSYOaac9nDMIr5v44i7woIJPgFgE3uVZKMlBN+GA+VB63BmoVbb2EZJklbRIXb+gcS3KH+lWsF3AcDh0euJv0p8Nl3bixFBpc2il4lPJh5aTVlFAwCwK33WJ+i4h8vy+yFNWajmrJQ7c8JKqe9q7ONKAJiX5OofEta8QEWoCvVeRwgYnqHP/CkdZ6nPLusf6PwBvf435060WdRoACgz9/1qkQhKXO8pzSb4HUrwdyG+ySatajR1vGgAx2xbR/yVZ+swdyr5MbcRT1O/u4d4AvGvVR6hnMYsOOd0LWeeK4VNEwJAh4SCj5HP6FO+TUEvHHR8Q2mtXNYF3yJ/PeLznFqXvImRkgKAtaHVtXzFZnBDhCwOshntMfJ9nP1dIr9bKZrgQRGUsIxxKSC87VsQn+6AuqNRAKDj0fozS/lwmQaAIyxDiU8TezTulbKSCdQWM4i5fGGqEtB8jOZOOQAwAN9D/DMr9HIcJ1WjT4U4wqZCWcX9xJ8rVWDYAA1QEgASPcseABwTYUNO0BC/ElKslgjFqQEcgWDtdWmdEapaAHCuCM27lAnJ53KVEqDrxIH8pco3VMwfqL8/QHyQEnodzgUAaozsfMpGLeqN7NToNHLY8EO1gECbBGwvi/O5JKZ4fk0AUIWAOup0MJ3bC8rx/iMdjyS+t4Sglwqb2ucy1ZZVMODkOy4HAKLZxnZ1+hTx352anEYIft2JsBBnfV/ih5zITtCga3AB0FmigWY9yZhbf+RZOs+fS7Xsc46/FbWs4myYQNFDmtZE2F0iFEGDTIQoANgrCgBCrmUPWUWDBmuvMACcp4WnjLm5jazWq0SAWDNMJD6feLG6L0FEIDB4DhKtAgCE2cYiOB+XWpeVDTYRYtEAjhBtzk4ncXfCDm5NPkDEZNwHnKrZ8WwqqZW80uIUlHt+LQ0A50ZvKBGIIIHkTywA4IxiKQDYqkl5vRHH1VXdThquxd5X9j1GqDqp9oim6Oec7PpY4u/Jyl6xrKJU7ZH6n9ktBQAl+F3EXyJ+3FklgxQIi7Z1Hwq7eY79zNfyZeInkg7P1nldr3IfQZQ6GQ0EWbAOIf6XEirOJxytAxTVgD1EA3Q1PQBUM8cXiR8OSaykQfCNFKBZU+wMJ56dc8yd4VK3U1NjSoO1mQX1LOK9ozS/ONc6TBKQ1rS7T3IHvxZtUI3PZt/ztIoUdVRTX5QpACjHcKxeMVJk7rydEFJCbAVlsOvgqtdjHKeuYNJNrjny3ajN8Q4Q2Lm/W+UI5hL/lvgGR4MGEU3MOXTYLWq1aeYAoG7cobZ2Iy2CLyD8t/z4pBKQO5yVyWqAdWXVez5CxjSVpEw0IwMBDlHXV3IVDslm763Cu3lJVp5ns8lRIkbqfnPU6UzuP9C5iswDQH+pTaykTGD66XwWKuF4QQR8iKxGneqBH6xs3iAFPkudOFjr/FmQd3InZ0RI8K0nmWNLy4mvZtNRzMigUuY+JJE22vFD2kvUAh2bBQBY4dkqBbZ+WJjO3nR28L7NK7wbKZEQ7S263Drl5o52SMsC1dEGvApfRrxtFUDQ+ZsxqrJ0gfQfnKWzzBGfRyDTKg5xyipyWdQAbXKyW6oTDVJkAnAp7YVK2NeEaOl965tifX7o6JQUr+pGXVufc93lgGCvrVdKpderZJeH9GbsSPxX9ZzZLxilTKUg4vOxAvyw47B32mw2/e2HmdIAHkyfoEzxFj/sK81AnU+7tflF8E/nsGFKw5qVVn12Sg+XUgZe0a+l169FcNYDp+TkGVNsL9X+QTlt0OW0pT6vWjIfrGORYkCOVd9lC+zuK2NSAwBl0vPceHKoFny1gh2m1HgW7Hwd2VkuTS83Ez+ihOcB8b9m0/W8WUOVJ0+J+FjYil8hWtQhIOyvVfM7z41zRmcSby2fPwkAKE2rVO1KvxIQjllvqkqDdX3+/R6qTuvRbvb8VktY8lbl0C+X+UHzlTBxuPFnduWMUJhXcMxWrvLcLKJZpCNnu6lzDSI45JWm2S2SvulbAYDS1K36B4zUum+iVHmXmrdzgXQ3ZSKer89RHMxfEU9W/bFsAu2pnPlzVPPLa9IDMDpqyYZzTxZLlGcd12cq8+zf4/QX1DKyxZ1m160ScgEAEL5qFWRl3F+p7sHyuk3S+T0prEGKsuovE5Ngii1YE+E+S0WydJRmcwHKMpXzmCbcHXFaXt4BwmfChni5IXBeeCoAoFsAvDJiw1OkGaitAoBAhTFfUqvFnXTYr0QCZz+xa7Pi4Go13y0jTi4yxdoje948PGv9sGSWc+08IvIOde8uF4f1KrUY5COYRfbv3LPxKbc+ygFAJQ3Aq/oMMc/GOWAr56cEUQCg7ktzagDHJOBV8Efq+7tU1GB7Ud89lcKCKV39WYgukdXS0vPW3CkXqXEzqzJcd5Hyly6XuPo9UZpfHG0RSNnIZs60tqgAWKV6k+8Vx3lmnaZoSwBAq8JXZAXZQNm+VvDfS++7RpkKWSpfsEJwu0R3epTgn6TMnUhjC50q1qG8WYYCAh9/TPx9Z3hW1C4wFuTj9FZTFQBgX+9Hn3G8PMNAwqZzJMrzkhLmahasQJ3TFt7mjyYEgMAJrfFsoI3ceL7Eo090No7IZ2DVL6iHzmHLx+VoS8avUE5oW41T1bR/MEQWD6OmPByli9sqLRoOUDjpdbj6/M1KAMC+fzfVG3KdU0x3ocwgMlHKKkJ8FmO74XTUL6sAcMsXeBX8mhPPt9/3aV23kyHBL6iZO3lHy/Fsz8PDGldimrB3pCS/LPBmik0+yxGqIIKTboHA+zFs6OQfSgGgXQ08u1ENt+L//QdrcZvQi+ADuO85qZF7oyUBgLyy8183xQbuwcrOz6lS3Znq4rMg+IHTTD5LVuFVai7nEcqka495F5ecan5hPket2EsksjTKbsgR4b4WHLPoBtVaGQaAj5fwHXaysX4hjnh9zSbAqjSHCtLOuV3Y4ILUAsBJifdLg/YHVKbxXWqM+EzdWpmB+nx31eRJDHOkbEDP2vmIW5bdgFZVXrkvUiv3y1x7w6NdbP6gSrOonH/zcUdWdLVpp/gHfSpiNEWc9e6IQAic2q+L1Xe1JTpBug4AuJ1ikxR61ypf4OiFGu1XyIiDqwG61BQLyBYrh/QByXa2N2y1GlgZ29QqvLVa+ZmmS9j0Mjlvd5GqVKBXEQAlhiZsLi2YC1XEaHkVmsA1nxc4VkQy97cGALjqdb6q22mzgi835rO6fCEjgh+4q75EP5apBNNolbzp8BG9cHbTZP68RGasWXOz5BBm6/3WatyAZPdyPcqOw76VTNZbGdEPKAsEyaQf7Q448AGAwBmF0i2DY9uUnd+uogpXZKhM+R1tgnTOf1bOpZ1u/We1GUei5k4d+ykfosoq2BQ6T3IK02vo8Xad4M4q6otGlhmNHvW7+9XPo50Meq6RANCqiW20/yMeFhLP30p2M+zOcDsiC81MHjWibOmFavhWrqFRitrCppua4tQ36yjPFTP0p7b+KuKzsc/8XilLWafS5hsCSFvH9bsy/QC1VJu+ItfQlbQGCJsBtEQE45MhjlCH2Gt9GTV3jGy19KA0eCxX5RujnN7jVA9w1cIpO7DMVM/ifokgXaac50JEJ9WIY3tAhKx2lJbIcoAruxsOh1uT6gjrU06RXvXvcfpRu5Sdf5SaHVRI8diRKJMP/qke2FVqg4m2LO1l5drKAoTnVP/BxTJKcbpTmFguWtSv67iUKVhuz4HjatAAhQp1TvY8PhJL9riCBuCOq887Dq69uJ3URLIgg3U7Rlb61Y7T+4iTzOrI6s4luvlFuuhOVv2/PVLTc6FatIIqzBG+d79RdTxt7p4DFXqCw8KxzziWgzu+RZdcbBcXAHLqZk0Qtf+IbHSxToiDO0TaEcP2r82K4Nsb+aINFbLfwgKRZjs/Jv9gsNQX2YhQj+Rubos6EcQBwmMSDOkI6eU4rQoNEEjk6mLVBxGUqLj9Ruw7TCogbKhir7qPdB1nBSlkzcEt08F0o9NJ1TFoUFNuXKhHwn+E+E8hzUlBlXkgPa1vhNMTfGaELZJWi+Bb/3GpVBLYAsqX7d5sZu0x8u1JToPu0OUL7PiGbIKRJTvfnusTKjLSI0mtrzSz4EcYnnV6BR8gqDRqXQl4j/hOO8hnj4s4FYJnF33IFIvqelV9EQ/x+pitfzLFitvBUfYfrucG6UFTI61qDMnUZSbCw2FMmS6XV7VKJ2jb1Usprn9HuTMiCCKVXTt/v8DmgiL0BL9bndcBqqQ8UNGq1XoeUiP2/Jqewbod45zzipDda7h46/1ZjO4kpA1sod0jJUDQ7Sweb0Uoioxa+uC2RFpAbmeK7aGPqMrbAxMxfbQQyOp/tsokvpWyaXGR5wxJPP9x9fNCJ4fRsoI/KMI2qepeLpDitkvUTNEow3XzUVsidU+wrnOSqONRKuSai90WVD8fJAVemXVwJTqx0AzssWsfxETlzHe0mrkTEQCTStjregOPyQKG1RHbMmtqig9x2HOxPjOn7W4rEZCsDpQtqBv5nDyoQDWUb5fITWwRDSDBjzHKnHxSGnN+pjP/NVgK7/ABSm1ykojDK4mRiy2as1i346z+b9oSBtEChyV+E5sYAEoW7lUWwksqm3wlh8WVnR6HBmjMAiW21awUbXZXq63frcKz1uwZ4xTqYdWvDwCz1ULCey+cqO75KplGN0FyCiurHK9vzadTKw3xivuif6OQnNX5+Tadb5MmdxlVtw4nNzYA3BMSHh9qins0LFbNLydJMkzX81TTEsklGRs3xE9TRV9ZFn597sd6aahuLQC0hWzV+kE9zkYlGydXKVvWAnlKequ7kuit1hedZcF360L+0VD12cIAKJNN3k4m/Vlic+hcNSHCRNwJyH7nDJWriX9Ry1BSKwoA5nkbqtSiAAgruxa/8ghVt9MjDnI1fcEFZ3+IsUobxJe0NE1AIRoAAGgwAErsSTZMdq1fEceeA+Jwn6h2w2mPowQaAADFBgDHLGpXe5KtqMPXdHNSXBV6SD3T9gAAUGIAKNETPCtiWDSIsEmg/TtXm25m21QBAAAgVQBwPvOrVTbEFCpNs1Pn9SP9XQAAAJA6AERoiQzU4LFXI9YX2ZDrJQAAAJB1AOihCxMkD7DE6S8IHBMpDwAAAM0CAFcTPCYVyfOdorxCyHM/pOb+AAAAlAIAaPPnFFMcxmDri6ZJoeZc+XuPmEgWCBPq6g8AAEBpAYDtCZZE2neNzGCV+qLbBRybSG7h7cSnbpoBAACAZgCA7gn+oCk259heg5ec/RBG1N0aCQCAUgaAoe6oRVPcMPFKxwcYHdcwLAAAlEYA5NytpUyx++wOab7ZOJbeYAAAlFYAlJpvGutECAAAlHYAlBjWlgMAAICWAkBSFx0AAKBWB4DeC6s/gzu5AAAAQM0X/WrWe4IBAACgnoueYAb2+1osFz81S4AAAACAei56A1NsXRumYqtbZckMAgAAgLg3yRsOAAAAraIBcorboAEAAGgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACDVAKDjsQAAAAANAAAAABkAwOUlADDbvo/vcUTulP8ZDQA0GQBEEJjbm4HpPr4rAQ1gZep+57MAgCwDoBm1DINAjlOc1VoL6MnE2xPvSjyiAu9CvCPx/sRL9WcBABkHAK+W9D2fIf4xvZ5Dx7/R8c4sM13D34nv9fDsAYCsAEDdo/HynQXTOhTIvQ6q5EKJlR8AyBIA1P3ZgbhXHmw/f38zsY9HCABkAwDWRp5YJqLRSsQLQEEBJ9A/O6CCBmgCANgw4c1lIhogaIDWAEALawC7mi+ie/8wHe8inkavX6TjE3J/mP9CPIN4KvESRIGaBwAzAIC3aTHxHcQ3EZ9HPJ34JeJfEh9AfDU9m+PpuJ8NrSIPAACAAAAAoIkEtyD3gV8vJz6D+Fbiv0pu4UvEY4lXwwQCAJrdJOonPpW4ywpxlaUQbwAAAEAzhEZ7iGcR76Xu2a9RDAcAtIIm6HfMHHaShxAfUeae2Wz6Aq09AAAAIMtAyCvBXiTRoVAfQD2/W7wWGgIAAEBCzyao8DZ7H38r97cTAAAAmq5kAgAAAEClAWIkkzwYPgAA0MqJsA0AAACgVQHwBvH6AAAA0KrOMtN4XXoOAAAArZZN5iTah7yAAAAAADwDoFdez5BJFW0NBQEAAAB4pG5T7BuwNNMMZIXbAQAAoFXKKIw90nP9Mx22bhgIAAAAIEVk7+0q4n0akiADACID4BYAoKEgWKlA0AEApFsDFNQcnED9HIXLvd+U+Xtgmj9L/CYd9k0UBABA5LEoU9M6FSLiGJJMgkDMoX0T8wkAgMgA+IJ21pxzeZQOs+n4Ah1fNcVRgw/ScW4ZfoD4EVH1c0Pefx+HCOn3/9afx0cey0j8Wrl2Q7k/WitlFQSBtFbunAgIAIDI92dXtSr1CRAs307n80c6PkT8DPFkU5yaMNXhKTI6hCcx7018EP3fz+m4uynOG+UIyI3yv9ebYr/tk8R/MsWe20uILyC+jt9PfCnxr4iPI54uYFkuq+ZagqQAkTXqVyHSdmm5zAEAHmaD0nd+UezSNK2oDMb5xFcLGC6RWf8MjjvofBcKKHT9zVsZNYd4EeiKFQQAQOT7lBMQbGmK48JPUnyC8CjiE9XPUbjc+09y/s6vv058EfGzYno97TjM1nmcL2C4jPjbxNfK73qdOHzazSM2fy6S5nmmG2N93gBAdf6Al4rF8ufUaYqz+Eea4nSGB1zhlpJjNiHG0esf0vG3ZmBqm0mxeWTP6evKB2P/5pjYIkMAQPWaQO0S44vX2MIuIOnnwcTbmuJmFWey3yEawQpTj+xtcL0420/Ze5nCSJI9l14B+Xhl9u0Uy3MHAAY1xS4vwh1ulEQ0BNvN+7AGUP6AkUjS2Wy6SQQrSiujl+fM0S+5nivkTxxw2LjuPgIAoCkBsWazOhXGzdnnTHyU+A+WnmWnWSJZS1PoKNvk49UOCC6ou1wCAGgJQOSUlrBAWJfNCOKrlGP8nPgRM9T9zafMHPo+8dbKKf5RXfkBAKAltYPd8tSCYVtVlsxx97/Q/b1GfIe0+AZ626X9xYcxMq16h5plAABoea3QoZxnziM8Lvf1eYkWTQ2pT/IdFeJzPFiiW0zTatYCAADIAcIGssmFFTjOWo9RznMhJabQCokG2d99tiY5AABA7ibg8vrbap9fLu+YQPyvlDjIBXUOBaWxqh+yCwCAwnwEeT2c8wRyvzl3cKQZqDPKp0QT6HP5XtUJMgAAVMYssg7z+dbhlKrUeSnNGHMUa1hVWgAAAFXQBjaPcL5abUdJwV2awqRurqAdAADFFS2yMnKqOJ+rOExaph/Bp0nUp3oH2gAAUGxFd3Lcje7966pG54kUysSkyFoAAABVAQI7s2c30QRsdlwc1iWXAl9g3Ui+AAAAqlETfNkJSS5Pg0mkiud+EEkLAACgOvqkx6ryiZtlxmda/IJ8JF8AAADVWUM2zgwMuC2krI/4nIp5AQAAVE8tkd4OVZ7JXKdEwads3AQNAGoUCObK83hMFan5MoX09+5VVj4AAFBMptA2Uo+jozGFFCTGzizrDAMAoBid4j1MOipG9YQMnpW0acmQKAAAinmG6vfsCqz6jAPPeYEvlNQCAAAoAXPo7/JsbvEMgLzIyjUlo0EAACgBU+hAp0guSMFWrJuEmkEAACghU2hMyqpFPxoqJwAAKKkKUnpGD8szetqjY2yTYqNDR6gAAKAETaGj5Bkt9WgGWQCMCfUDAABQwmCY6zk0ar93EaJAIB9a4EjPAAjUlOkPAACghvkBatLEPM8gsOHQ4wEAkA8tcL7PcSqqR+BOAADkQwsM99kwowAwBwAA+coO3+55qJYF3s4AAMhHYuxbnhNj1v/YFQAA+fADRqpVOPAIgD0BAJAPP6Ddjln0FA2ymmcCAADypQW+49EPsAD4PQAA8uUIb2v8d4gBACBvANhcbW0UeALAJAAA5DMaNM1TNAgaANTSALCO90MAAKgVAbCGAACQ9+pQj7JWAABAPgFwgO99xgAAkE8AfBoAAACgAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABRIAAAAIAGAAAAgKYFwLkAAADQygCY7rkWKAAAQD6L4W7yXA49GQAA+ewNvtuTCYR+AJD3jrD3G/8tkRMBAJAv+/8I428qREFvmwoAgHwA4CqPDjAGY4G82v5D6Zm95nEwlv3OEQAAyMfqP8pX/F99530Yjgvy5QDP9w0AjEcH+RL+3T1vmWp9jhMAAJAPAEzzWP5gAbeKeDsAANRo4d/L82bZBZGXF7BJHsgHAKamYXskopnYKR7UaOHf0/OeAFpORg3CPsGgBhe+3ZCSbZF6ibdoVg0wLxTZIN9x/6/7rvtX9v/DdOiECVRnRpNvIjRNJNNnK+J/ed4bWIc//1BykcwqANSNfZb4v43s/icbM7cnwG0KCABBOADsKnuFirxc71ETWA3wRa2dmgUArp23gm848YtxMn3uIuLFxA8Q/5jvU8mbCeHn45lqYRpBfIsnANgFkjXRpqHmTxMBoL8BqjaQB/kmHQ7UDx3Cv8bu/xjdn//I/dqfE08eM8DW/Dm2rI/YBADQN7iQFMu96ZPv4uM4aIK1hJ9X+6Vyf34iv5vhafW3i9XrdBhWcvVvMgA0UrVabfOZVo5AaX9IlTs8Kj+f6iv+r+R4esUACQBQFwg4vnxAK5pDjvBfq+Lt3PV1nKfGlyBS8gsAiNXJ6mF7t5VAwDKjTJ9r1T3hQMEw4pc8hUC1dl5APLSs+QMAxHLDAwHBp1UYNtfMNr+s/jkb4pQghD2u8mD6aJu/W353ciQfDQCIDQRrmUPNCAIV6tyCeIoj/GGrcKMBMEeidIvouH7F1R8AiB0EbPNeqMyEtiay9ztVqPP1MjZ+4En4F9LhfvndlZEjdABA7PkIpklqBWrPsjbQ589mhQp15lN035nHSzKU8xA7Ri6PAQASAwFnj7dXQtSWQUfXrvobEl+kBL+QsiqAp4mfihz5AQAaFodm5/h0ZUZ0pB0IIvgdSi4+T/yMsvdTJfxijt0gv5tVdXISAEjOL9AVq/T6w2muKrUrvjJ3eIzhZXINQYpMHjcMzbNGZ1YV+QEAGrpK5ZXpMFmZRVYjtHt2bjucFX8b4okSTUmbyeOaPkuIL7UjT+gwJFLkBwDwWj7BD+1so0b0KbNjTYw9YaFvd/MVrKHo5/+R6letwYKUmpkM0FPYKZfzHFlTbZYFAH3Ilmq1CiCziVBeLTK9UizGZQNdzhhBBkSXXZmFczWaNda06VTZW/s9nLX9JfGNZiCBVRA5SKsMWBmdRHyrgOF/a87EQwN4ixQFypF7lA7fMcUN5NrCVjGlJSo1/Nj3dJSp3NyX+GsSO9ehxP4Umjthdv/jtt6Ik191dQSq1WATleCABmiQf+CYGT0yQJYrK8+g18fQcSPirYnfXUP8fpgsbD8V84Z9kFedcoV8yld81+5/mfgw4ucEsDvHBYCh0sJmUr4KNGvYNB+igW3FKdM/TbHV8Drig01x3CAPnRopxz1Eg1xNn3ONKW5F1Ke0zTu+L2MLnTV9DqXz/6O8Pr3ungyYQOlr6rHNNzE+j34BQ16VbWSJbHJxIvEv5PXcWAoP4QRnAhSBck7zFbrX8o5ZEzRJUnGu9Br06Tn/dedToAFAWRh9Q/xRUwwhMx0XWzsqAABKs9Mr8f7hyu4/J3KXSu8AAAMiSURBVNY2VJhAoBQPOGAAHG8Gus645GFwrMlCaABQ+iyfNXJ4qCmWORtJenVWXepQRRi0SxIMBmFQkO+VXxze8arOpyuREZgKAJwqfwwAAPmMdvHqz2YP8c+VD7BXYjOYYAKB0hDtUbLHJSF/kNerzcDEjWSqZuEEg0w6+qnfHmJLh7Pk9yuU8Cc3eAwaAGQ8lzdI/RMXt11pBja0268hU/cAAJAnshndJ4k3NgOhztUNnbYHAIA8mDz9svI/yNMzzEBP72z6+RMNnbcKAIA8ObvnEv8XC70ZiPN3NXziNgAAavC4mOXE3yTeRfWf3CZ5qFzDJ20DAKAGZnYXSLTxDAWMb3idnYQwKKgBq35eBgFsawZGmLxCfLT3WarQAKCEypgLyuTZ2xQ72OzOkQ8Rb5aKadqqFIJDUcuaRANU0wgShPxP2OtKXM17m5K1k8v2PU9r4KgO/ThO7k8v/05Nq/C/vZQCwFCjZsIkOCQqqFAH8lbIPJq1/hbyvoL6uaDn2lRiZaMGbmbS7ad1ohjlVr2w4q6WqeEXM4cb+b9MvNIMzErdQa366ZiM52xunG+Ch9Arkw/6Ijpo/5EHt1z933KlDVdxppL4DbVR3hJJ2PTKA16i+njflJmgPfJ3+7ul8t5e9ffV8ruejPNqWXDm0HEnkaWb1X3mGT4bpXJattIAm/JDTsAEsp/F2+acbwam+BZU2vs5CYn9jvgy4ovVGG4j2cLx0hQ9QZhfXyB25e3y+iri03ilIT7dFKcoXKr+RzN/zyWmOGGBj4cT70g82hTr0PeXfYE/SLwP8fuId5bXu6jtdzYzxR0SeSLDcGcjiU35/+T1nmxmaruXeF21h21SG3w3ijvkOr6pwpt3y9SKXKr3S1AnPzbBbS37ZeXsNe/MDNoJCMvk5i1ztFGP/ZtmAUmfbIuzTLhbQNcd9j8hn9Enx175vxXyfUY2eZ6tVPiVdhoZ0SxTnLMzV871T6a4ZdA0GUkyTSauXSerYV42cLhe/W0WZ0Od/8siT5Ns7t1q0TtNzepM9x4JygzirW/uRU8AqA5Nf4PeoCKN+yj/P+XPJAbft1StAAAAAElFTkSuQmCC";
@@ -198,6 +198,7 @@ async function upsertProjectIndex(code, meta) {
   const list = (await idbGet("projects-index")) || [];
   const next = [{ code, ...meta, updatedAt: Date.now() }, ...list.filter(p => p.code !== code)];
   await idbSet("projects-index", next.slice(0, 100));
+  syncProjectMeta(code, meta);
 }
 async function removeFromProjectIndex(code) {
   const list = (await idbGet("projects-index")) || [];
@@ -329,6 +330,48 @@ function levelToMetersForRoom(level, room) {
     stairs: els.filter(e => e.type === "stair" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(s2 => stairToM(s2, toM)),
     luminarias: els.filter(e => e.type === "luminaria" && inPoly(e.x, e.y)).map(l => luminariaToM(l, toM)),
     rooms: [roomToM(poly, toM)],
+  };
+}
+
+// schema_version 1: all geometry in meters (plan X/Y + level elevation), ready
+// for the Revit add-in to consume directly (via exported file or straight
+// from Firestore) — no grid/pixel math needed downstream. Pure function so it
+// can run both from the export button and from persist() before a cloud sync.
+function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roofs }) {
+  return {
+    schema_version: 1,
+    projeto: { empresa: "BRAVES", codigo: code, nome: buildingInfo?.name || "", data: new Date().toISOString(), unidade: "metros" },
+    niveis: (levels || []).map(l => {
+      const m = levelToMeters(l);
+      return {
+        id: l.id, nome: l.name, cota_m: m.elevation, pe_direito_padrao_m: toNum(l.wallHeightDefault, 2.8),
+        paredes: m.walls.map(w => ({
+          id: w.id, tag: w.tag, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, altura_m: w.height,
+          tipo: w.wallType, condicao: w.condition,
+          acabamento_face_a: w.finishA, cor_face_a: w.paintColorA,
+          acabamento_face_b: w.finishB, cor_face_b: w.paintColorB,
+        })),
+        portas: m.doors.map(d => ({
+          id: d.id, tag: d.tag, parede_id: d.wallId, x: d.x, y: d.y,
+          largura_m: d.width, altura_m: d.height, folhas: d.panels, tipo: d.doorType, condicao: d.condition,
+        })),
+        janelas: m.windows.map(w => ({
+          id: w.id, tag: w.tag, parede_id: w.wallId, x: w.x, y: w.y,
+          largura_m: w.width, altura_m: w.height, peitoril_m: w.peitoril, folhas: w.panels, tipo: w.windowType, condicao: w.condition,
+        })),
+        escadas: m.stairs.map(s => ({
+          id: s.id, tag: s.tag, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, largura_m: s.width,
+          nivel_destino_id: s.toLevelId, tem_patamar: s.hasLanding, posicao_patamar: s.landingPos, altura_patamar_m: s.landingHeight,
+        })),
+        luminarias: m.luminarias.map(lm => ({ id: lm.id, tag: lm.tag, x: lm.x, y: lm.y })),
+        ambientes_croqui: m.rooms.map(r => ({
+          id: r.id, ambiente_id: r.roomId, nome: r.name, area_m2: r.area,
+          pontos: r.points, acabamento_piso: r.floorFinish, cor_piso: r.floorColor, acabamento_forro: r.ceilingFinish,
+        })),
+      };
+    }),
+    coberturas: roofs || [],
+    ambientes: (rooms || []).map(r => ({ id: r.id, nome: r.name, nivel: r.level, area_m2: r.area, uso: r.use, condicao: r.condition, observacoes: r.notes, geo: r.geo, fotos: r.photos, pisos: r.floors })),
   };
 }
 
@@ -2168,7 +2211,11 @@ export default function PranchetaBIM() {
     await idbSet(`project:${session.code}`, payload);
     upsertProjectIndex(session.code, { name: payload.buildingInfo?.name || "Sem nome", address: composeAddress(payload.buildingInfo), roomsCount: (payload.rooms || []).length, levelsCount: (payload.levels || []).length });
     if (navigator.onLine) {
-      const ok = await safeSet(`bim-project:${session.code}:data`, JSON.stringify(payload), true);
+      // schema_json rides along in the same synced document so the Revit
+      // add-in can fetch a project by name/code straight from Firestore —
+      // same meters-based shape as the manual "Exportar JSON" button.
+      const cloudPayload = { ...payload, schema_json: JSON.stringify(buildLevantamentoSchema({ code: session.code, buildingInfo: payload.buildingInfo, rooms: payload.rooms, levels: payload.levels, roofs: payload.roofs })) };
+      const ok = await safeSet(`bim-project:${session.code}:data`, JSON.stringify(cloudPayload), true);
       setPending(p => (ok ? 0 : p + 1));
     } else {
       setPending(p => p + 1);
@@ -2301,43 +2348,7 @@ export default function PranchetaBIM() {
     setTimeout(() => { pushLog("Sincronização concluída — modelo Revit e desenho CAD atualizados.", "done"); setSyncing(false); }, delay);
   }
   function buildSchema() {
-    // schema_version 1: all geometry in meters (plan X/Y + level elevation),
-    // ready for the Revit add-in to consume directly — no grid/pixel math needed downstream.
-    return {
-      schema_version: 1,
-      projeto: { empresa: "BRAVES", codigo: session?.code, nome: buildingInfo?.name || "", data: new Date().toISOString(), unidade: "metros" },
-      niveis: levels.map(l => {
-        const m = levelToMeters(l);
-        return {
-          id: l.id, nome: l.name, cota_m: m.elevation, pe_direito_padrao_m: toNum(l.wallHeightDefault, 2.8),
-          paredes: m.walls.map(w => ({
-            id: w.id, tag: w.tag, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, altura_m: w.height,
-            tipo: w.wallType, condicao: w.condition,
-            acabamento_face_a: w.finishA, cor_face_a: w.paintColorA,
-            acabamento_face_b: w.finishB, cor_face_b: w.paintColorB,
-          })),
-          portas: m.doors.map(d => ({
-            id: d.id, tag: d.tag, parede_id: d.wallId, x: d.x, y: d.y,
-            largura_m: d.width, altura_m: d.height, folhas: d.panels, tipo: d.doorType, condicao: d.condition,
-          })),
-          janelas: m.windows.map(w => ({
-            id: w.id, tag: w.tag, parede_id: w.wallId, x: w.x, y: w.y,
-            largura_m: w.width, altura_m: w.height, peitoril_m: w.peitoril, folhas: w.panels, tipo: w.windowType, condicao: w.condition,
-          })),
-          escadas: m.stairs.map(s => ({
-            id: s.id, tag: s.tag, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, largura_m: s.width,
-            nivel_destino_id: s.toLevelId, tem_patamar: s.hasLanding, posicao_patamar: s.landingPos, altura_patamar_m: s.landingHeight,
-          })),
-          luminarias: m.luminarias.map(lm => ({ id: lm.id, tag: lm.tag, x: lm.x, y: lm.y })),
-          ambientes_croqui: m.rooms.map(r => ({
-            id: r.id, ambiente_id: r.roomId, nome: r.name, area_m2: r.area,
-            pontos: r.points, acabamento_piso: r.floorFinish, cor_piso: r.floorColor, acabamento_forro: r.ceilingFinish,
-          })),
-        };
-      }),
-      coberturas: roofs,
-      ambientes: rooms.map(r => ({ id: r.id, nome: r.name, nivel: r.level, area_m2: r.area, uso: r.use, condicao: r.condition, observacoes: r.notes, geo: r.geo, fotos: r.photos, pisos: r.floors })),
-    };
+    return buildLevantamentoSchema({ code: session?.code, buildingInfo, rooms, levels, roofs });
   }
   function download(filename, content, type) {
     const blob = new Blob([content], { type });

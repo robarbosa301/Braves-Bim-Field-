@@ -67,3 +67,14 @@ export async function safeDelete(key, shared) {
     return true;
   } catch (e) { return false; }
 }
+
+// Structured (non-JSON-blob) project metadata, one doc per project code, so
+// external tools — the Revit add-in in particular — can list/search projects
+// by name via Firestore's REST API without having to parse the `kv` blobs.
+export async function syncProjectMeta(code, meta) {
+  try {
+    if (!firebaseEnabled || !code) return false;
+    await setDoc(doc(collection(db, "projects"), code), { ...meta, code, updatedAt: serverTimestamp() });
+    return true;
+  } catch (e) { return false; }
+}
