@@ -76,16 +76,16 @@ namespace BravesBimFieldImporter
 
         public Result OnShutdown(UIControlledApplication application) => Result.Succeeded;
 
-        private static void ShowIconDiagnostics(params BitmapImage[] images)
+        private static void ShowIconDiagnostics(params System.Windows.Media.ImageSource[] images)
         {
             string[] labels = { "cloud LargeImage (128)", "cloud Image (64)", "import LargeImage (128)", "import Image (64)" };
             var lines = new System.Collections.Generic.List<string>();
             for (int i = 0; i < images.Length; i++)
             {
-                BitmapImage img = images[i];
-                lines.Add(img == null
+                var bmp = images[i] as BitmapSource;
+                lines.Add(bmp == null
                     ? $"{labels[i]}: NULL (recurso não encontrado)"
-                    : $"{labels[i]}: OK — {img.PixelWidth}x{img.PixelHeight}");
+                    : $"{labels[i]}: OK — {bmp.PixelWidth}x{bmp.PixelHeight}");
             }
 
             string[] allResources = Assembly.GetExecutingAssembly().GetManifestResourceNames();
