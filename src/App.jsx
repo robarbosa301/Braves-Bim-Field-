@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import * as THREE from "three";
 import {
-  MapPin, LayoutGrid, Grid3x3, Camera, RefreshCw, Wifi, WifiOff, Plus, X, Trash2, RotateCcw,
-  CheckCircle2, DoorClosed, RectangleHorizontal, Building2,
+  MapPin, LayoutGrid, Grid3x3, Grid2x2, Camera, RefreshCw, Wifi, WifiOff, Plus, X, Trash2, RotateCcw,
+  CheckCircle2, DoorClosed, RectangleHorizontal, BrickWall, Building2,
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
-  Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, SlidersHorizontal, Box, Home, ZoomIn, ZoomOut, Maximize2,
+  Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, Box, Home, ZoomIn, ZoomOut, Maximize2,
   MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Blinds
 } from "lucide-react";
 
@@ -1358,7 +1358,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
 
   const PISO_TOOLS = [
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
-    { id: "parede", label: "Parede", Icon: RectangleHorizontal },
+    { id: "parede", label: "Parede", Icon: BrickWall },
     { id: "ambiente", label: "Ambiente", Icon: LayoutPanelTop },
     { id: "porta", label: "Porta", Icon: DoorClosed },
     { id: "janela", label: "Janela", Icon: Blinds },
@@ -1402,8 +1402,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         </div>
       </div>
       {planMode === "piso" && (
-        <div className="flex flex-wrap items-center gap-3 mb-2 text-[10px]" style={{ color: C.mute }}>
-          <span className="flex items-center gap-1"><SlidersHorizontal size={11} /> 1 quadro =
+        <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
+          <span className="flex items-center gap-1" title="1 quadro ="><Grid2x2 size={12} /> =
             <input type="text" inputMode="decimal" value={scale} onChange={e => onMeta({ sketchScale: e.target.value })}
               className="w-12 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
           </span>
