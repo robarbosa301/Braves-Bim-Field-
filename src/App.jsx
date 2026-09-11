@@ -176,6 +176,8 @@ const toNum = (v, fallback = 0) => {
 const genCode = () => Math.random().toString(36).slice(2, 6).toUpperCase();
 
 const WALL_TYPES = ["Alvenaria 15cm", "Alvenaria 20cm", "Concreto", "Drywall", "Vidro"];
+const WALL_THICKNESS_M = { "Alvenaria 15cm": 0.15, "Alvenaria 20cm": 0.20, "Concreto": 0.20, "Drywall": 0.10, "Vidro": 0.10 };
+function wallThicknessM(wallType) { return WALL_THICKNESS_M[wallType] ?? 0.15; }
 const FINISH_TYPES = ["A definir", "Pintura", "Reboco sem pintura", "Sem reboco (aparente)", "Revestimento cerâmico", "Textura acrílica"];
 const DOOR_TYPES = ["Madeira maciça", "Madeira semi-oca", "Alumínio", "Vidro temperado", "Correr — alumínio", "Correr — vidro", "Pivotante", "Sanfonada", "Camarão", "Blindada"];
 const WINDOW_TYPES = ["Alumínio de correr", "Vidro de correr", "Basculante", "Maxim-ar", "Vidro fixo", "Guilhotina", "Veneziana", "Pivotante"];
@@ -868,11 +870,13 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   const [editingDim, setEditingDim] = useState(null);
   const [editingWallLen, setEditingWallLen] = useState(null);
   const [editingLumDim, setEditingLumDim] = useState(null);
+  const [editingParallelDim, setEditingParallelDim] = useState(null);
   const [dragSession, setDragSession] = useState(null);
   const [splittingWall, setSplittingWall] = useState(null);
   const pinch = useRef(null);
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
+  const dimColor = level.dimColor || "#4A4A46";
   const elements = level.sketchElements || [];
   const wallsById = {};
   elements.filter(e => e.type === "wall").forEach(w => { wallsById[w.id] = w; });
@@ -905,7 +909,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
     };
-  }, [tool, planMode, editingDim, editingWallLen, namingId, showBelow, showAbove, belowLevel, aboveLevel]);
+  }, [tool, planMode, editingDim, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel]);
 
   const viewBox = vb || { x: 0, y: 0, w: dims.w, h: dims.h };
 
@@ -1307,6 +1311,32 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     setEditingWallLen(null);
   }
 
+  // Editing a face-to-face dimension moves the currently selected wall
+  // (rigid translation along its own perpendicular) so the gap to the
+  // other, fixed wall in the pair becomes the entered value — the other
+  // wall never moves.
+  function applyParallelDimEdit() {
+    if (!editingParallelDim) return;
+    const { movingWallId, fixedWallId, value } = editingParallelDim;
+    const moving = wallsById[movingWallId];
+    const fixed = wallsById[fixedWallId];
+    if (!moving || !fixed) { setEditingParallelDim(null); return; }
+    const dx = moving.x2 - moving.x1, dy = moving.y2 - moving.y1, len = Math.hypot(dx, dy) || 1;
+    const nx = -(dy / len), ny = dx / len;
+    const fmx = (fixed.x1 + fixed.x2) / 2, fmy = (fixed.y1 + fixed.y2) / 2;
+    const signedDistPx = (fmx - moving.x1) * nx + (fmy - moving.y1) * ny;
+    const dirSign = signedDistPx >= 0 ? 1 : -1;
+    const halfSumM = wallThicknessM(moving.wallType) / 2 + wallThicknessM(fixed.wallType) / 2;
+    const newCenterM = Math.max(0.02, toNum(value, 0) + halfSumM);
+    const newCenterPx = (newCenterM / scale) * GRID;
+    const k = signedDistPx - dirSign * newCenterPx;
+    const tx = k * nx, ty = k * ny;
+    commitElements(elements.map(e => e.id === moving.id
+      ? { ...e, x1: e.x1 + tx, y1: e.y1 + ty, x2: e.x2 + tx, y2: e.y2 + ty }
+      : e));
+    setEditingParallelDim(null);
+  }
+
   function luminariaDimensions(lm) {
     const walls = elements.filter(e => e.type === "wall");
     const lums = elements.filter(e => e.type === "luminaria" && e.id !== lm.id);
@@ -1510,6 +1540,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               <input type="text" inputMode="decimal" value={wallHeightDefault} onChange={e => onMeta({ wallHeightDefault: e.target.value })}
                 className="w-14 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
             </span>
+            <input type="color" title="Cor das cotas entre paredes" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
+              className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
             {(belowLevel || aboveLevel) && (
               <span className="flex items-center gap-2">
                 {belowLevel && (
@@ -1570,6 +1602,17 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           <span className="text-[10px]" style={{ color: C.mute }}>estica/encolhe a partir do início da parede</span>
           <button onClick={applyWallLenEdit} className="text-[11px] px-2 py-1 rounded ml-auto" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
           <button onClick={() => setEditingWallLen(null)} className="text-[11px] px-1.5" style={{ color: C.mute }}><X size={13} /></button>
+        </div>
+      )}
+      {editingParallelDim && (
+        <div className="flex items-center gap-2 mb-2 p-2 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Distância face a face (m):</span>
+          <input autoFocus type="text" inputMode="decimal" value={editingParallelDim.value} onChange={e => setEditingParallelDim({ ...editingParallelDim, value: e.target.value })}
+            onKeyDown={e => e.key === "Enter" && applyParallelDimEdit()}
+            className="w-20 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
+          <span className="text-[10px]" style={{ color: C.mute }}>move a parede selecionada até essa distância</span>
+          <button onClick={applyParallelDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+          <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1.5" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
 
@@ -1643,14 +1686,27 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
           const nx = -(dy / len), ny = dx / len;
           const midX = (d.x1 + d.x2) / 2, midY = (d.y1 + d.y2) / 2;
-          const distM = pxToMeters(d.distPx);
+          const wallA = wallsById[d.aId], wallB = wallsById[d.bId];
+          const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
+          const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
+          const movingWallId = selectedId === d.aId ? d.aId : selectedId === d.bId ? d.bId : null;
+          const editable = tool === "selecionar" && movingWallId;
+          const isEditing = editingParallelDim && editingParallelDim.movingWallId === movingWallId
+            && editingParallelDim.fixedWallId === (movingWallId === d.aId ? d.bId : d.aId);
+          const startEdit = () => setEditingParallelDim({ movingWallId, fixedWallId: movingWallId === d.aId ? d.bId : d.aId, value: faceDistM });
           return (
-            <g key={`pw-${d.aId}-${d.bId}`} opacity="0.85" pointerEvents="none">
-              <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke="#8A8880" strokeWidth="0.75" strokeDasharray="4,3" />
-              <line x1={d.x1 - nx * 4} y1={d.y1 - ny * 4} x2={d.x1 + nx * 4} y2={d.y1 + ny * 4} stroke="#8A8880" strokeWidth="0.75" />
-              <line x1={d.x2 - nx * 4} y1={d.y2 - ny * 4} x2={d.x2 + nx * 4} y2={d.y2 + ny * 4} stroke="#8A8880" strokeWidth="0.75" />
-              <rect x={midX - 15} y={midY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" />
-              <text x={midX} y={midY + 1} fontSize="8" fill="#4A4A46" textAnchor="middle" fontWeight="600">{distM} m</text>
+            <g key={`pw-${d.aId}-${d.bId}`} opacity="0.9">
+              <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={d.x1 - nx * 4} y1={d.y1 - ny * 4} x2={d.x1 + nx * 4} y2={d.y1 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={d.x2 - nx * 4} y1={d.y2 - ny * 4} x2={d.x2 + nx * 4} y2={d.y2 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              {editable && (
+                <rect x={midX - 15} y={midY - 7} width="30" height="10" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
+                  style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); startEdit(); }} />
+              )}
+              <rect x={midX - 15} y={midY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
+              <text x={midX} y={midY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
+                style={editable ? { cursor: "pointer" } : undefined}
+                onClick={editable ? (e => { e.stopPropagation(); startEdit(); }) : undefined}>{faceDistM} m</text>
             </g>
           );
         })}
