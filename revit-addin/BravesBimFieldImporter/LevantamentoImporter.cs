@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.DB.Structure;
@@ -41,8 +43,17 @@ namespace BravesBimFieldImporter
                         .GroupBy(w => w.Name, StringComparer.OrdinalIgnoreCase)
                         .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
-                    FamilySymbol doorSymbol = FindOrActivateSymbol(doc, BuiltInCategory.OST_Doors);
-                    FamilySymbol windowSymbol = FindOrActivateSymbol(doc, BuiltInCategory.OST_Windows);
+                    // Cache every loaded door/window type once — each opening below picks
+                    // whichever of these best matches its own "tipo"/"folhas" (e.g. a
+                    // "Correr — alumínio" door with folhas=4 favors a loaded type whose
+                    // family/type name mentions "correr" and "4 folhas"), instead of the
+                    // previous behavior of using just the first loaded type for everything.
+                    List<FamilySymbol> doorSymbols = new FilteredElementCollector(doc)
+                        .OfClass(typeof(FamilySymbol)).OfCategory(BuiltInCategory.OST_Doors)
+                        .Cast<FamilySymbol>().ToList();
+                    List<FamilySymbol> windowSymbols = new FilteredElementCollector(doc)
+                        .OfClass(typeof(FamilySymbol)).OfCategory(BuiltInCategory.OST_Windows)
+                        .Cast<FamilySymbol>().ToList();
 
                     // Pass 1: walls (so pass 2 has a host wall to place doors/windows on).
                     var wallIdByParedeId = new Dictionary<string, ElementId>();
@@ -77,6 +88,7 @@ namespace BravesBimFieldImporter
 
                         foreach (PortaInfo porta in nivel.portas ?? new List<PortaInfo>())
                         {
+                            FamilySymbol doorSymbol = PickBestSymbol(doorSymbols, porta.tipo, porta.folhas);
                             if (doorSymbol == null || !wallIdByParedeId.TryGetValue(porta.parede_id, out ElementId hostId)) continue;
                             Wall host = doc.GetElement(hostId) as Wall;
                             XYZ pos = new XYZ(MetersToFeet(porta.x), MetersToFeet(porta.y), level.Elevation);
@@ -84,21 +96,22 @@ namespace BravesBimFieldImporter
                             // resolve for your Revit API version, drop `level` — the 4-arg host overload
                             // (location, symbol, host, structuralType) hosts it on the wall just as well.
                             FamilyInstance inst = doc.Create.NewFamilyInstance(pos, doorSymbol, host, level, StructuralType.NonStructural);
-                            TrySetDimension(inst, "Height", porta.altura_m);
-                            TrySetDimension(inst, "Width", porta.largura_m);
+                            TrySetDimension(inst, new[] { "Height", "Altura", "Altura da porta" }, porta.altura_m);
+                            TrySetDimension(inst, new[] { "Width", "Largura", "Largura da porta" }, porta.largura_m);
                             SetMark(inst, porta.tag);
                             result.Portas++;
                         }
 
                         foreach (JanelaInfo janela in nivel.janelas ?? new List<JanelaInfo>())
                         {
+                            FamilySymbol windowSymbol = PickBestSymbol(windowSymbols, janela.tipo, janela.folhas);
                             if (windowSymbol == null || !wallIdByParedeId.TryGetValue(janela.parede_id, out ElementId hostId)) continue;
                             Wall host = doc.GetElement(hostId) as Wall;
                             double sillFeet = MetersToFeet(janela.peitoril_m);
                             XYZ pos = new XYZ(MetersToFeet(janela.x), MetersToFeet(janela.y), level.Elevation + sillFeet);
                             FamilyInstance inst = doc.Create.NewFamilyInstance(pos, windowSymbol, host, level, StructuralType.NonStructural);
-                            TrySetDimension(inst, "Height", janela.altura_m);
-                            TrySetDimension(inst, "Width", janela.largura_m);
+                            TrySetDimension(inst, new[] { "Height", "Altura", "Altura da janela" }, janela.altura_m);
+                            TrySetDimension(inst, new[] { "Width", "Largura", "Largura da janela" }, janela.largura_m);
                             SetMark(inst, janela.tag);
                             result.Janelas++;
                         }
@@ -164,26 +177,81 @@ namespace BravesBimFieldImporter
             return result;
         }
 
-        private static FamilySymbol FindOrActivateSymbol(Document doc, BuiltInCategory category)
+        // Picks whichever loaded family/type best matches the surveyed opening's
+        // "tipo" (e.g. "Correr — alumínio") and panel count ("folhas"), by keyword
+        // overlap against the family+type name. This is necessarily best-effort:
+        // the add-in can't invent a 4-panel sliding door family that isn't loaded
+        // in the target Revit project. For reliable matches, load (or rename) door/
+        // window types in your template so their names mention the opening style
+        // (e.g. "correr") and panel count (e.g. "4 folhas") — same idea as the
+        // exact-name matching already used for wall types.
+        private static FamilySymbol PickBestSymbol(List<FamilySymbol> symbols, string tipo, int folhas)
         {
-            FamilySymbol symbol = new FilteredElementCollector(doc)
-                .OfClass(typeof(FamilySymbol))
-                .OfCategory(category)
-                .Cast<FamilySymbol>()
-                .FirstOrDefault();
+            if (symbols.Count == 0) return null;
 
-            if (symbol != null && !symbol.IsActive)
-                symbol.Activate();
+            FamilySymbol best = symbols[0];
+            if (symbols.Count > 1)
+            {
+                string[] keywords = ExtractKeywords(tipo);
+                int bestScore = 0;
+                foreach (FamilySymbol sym in symbols)
+                {
+                    string name = NormalizeForMatch(sym.Family.Name + " " + sym.Name);
+                    int score = keywords.Count(kw => name.Contains(kw)) * 2;
+                    if (folhas > 0 && name.Contains("folha") && name.Contains(folhas.ToString(CultureInfo.InvariantCulture)))
+                        score += 3;
+                    if (score > bestScore) { bestScore = score; best = sym; }
+                }
+            }
 
-            return symbol;
+            if (!best.IsActive) best.Activate();
+            return best;
         }
 
-        private static void TrySetDimension(FamilyInstance inst, string paramName, double meters)
+        private static string[] ExtractKeywords(string tipo)
+        {
+            if (string.IsNullOrWhiteSpace(tipo)) return Array.Empty<string>();
+            return NormalizeForMatch(tipo)
+                .Split(new[] { ' ', '-', '(', ')', '/', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(w => w.Length >= 4)
+                .ToArray();
+        }
+
+        // Lowercases and strips accents (á->a, í->i, ç->c, ã->a, ê->e, ...) so
+        // matching doesn't depend on the loaded family's names using the exact
+        // same diacritics as the app's own "tipo" strings.
+        private static string NormalizeForMatch(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            string decomposed = s.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder(decomposed.Length);
+            foreach (char c in decomposed)
+                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                    sb.Append(c);
+            return sb.ToString().ToLowerInvariant();
+        }
+
+        // Door/window width/height are usually Type parameters (shared by every
+        // instance of that type), not Instance ones, and Brazilian templates often
+        // use Portuguese names — so try each candidate name against both the
+        // instance and, failing that, its type/symbol before giving up.
+        private static void TrySetDimension(FamilyInstance inst, string[] candidateNames, double meters)
         {
             if (meters <= 0) return;
-            Parameter p = inst.LookupParameter(paramName);
-            if (p != null && !p.IsReadOnly)
-                p.Set(MetersToFeet(meters));
+            double feet = MetersToFeet(meters);
+
+            foreach (string name in candidateNames)
+            {
+                Parameter p = inst.LookupParameter(name);
+                if (p != null && !p.IsReadOnly) { p.Set(feet); return; }
+            }
+
+            FamilySymbol symbol = inst.Symbol;
+            foreach (string name in candidateNames)
+            {
+                Parameter p = symbol?.LookupParameter(name);
+                if (p != null && !p.IsReadOnly) { p.Set(feet); return; }
+            }
         }
 
         private static void SetMark(Element el, string tag)

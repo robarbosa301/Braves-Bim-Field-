@@ -122,3 +122,30 @@ baterem, ele usa o tipo padrão do projeto. Para ter tipos de parede corretos
 automaticamente, crie no seu template Revit tipos de parede com esses nomes
 exatos (a lista completa usada pelo app está em `WALL_TYPES` no arquivo
 `src/App.jsx` do repositório principal).
+
+### Portas e janelas — tipo (correr, pivotante...) e número de folhas
+
+O add-in **não modela a geometria da porta/janela** — ele só escolhe, entre as
+famílias de porta/janela **já carregadas no seu projeto Revit**, a que parecer
+mais parecida com o que foi levantado no app, comparando o nome da família/tipo
+com o campo `tipo` (ex: `"Correr — alumínio"`) e o número de `folhas` (ex: `4`).
+Se o seu projeto só tiver uma porta genérica de 1 folha carregada, é essa que
+vai ser usada mesmo que o levantamento diga "4 folhas" — o Revit não sabe criar
+uma família de 4 folhas do nada.
+
+Para o casamento funcionar (e a porta/janela sair com o número de folhas certo):
+
+1. Carregue no projeto Revit as famílias de porta/janela que você realmente
+   usa (inclusive as de correr com múltiplas folhas — o próprio Revit tem
+   famílias como `Porta de Correr - 4 Folhas` na biblioteca padrão).
+2. Nomeie os **tipos** dessas famílias de um jeito que inclua a palavra-chave
+   do estilo (ex: "correr", "pivotante", "sanfonada", "basculante") e, quando
+   for o caso, a palavra "folhas" junto do número (ex: `"Correr 4 folhas"`).
+3. O add-in escolhe o tipo carregado com mais palavras em comum com o `tipo`
+   do levantamento (ignorando acentos/maiúsculas) — quanto mais parecido o
+   nome, melhor o casamento.
+
+Já a **largura e altura** de cada porta/janela são sempre ajustadas para bater
+com o que foi medido no app (tentando os parâmetros `Height`/`Width` e também
+`Altura`/`Largura`, seja como parâmetro de instância ou de tipo) — isso
+funciona independente do casamento de família ter sido perfeito ou não.
