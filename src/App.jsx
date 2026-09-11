@@ -1006,6 +1006,11 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   }
   function onTouchStartCanvas(e) {
     if (e.touches.length === 2) {
+      // A second finger arriving always means "pinch now", even if the
+      // first one had already grabbed a wall/endpoint/opening — otherwise
+      // that stale drag session can make the element jump once fingers
+      // start lifting back to a single touch.
+      setDragSession(null);
       const [a, b] = e.touches;
       pinch.current = { d: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY), vb: viewBox };
     }
@@ -1443,17 +1448,24 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
 
   function beginDragWallMove(w, e) {
     if (tool !== "selecionar") return;
+    // A second finger landing on/near the element (pinching right on top of
+    // it, a very natural gesture) must not get claimed as a drag — that
+    // would stopPropagation before the pinch handler on the SVG ever sees
+    // it, leaving pinch-to-zoom completely dead on selected elements.
+    if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
     setSelectedId(w.id);
     setDragSession({ kind: "wall-move", id: w.id, startPointer: svgPointRaw(e), orig: { x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 } });
   }
   function beginDragWallEndpoint(w, which, e) {
+    if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
     setSelectedId(w.id);
     setDragSession({ kind: "wall-endpoint", id: w.id, which });
   }
   function beginDragOpening(el, e) {
     if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
     setSelectedId(el.id);
     setDragSession({ kind: "opening", id: el.id, wallId: el.wallId });
