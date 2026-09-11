@@ -1040,6 +1040,24 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     near.sort((a, b) => a.len - b.len);
     return { wall: near[0].wall, proj: near[0].proj };
   }
+  // Snaps to an existing wall/stair endpoint within tolerance so two
+  // segments can be made to share an exact point (closing a shape) even
+  // when that point doesn't land on a grid intersection — angled walls in
+  // particular rarely meet the grid exactly. Falls back to the plain grid
+  // snap when nothing is close enough.
+  function snapToEndpoint(p, excludeWallId) {
+    const TOL = 14;
+    let best = null, bestD = TOL;
+    elements.forEach(e => {
+      if (e.type !== "wall" && e.type !== "stair") return;
+      if (e.id === excludeWallId) return;
+      [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }].forEach(pt => {
+        const d = dist(p, pt);
+        if (d < bestD) { bestD = d; best = pt; }
+      });
+    });
+    return best || { x: snap(p.x), y: snap(p.y) };
+  }
   function findAt(p) {
     const dw = elements.filter(e => e.type === "door" || e.type === "window" || e.type === "luminaria");
     let best = null, bestD = Infinity;
@@ -1063,7 +1081,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (e.touches && e.touches.length > 1) return;
     if (draggingLabel) return;
     e.preventDefault();
-    const p = svgPoint(e);
+    const rawP = svgPoint(e);
+    const p = (tool === "parede" || tool === "escada") ? snapToEndpoint(rawP) : rawP;
 
     if (tool === "selecionar") { const hit = findAt(p); setSelectedId(hit ? hit.id : null); return; }
 
@@ -1294,20 +1313,28 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     setEditingDim(null);
   }
 
-  function setWallLengthDirect(wallId, newLenM) {
+  // movingEnd picks which endpoint moves to hit the new length — "end"
+  // (default) keeps the start fixed and stretches from x2/y2, exactly the
+  // old behavior; "start" keeps the end fixed and stretches from x1/y1, so
+  // tapping a specific endpoint handle can grow/shrink the wall from that
+  // same end instead of always anchoring at the start.
+  function setWallLengthDirect(wallId, newLenM, movingEnd = "end") {
     const w = wallsById[wallId];
     if (!w) return;
-    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, curLen = Math.hypot(dx, dy) || 1;
+    const fixed = movingEnd === "end" ? { x: w.x1, y: w.y1 } : { x: w.x2, y: w.y2 };
+    const moving = movingEnd === "end" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
+    const dx = moving.x - fixed.x, dy = moving.y - fixed.y, curLen = Math.hypot(dx, dy) || 1;
     const ux = dx / curLen, uy = dy / curLen;
     const newLenPx = Math.max(4, (toNum(newLenM) / scale) * GRID);
-    const newX2 = w.x1 + ux * newLenPx, newY2 = w.y1 + uy * newLenPx;
-    const newLenMActual = pxToMeters(dist({ x: w.x1, y: w.y1 }, { x: newX2, y: newY2 }));
-    commitElements(elements.map(e => e.id === w.id ? { ...e, x2: newX2, y2: newY2, length: newLenMActual } : e));
-    ensureVisible(newX2, newY2);
+    const newMoving = { x: fixed.x + ux * newLenPx, y: fixed.y + uy * newLenPx };
+    const newLenMActual = pxToMeters(dist(fixed, newMoving));
+    const patch = movingEnd === "end" ? { x2: newMoving.x, y2: newMoving.y } : { x1: newMoving.x, y1: newMoving.y };
+    commitElements(elements.map(e => e.id === w.id ? { ...e, ...patch, length: newLenMActual } : e));
+    ensureVisible(newMoving.x, newMoving.y);
   }
   function applyWallLenEdit() {
     if (!editingWallLen) return;
-    setWallLengthDirect(editingWallLen.wallId, editingWallLen.value);
+    setWallLengthDirect(editingWallLen.wallId, editingWallLen.value, editingWallLen.movingEnd || "end");
     setEditingWallLen(null);
   }
 
@@ -1421,7 +1448,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         return el;
       }));
     } else if (dragSession.kind === "wall-endpoint") {
-      const sp = { x: snap(p.x), y: snap(p.y) };
+      const sp = snapToEndpoint(p, dragSession.id);
       commitElements(elements.map(el => {
         if (el.id !== dragSession.id) return el;
         const next = dragSession.which === "start" ? { ...el, x1: sp.x, y1: sp.y } : { ...el, x2: sp.x, y2: sp.y };
@@ -1678,9 +1705,11 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             {selectedId === el.id && tool === "selecionar" && (
               <>
                 <circle cx={el.x1} cy={el.y1} r="6" fill="#726F68" stroke="#1B1E1A" strokeWidth="1" style={{ cursor: "grab" }}
-                  onMouseDown={e => beginDragWallEndpoint(el, "start", e)} onTouchStart={e => beginDragWallEndpoint(el, "start", e)} />
+                  onMouseDown={e => beginDragWallEndpoint(el, "start", e)} onTouchStart={e => beginDragWallEndpoint(el, "start", e)}
+                  onClick={e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length, movingEnd: "start" }); }} />
                 <circle cx={el.x2} cy={el.y2} r="6" fill="#726F68" stroke="#1B1E1A" strokeWidth="1" style={{ cursor: "grab" }}
-                  onMouseDown={e => beginDragWallEndpoint(el, "end", e)} onTouchStart={e => beginDragWallEndpoint(el, "end", e)} />
+                  onMouseDown={e => beginDragWallEndpoint(el, "end", e)} onTouchStart={e => beginDragWallEndpoint(el, "end", e)}
+                  onClick={e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length, movingEnd: "end" }); }} />
               </>
             )}
           </g>
