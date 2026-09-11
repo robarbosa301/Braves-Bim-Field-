@@ -28,20 +28,24 @@ namespace BravesBimFieldImporter
             RibbonPanel panel = application.CreateRibbonPanel(TabName, "Levantamento");
             string assemblyPath = Assembly.GetExecutingAssembly().Location;
 
+            // Source bitmaps are 128/64px — well above the ~32/16 DIP slot Revit
+            // actually renders these in — so WPF always downscales rather than
+            // upscales, which is what keeps the icon crisp on displays running
+            // above 100% Windows scaling (common on CAD workstations).
             var cloudButton = new PushButtonData(
                 "BravesCloudButton", "Cloud", assemblyPath, typeof(ImportarDaNuvemCommand).FullName)
             {
                 ToolTip = "Importa o levantamento direto da nuvem (Firebase) — escolha o projeto pelo nome, sem precisar de arquivo.",
-                LargeImage = LoadImage("braves_cloud_32.png"),
-                Image = LoadImage("braves_cloud_16.png"),
+                LargeImage = LoadImage("braves_cloud_128.png"),
+                Image = LoadImage("braves_cloud_64.png"),
             };
 
             var importButton = new PushButtonData(
                 "BravesImportButton", "Import", assemblyPath, typeof(ImportLevantamentoCommand).FullName)
             {
                 ToolTip = "Importa o levantamento a partir de um arquivo levantamento_bim.json exportado do app.",
-                LargeImage = LoadImage("braves_import_32.png"),
-                Image = LoadImage("braves_import_16.png"),
+                LargeImage = LoadImage("braves_import_128.png"),
+                Image = LoadImage("braves_import_64.png"),
             };
 
             panel.AddItem(cloudButton);
