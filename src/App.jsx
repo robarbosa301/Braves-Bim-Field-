@@ -2032,8 +2032,7 @@ function JoinScreen({ onJoin }) {
           Continuar <ArrowUpRight size={18} style={{ transform: "rotate(45deg)" }} />
         </button>
         <p className="text-[11px] text-center mt-4" style={{ color: C.muteDim }}>
-          O tablet abre o levantamento e gera um código. Abra o mesmo link no celular e digite o código
-          para os dois dispositivos ficarem no mesmo ambiente, em tempo real. O código pode ser alterado depois, dentro do projeto.
+          O tablet gera um código; digite-o no celular para sincronizar em tempo real.
         </p>
       </div>
     </div>
