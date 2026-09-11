@@ -9,12 +9,21 @@ body {
   margin: 0;
 }
 
-/* Keep content clear of the phone's notch/status bar and home indicator —
+/* Keep content clear of the phone's notch/status bar and side cutouts —
    viewport-fit=cover (index.html) is what makes these env() vars non-zero;
-   they're 0 everywhere else, so this is a no-op outside a real notch/cutout. */
+   they're 0 everywhere else, so this is a no-op outside a real notch/cutout.
+   Bottom inset is handled by the bottom nav itself (below), not here — if it
+   were padded on the root, the nav bar would stop short of the true screen
+   edge and leave a gap of exposed background under it. */
 .braves-app-root {
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+
+/* The bottom tab bar's own background extends to the real bottom edge; the
+   safe-area inset is added as extra padding inside it instead, so the tabs
+   keep their usual size/position while clearing the home indicator. */
+[data-braves-bottom-nav] {
+  padding-bottom: env(safe-area-inset-bottom);
 }
