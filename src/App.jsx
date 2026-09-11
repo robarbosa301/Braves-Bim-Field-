@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, Box, Home, ZoomIn, ZoomOut, Maximize2,
-  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors
+  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Ruler
 } from "lucide-react";
 
 // lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
@@ -1461,7 +1461,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
       const lenM = (((e2 - s) / GRID) * scale).toFixed(2);
       const isEditing = editingDim && editingDim.wallId === w.id && editingDim.gapIndex === i;
-      const editable = tool === "selecionar";
+      const editable = tool === "selecionar" && selectedId === w.id;
       return (
         <g key={w.id + "-dim-" + i}>
           <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#4A4A46" strokeWidth="0.75" />
@@ -1540,8 +1540,11 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               <input type="text" inputMode="decimal" value={wallHeightDefault} onChange={e => onMeta({ wallHeightDefault: e.target.value })}
                 className="w-14 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
             </span>
-            <input type="color" title="Cor das cotas entre paredes" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
-              className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
+              <Ruler size={12} />
+              <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
             {(belowLevel || aboveLevel) && (
               <span className="flex items-center gap-2">
                 {belowLevel && (
@@ -1582,37 +1585,34 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       )}
 
       {editingDim && (
-        <div className="flex items-center gap-2 mb-2 p-2 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
-          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Corrigir distância (m):</span>
+        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Distância (m):</span>
           <input autoFocus type="text" inputMode="decimal" value={editingDim.value} onChange={e => setEditingDim({ ...editingDim, value: e.target.value })}
             onKeyDown={e => e.key === "Enter" && applyDimEdit()}
-            className="w-20 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
-          <span className="text-[10px]" style={{ color: C.mute }}>desloca o que vem depois nesta parede</span>
-          <button onClick={applyDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
-          <button onClick={() => setEditingDim(null)} className="text-[11px] px-1.5" style={{ color: C.mute }}><X size={13} /></button>
+            className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
+          <button onClick={applyDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+          <button onClick={() => setEditingDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
 
       {editingWallLen && (
-        <div className="flex items-center gap-2 mb-2 p-2 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
-          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Comprimento da parede (m):</span>
+        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Comprimento (m):</span>
           <input autoFocus type="text" inputMode="decimal" value={editingWallLen.value} onChange={e => setEditingWallLen({ ...editingWallLen, value: e.target.value })}
             onKeyDown={e => e.key === "Enter" && applyWallLenEdit()}
-            className="w-20 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
-          <span className="text-[10px]" style={{ color: C.mute }}>estica/encolhe a partir do início da parede</span>
-          <button onClick={applyWallLenEdit} className="text-[11px] px-2 py-1 rounded ml-auto" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
-          <button onClick={() => setEditingWallLen(null)} className="text-[11px] px-1.5" style={{ color: C.mute }}><X size={13} /></button>
+            className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
+          <button onClick={applyWallLenEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+          <button onClick={() => setEditingWallLen(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
       {editingParallelDim && (
-        <div className="flex items-center gap-2 mb-2 p-2 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
-          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Distância face a face (m):</span>
+        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Face a face (m):</span>
           <input autoFocus type="text" inputMode="decimal" value={editingParallelDim.value} onChange={e => setEditingParallelDim({ ...editingParallelDim, value: e.target.value })}
             onKeyDown={e => e.key === "Enter" && applyParallelDimEdit()}
-            className="w-20 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
-          <span className="text-[10px]" style={{ color: C.mute }}>move a parede selecionada até essa distância</span>
-          <button onClick={applyParallelDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
-          <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1.5" style={{ color: C.mute }}><X size={13} /></button>
+            className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
+          <button onClick={applyParallelDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+          <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
 
@@ -1664,13 +1664,16 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={selectedId === el.id ? "#726F68" : "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
-            {planMode === "piso" && (
-              <text x={(el.x1 + el.x2) / 2} y={(el.y1 + el.y2) / 2 - 6} fontSize="10" fill="#6b6660" textAnchor="middle"
-                style={tool === "selecionar" ? { cursor: "pointer" } : undefined}
-                onClick={tool === "selecionar" ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
-                {el.length} m{tool === "selecionar" && " ✎"}
-              </text>
-            )}
+            {planMode === "piso" && (() => {
+              const canEdit = tool === "selecionar" && selectedId === el.id;
+              return (
+                <text x={(el.x1 + el.x2) / 2} y={(el.y1 + el.y2) / 2 - 6} fontSize="10" fill="#6b6660" textAnchor="middle"
+                  style={canEdit ? { cursor: "pointer" } : undefined}
+                  onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
+                  {el.length} m{canEdit && " ✎"}
+                </text>
+              );
+            })()}
             {planMode === "piso" && wallDimensions(el)}
             {selectedId === el.id && tool === "selecionar" && (
               <>
@@ -3006,14 +3009,6 @@ export default function PranchetaBIM() {
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="rounded-lg p-3" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
-              <div className="text-[11px] font-medium mb-1.5" style={{ color: C.chalk }}>Do croqui ao Revit</div>
-              <ul className="text-[11px] space-y-1" style={{ color: C.mute }}>
-                <li>· Cada parede tem dois pontos, comprimento e altura reais — vira um Wall.Create no nível certo.</li>
-                <li>· Portas/janelas guardam a parede-mãe, dimensões e (para janelas) o peitoril — viram Family Instances hospedadas na posição certa.</li>
-                <li>· Coberturas com várias águas e inclinações mapeiam para um Roof by Footprint com slope por borda.</li>
-              </ul>
             </div>
           </div>
         )}
