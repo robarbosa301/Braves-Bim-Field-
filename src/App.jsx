@@ -306,6 +306,58 @@ function wallRoomAdjacency(level, wall) {
     faceB: roomAt({ x: mid.x - nx * 12, y: mid.y - ny * 12 }),
   };
 }
+// For each wall, finds the nearest parallel wall facing it on each side
+// (overlapping projection along its own axis) and returns one dimension
+// line per such pair — the "cota" between opposing wall faces (e.g. room
+// width/depth), independent of each wall's own length label.
+function nearestParallelWallDims(walls) {
+  const pairs = [];
+  for (let i = 0; i < walls.length; i++) {
+    const a = walls[i];
+    const ax = a.x2 - a.x1, ay = a.y2 - a.y1;
+    const alen = Math.hypot(ax, ay);
+    if (alen < 1e-6) continue;
+    const ux = ax / alen, uy = ay / alen;
+    const nx = -uy, ny = ux;
+    let bestPos = null, bestNeg = null;
+    for (let j = 0; j < walls.length; j++) {
+      if (i === j) continue;
+      const b = walls[j];
+      const bx = b.x2 - b.x1, by = b.y2 - b.y1;
+      const blen = Math.hypot(bx, by);
+      if (blen < 1e-6) continue;
+      if (Math.abs(ax * by - ay * bx) / (alen * blen) > 0.02) continue; // not parallel (~1° tolerance)
+      const bmx = (b.x1 + b.x2) / 2, bmy = (b.y1 + b.y2) / 2;
+      const signedDist = (bmx - a.x1) * nx + (bmy - a.y1) * ny;
+      const distPx = Math.abs(signedDist);
+      if (distPx < GRID * 0.6) continue; // too close to be a separate facing wall
+      const projB1 = (b.x1 - a.x1) * ux + (b.y1 - a.y1) * uy;
+      const projB2 = (b.x2 - a.x1) * ux + (b.y2 - a.y1) * uy;
+      const overlapMin = Math.max(0, Math.min(projB1, projB2));
+      const overlapMax = Math.min(alen, Math.max(projB1, projB2));
+      if (overlapMax - overlapMin < GRID * 0.5) continue;
+      const cand = { wallId: b.id, distPx, signedDist, overlapMin, overlapMax };
+      if (signedDist > 0 && (!bestPos || distPx < bestPos.distPx)) bestPos = cand;
+      if (signedDist < 0 && (!bestNeg || distPx < bestNeg.distPx)) bestNeg = cand;
+    }
+    for (const cand of [bestPos, bestNeg]) {
+      if (!cand) continue;
+      const midT = (cand.overlapMin + cand.overlapMax) / 2;
+      const p1 = { x: a.x1 + ux * midT, y: a.y1 + uy * midT };
+      const p2 = { x: p1.x + nx * cand.signedDist, y: p1.y + ny * cand.signedDist };
+      pairs.push({ aId: a.id, bId: cand.wallId, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, distPx: cand.distPx });
+    }
+  }
+  const seen = new Set();
+  const out = [];
+  for (const p of pairs) {
+    const key = [p.aId, p.bId].sort().join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
 function findMergeableWall(wall, elements) {
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
@@ -1587,6 +1639,21 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             )}
           </g>
         ))}
+        {planMode === "piso" && nearestParallelWallDims(elements.filter(el => el.type === "wall")).map(d => {
+          const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
+          const nx = -(dy / len), ny = dx / len;
+          const midX = (d.x1 + d.x2) / 2, midY = (d.y1 + d.y2) / 2;
+          const distM = pxToMeters(d.distPx);
+          return (
+            <g key={`pw-${d.aId}-${d.bId}`} opacity="0.85" pointerEvents="none">
+              <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke="#8A8880" strokeWidth="0.75" strokeDasharray="4,3" />
+              <line x1={d.x1 - nx * 4} y1={d.y1 - ny * 4} x2={d.x1 + nx * 4} y2={d.y1 + ny * 4} stroke="#8A8880" strokeWidth="0.75" />
+              <line x1={d.x2 - nx * 4} y1={d.y2 - ny * 4} x2={d.x2 + nx * 4} y2={d.y2 + ny * 4} stroke="#8A8880" strokeWidth="0.75" />
+              <rect x={midX - 15} y={midY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" />
+              <text x={midX} y={midY + 1} fontSize="8" fill="#4A4A46" textAnchor="middle" fontWeight="600">{distM} m</text>
+            </g>
+          );
+        })}
         {planMode === "piso" && elements.filter(el => el.type === "stair").map(el => (
           <g key={el.id}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={selectedId === el.id ? "#726F68" : "#6B6862"} strokeWidth="10" strokeLinecap="round" opacity="0.7"
