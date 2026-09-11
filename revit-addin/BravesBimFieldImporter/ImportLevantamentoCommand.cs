@@ -5,6 +5,8 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json;
 
