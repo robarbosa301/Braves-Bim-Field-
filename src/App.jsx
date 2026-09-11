@@ -6,8 +6,19 @@ import {
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, SlidersHorizontal, Box, Home, ZoomIn, ZoomOut, Maximize2,
-  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors
+  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Blinds
 } from "lucide-react";
+
+// lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
+// style (currentColor, round caps/joins) as the rest so it blends in.
+function StairsIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20h4v-4h4v-4h4v-4h4" />
+      <path d="M4 20V4" />
+    </svg>
+  );
+}
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta } from "./storage.js";
 
 // ---- BRAVES brand tokens (dark metallic theme) -----------------------------
@@ -1337,15 +1348,15 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   const PISO_TOOLS = [
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
     { id: "parede", label: "Parede", Icon: RectangleHorizontal },
-    { id: "ambiente", label: "Ambiente", Icon: Square },
+    { id: "ambiente", label: "Ambiente", Icon: LayoutPanelTop },
     { id: "porta", label: "Porta", Icon: DoorClosed },
-    { id: "janela", label: "Janela", Icon: Layers3 },
-    { id: "escada", label: "Escada", Icon: ArrowUpRight },
+    { id: "janela", label: "Janela", Icon: Blinds },
+    { id: "escada", label: "Escada", Icon: StairsIcon },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
   const FORRO_TOOLS = [
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
-    { id: "ambiente", label: "Ambiente (acabamento)", Icon: Square },
+    { id: "ambiente", label: "Ambiente (acabamento)", Icon: LayoutPanelTop },
     { id: "luminaria", label: "Luminária", Icon: Lightbulb },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
@@ -1365,10 +1376,10 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           const active = tool === id;
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
-            <button key={id} onClick={() => { setTool(id); setPending(null); }}
-              className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded"
-              style={{ ...heading, fontWeight: 600, background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
-              <Icon size={12} /> {label}
+            <button key={id} onClick={() => { setTool(id); setPending(null); }} title={label}
+              className="flex items-center justify-center p-2 rounded"
+              style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
+              <Icon size={16} />
             </button>
           );
         })}
