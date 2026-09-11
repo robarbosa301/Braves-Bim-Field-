@@ -1382,7 +1382,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : C.panelAlt, color: planMode === "forro" ? "#141311" : C.mute }}>Planta de Forro</button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+      <div className="flex flex-wrap items-center gap-1.5 mb-1">
         {TOOLS.map(({ id, label, Icon }) => {
           const active = tool === id;
           const activeColor = id === "apagar" ? C.bad : C.gold;
@@ -1394,6 +1394,30 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             </button>
           );
         })}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
+        {planMode === "piso" && (
+          <>
+            <span className="flex items-center gap-1" title="1 quadro ="><Grid2x2 size={12} /> =
+              <input type="text" inputMode="decimal" value={scale} onChange={e => onMeta({ sketchScale: e.target.value })}
+                className="w-12 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
+            </span>
+            <span className="flex items-center gap-1" title="Pé-direito das novas paredes">PD
+              <input type="text" inputMode="decimal" value={wallHeightDefault} onChange={e => onMeta({ wallHeightDefault: e.target.value })}
+                className="w-14 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
+            </span>
+            {(belowLevel || aboveLevel) && (
+              <span className="flex items-center gap-2">
+                {belowLevel && (
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
+                )}
+                {aboveLevel && (
+                  <label className="flex items-center gap-1"><input type="checkbox" checked={showAbove} onChange={e => setShowAbove(e.target.checked)} /> ver {aboveLevel.name}</label>
+                )}
+              </span>
+            )}
+          </>
+        )}
         <div className="flex items-center gap-1 ml-auto">
           <button onClick={() => setShowGrid(g => !g)} className="p-1.5 rounded" style={{ background: showGrid ? C.goldTint : C.panelAlt, border: `1px solid ${showGrid ? C.gold : C.line}` }}><Grid3x3 size={13} color={showGrid ? C.gold : C.chalk} /></button>
           <button onClick={() => zoomButton(0.8)} className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomIn size={13} color={C.chalk} /></button>
@@ -1401,28 +1425,6 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           <button onClick={resetZoom} title="Centralizar e enquadrar tudo" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Maximize2 size={13} color={C.chalk} /></button>
         </div>
       </div>
-      {planMode === "piso" && (
-        <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
-          <span className="flex items-center gap-1" title="1 quadro ="><Grid2x2 size={12} /> =
-            <input type="text" inputMode="decimal" value={scale} onChange={e => onMeta({ sketchScale: e.target.value })}
-              className="w-12 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
-          </span>
-          <span className="flex items-center gap-1" title="Pé-direito das novas paredes">PD
-            <input type="text" inputMode="decimal" value={wallHeightDefault} onChange={e => onMeta({ wallHeightDefault: e.target.value })}
-              className="w-14 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
-          </span>
-          {(belowLevel || aboveLevel) && (
-            <span className="flex items-center gap-2">
-              {belowLevel && (
-                <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
-              )}
-              {aboveLevel && (
-                <label className="flex items-center gap-1"><input type="checkbox" checked={showAbove} onChange={e => setShowAbove(e.target.checked)} /> ver {aboveLevel.name}</label>
-              )}
-            </span>
-          )}
-        </div>
-      )}
 
       {tool === "ambiente" && planMode === "piso" && (
         <div className="flex items-center gap-2 mb-2 text-[11px]" style={{ color: C.mute }}>
