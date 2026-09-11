@@ -1082,7 +1082,10 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (draggingLabel) return;
     e.preventDefault();
     const rawP = svgPoint(e);
-    const p = (tool === "parede" || tool === "escada") ? snapToEndpoint(rawP) : rawP;
+    // Ambiente needs this too — its polygon vertices are meant to trace
+    // existing wall corners, and missing them by a few px (same issue
+    // walls had) leaves gaps that never actually close the shape.
+    const p = (tool === "parede" || tool === "escada" || tool === "ambiente") ? snapToEndpoint(rawP) : rawP;
 
     if (tool === "selecionar") { const hit = findAt(p); setSelectedId(hit ? hit.id : null); return; }
 
