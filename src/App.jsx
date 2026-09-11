@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import * as THREE from "three";
 import {
   MapPin, LayoutGrid, Grid3x3, Camera, RefreshCw, Wifi, WifiOff, Plus, X, Trash2, RotateCcw,
@@ -791,19 +791,30 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   const belowLevel = levelIdx > 0 ? allLevels[levelIdx - 1] : null;
   const aboveLevel = (allLevels && levelIdx >= 0 && levelIdx < allLevels.length - 1) ? allLevels[levelIdx + 1] : null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     function measure() {
       if (!svgRef.current) return;
       const w = svgRef.current.parentElement.clientWidth || 340;
-      const safeArea = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-area-tb")) || 0;
-      const h = Math.max(240, (window.innerHeight || 700) - 500 - safeArea);
-      setDims({ w, h });
+      const svgTop = svgRef.current.getBoundingClientRect().top;
+      const nav = document.querySelector("[data-braves-bottom-nav]");
+      const bottomEdge = nav ? nav.getBoundingClientRect().top : (window.innerHeight || 700);
+      // Space that always follows the canvas (the Recente/Desfazer/Tudo row) —
+      // reserved so it's never pushed past the visible viewport, which used
+      // to trap it behind the canvas's own touch-none drawing surface.
+      const BELOW_CANVAS_RESERVED = 64;
+      const h = Math.max(220, bottomEdge - svgTop - BELOW_CANVAS_RESERVED);
+      setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
       setVb(v => v || { x: 0, y: 0, w, h });
     }
-    measure();
+    const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, [tool, planMode, editingDim, editingWallLen, namingId, showBelow, showAbove, belowLevel, aboveLevel]);
 
   const viewBox = vb || { x: 0, y: 0, w: dims.w, h: dims.h };
 
@@ -1390,9 +1401,6 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           <button onClick={resetZoom} title="Centralizar e enquadrar tudo" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Maximize2 size={13} color={C.chalk} /></button>
         </div>
       </div>
-      {tool === "apagar" && (
-        <p className="text-[11px] mb-2" style={{ color: C.bad }}>Toque num elemento para apagá-lo. Uma parede apagada leva junto as portas/janelas dela.</p>
-      )}
       {planMode === "piso" && (
         <div className="flex flex-wrap items-center gap-3 mb-2 text-[10px]" style={{ color: C.mute }}>
           <span className="flex items-center gap-1"><SlidersHorizontal size={11} /> 1 quadro =
@@ -2833,7 +2841,7 @@ export default function PranchetaBIM() {
         )}
       </div>
 
-      <div className="relative flex shrink-0" style={{ background: "#141311", borderTop: `1px solid ${C.line}` }}>
+      <div data-braves-bottom-nav className="relative flex shrink-0" style={{ background: "#141311", borderTop: `1px solid ${C.line}` }}>
         {TABS.map(({ id, label, Icon }) => (
           <button key={id} onClick={() => { setTab(id); if (id !== "ambientes") setActiveRoomId(null); }}
             className="flex-1 py-3 flex flex-col items-center gap-1">
