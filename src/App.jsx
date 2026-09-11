@@ -5,7 +5,7 @@ import {
   CheckCircle2, DoorClosed, RectangleHorizontal, Building2,
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
-  Undo2, Eraser, Square, Triangle, LayoutPanelTop, GitBranch, SlidersHorizontal, Box, Home, ZoomIn, ZoomOut, Maximize2,
+  Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, SlidersHorizontal, Box, Home, ZoomIn, ZoomOut, Maximize2,
   MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors
 } from "lucide-react";
 import { safeGet, safeSet, safeList, safeDelete } from "./storage.js";
@@ -2336,7 +2336,7 @@ export default function PranchetaBIM() {
   const TABS = [
     { id: "ambientes", label: "Ambientes", Icon: LayoutGrid },
     { id: "croqui", label: "Croqui", Icon: Pencil },
-    { id: "modelo", label: "Modelo", Icon: GitBranch },
+    { id: "modelo", label: "Modelo", Icon: Rotate3d },
     { id: "sync", label: "Sincronização", Icon: RefreshCw },
   ];
 
