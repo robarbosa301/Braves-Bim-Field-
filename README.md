@@ -47,3 +47,14 @@ service cloud.firestore {
 ```
 
 Como não há autenticação, qualquer pessoa com o código do projeto (ou que descubra a chave do Firebase) pode ler/escrever esses dados — é a mesma limitação de segurança que o app já tinha originalmente como Artifact.
+
+### Abrindo os levantamentos no Revit
+
+Na aba **Sincronização**, o botão **JSON** exporta `levantamento_bim.json` com
+toda a geometria do levantamento já convertida para metros (paredes, portas,
+janelas, ambientes por nível), pronto para ser lido programaticamente.
+
+Veja **[`revit-addin/`](revit-addin/)** para o add-in de Revit 2024 que lê
+esse arquivo e cria os níveis/paredes/portas/janelas/ambientes direto no
+projeto Revit aberto. É um projeto C# separado — precisa ser compilado no
+Windows com Visual Studio (instruções completas no README daquela pasta).

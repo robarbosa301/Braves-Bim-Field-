@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Command">
+    <Name>Braves BIM Field - Importar levantamento</Name>
+    <Assembly>.\BravesBimFieldImporter.dll</Assembly>
+    <AddInId>1edfef2c-accc-48df-a7e4-89ce2d5daf31</AddInId>
+    <FullClassName>BravesBimFieldImporter.ImportLevantamentoCommand</FullClassName>
+    <VendorId>BRAVES</VendorId>
+    <VendorDescription>Braves Engenharia</VendorDescription>
+  </AddIn>
+</RevitAddIns>
