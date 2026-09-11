@@ -746,8 +746,9 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     function measure() {
       if (!svgRef.current) return;
       const w = svgRef.current.parentElement.clientWidth || 340;
-      setDims({ w, h: 300 });
-      setVb(v => v || { x: 0, y: 0, w, h: 300 });
+      const h = Math.max(280, (window.innerHeight || 700) - 480);
+      setDims({ w, h });
+      setVb(v => v || { x: 0, y: 0, w, h });
     }
     measure();
     window.addEventListener("resize", measure);
@@ -1655,10 +1656,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         </div>
       )}
 
-      <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-        <p className="text-[11px]" style={{ color: C.mute, maxWidth: "60%" }}>
-          Desenhe a edificação inteira — a mesma parede vale para os dois ambientes vizinhos. Role a roda do mouse ou belisque a tela pra dar zoom. Arraste o nome do ambiente pra reposicionar.
-        </p>
+      <div className="flex items-center justify-end mt-2 flex-wrap gap-2">
         <div className="flex gap-1.5">
           <button onClick={undoLast} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
             <Undo2 size={12} /> Recente
@@ -2349,7 +2347,7 @@ export default function PranchetaBIM() {
   ];
 
   return (
-    <div className="braves-app-root relative w-full min-h-screen flex flex-col" style={{ ...METAL_BG, fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
+    <div className="braves-app-root relative w-full h-dvh overflow-hidden flex flex-col" style={{ ...METAL_BG, fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
       <Watermark />
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhotoCaptured} />
 
@@ -2397,7 +2395,7 @@ export default function PranchetaBIM() {
         </div>
       </div>
 
-      <div className="relative flex-1 p-4 overflow-y-auto" style={{ paddingBottom: "84px" }}>
+      <div className="relative flex-1 min-h-0 p-4 overflow-y-auto">
         {tab === "ambientes" && !activeRoom && !ambientesLevelFilter && (
           <div className="space-y-2">
             {levels.map(l => {
@@ -2787,7 +2785,7 @@ export default function PranchetaBIM() {
         )}
       </div>
 
-      <div className="relative fixed bottom-0 left-0 right-0 flex" style={{ background: "#141311", borderTop: `1px solid ${C.line}` }}>
+      <div className="relative flex shrink-0" style={{ background: "#141311", borderTop: `1px solid ${C.line}` }}>
         {TABS.map(({ id, label, Icon }) => (
           <button key={id} onClick={() => { setTab(id); if (id !== "ambientes") setActiveRoomId(null); }}
             className="flex-1 py-3 flex flex-col items-center gap-1">
