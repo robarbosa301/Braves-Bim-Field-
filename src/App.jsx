@@ -1752,16 +1752,25 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
 
   function startLabelDrag(el, e) {
     e.stopPropagation(); e.preventDefault();
-    pushHistory();
-    isDraggingRef.current = true;
+    // Don't commit to a drag (and snapshot history for one) on pointerdown
+    // alone — a plain tap-to-rename also lands here first, and it should
+    // neither pollute the undo stack nor require the pointer to move at
+    // all. history/isDraggingRef only get set once real movement is seen,
+    // in onLabelDragMove below.
     const centroid = polygonCentroid(el.points);
-    setDraggingLabel({ id: el.id, centroid });
+    setDraggingLabel({ id: el.id, centroid, startP: svgPointRaw(e), moved: false });
   }
   function onLabelDragMove(e) {
     if (!draggingLabel) return;
     const p = svgPointRaw(e);
     const el = elements.find(x => x.id === draggingLabel.id);
     if (!el) return;
+    if (!draggingLabel.moved) {
+      if (dist(p, draggingLabel.startP) < 3) return; // still just a tap-in-progress
+      pushHistory();
+      isDraggingRef.current = true;
+      setDraggingLabel(d => (d ? { ...d, moved: true } : d));
+    }
     // Requiring the exact pointer position to stay inside the polygon
     // made this unusable on any room that tapers to a narrow point (like
     // a thin triangle) — a real finger can't trace a path that stays
@@ -1776,7 +1785,17 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     const centroid = draggingLabel.centroid;
     commitElements(elements.map(x => x.id === el.id ? { ...x, labelOffset: { dx: cx - centroid.x, dy: cy - centroid.y } } : x));
   }
-  function onLabelDragEnd() { setDraggingLabel(null); isDraggingRef.current = false; }
+  function onLabelDragEnd() {
+    // A tap that never moved past the drag threshold — treat it as
+    // "tap the name to rename" instead of silently doing nothing, the
+    // same way tapping a wall's length label opens its editor directly.
+    if (draggingLabel && !draggingLabel.moved) {
+      const el = elements.find(x => x.id === draggingLabel.id);
+      if (el) { setNamingId(el.id); setNamingValue(el.name || ""); }
+    }
+    setDraggingLabel(null);
+    isDraggingRef.current = false;
+  }
   function rotateRoomLabel(el) {
     const next = ((el.labelRotation || 0) + 90) % 360;
     commitElements(elements.map(x => x.id === el.id ? { ...x, labelRotation: next } : x));
