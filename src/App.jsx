@@ -371,9 +371,20 @@ function nearestParallelWallDims(walls) {
 // walls reasonably well. Returns null when the click landed on a wall, the
 // grid got unreasonably large, or the area isn't actually enclosed (the
 // fill reaches the padding border around the walls' bounding box).
-function traceEnclosedRoom(walls, clickPoint, GRID) {
+function traceEnclosedRoom(walls, clickPoint, GRID, scale) {
   if (!walls.length) return null;
-  const CELL = GRID / 2;
+  // CELL is expressed in drawing units, but what it actually costs the
+  // room is real-world size: at a coarse "meters per grid square" scale
+  // (a big property surveyed with a loose grid), a fixed GRID/2 cell can
+  // represent a meter or more — bigger than the entire width of a narrow
+  // room like a hallway or this tapering test shape, so the wall-blocking
+  // margin on both sides overlaps and blots out the whole interior near
+  // the narrow end. Aim for a roughly constant ~10cm real-world cell
+  // instead, clamped so it never gets coarser than the old fixed size
+  // (large open rooms don't need finer-than-that resolution) or fine
+  // enough to blow past the cell-count cap on a big footprint.
+  const idealCell = scale ? (0.1 / scale) * GRID : GRID / 2;
+  const CELL = Math.min(GRID / 2, Math.max(2, idealCell));
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   walls.forEach(w => {
     minX = Math.min(minX, w.x1, w.x2); maxX = Math.max(maxX, w.x1, w.x2);
@@ -1384,7 +1395,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         // vertices, not for "click somewhere inside the room") could land
         // it right on/against a wall, starting the flood fill from a
         // sliver cell instead of the room's actual open interior.
-        const traced = traceEnclosedRoom(wallSegs, rawP, GRID);
+        const traced = traceEnclosedRoom(wallSegs, rawP, GRID, scale);
         if (!traced) {
           setAutoRoomMsg("Não achei um contorno fechado aqui — verifique se as paredes se encontram, ou desenhe os pontos manualmente.");
           return;
