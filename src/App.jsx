@@ -2077,6 +2077,20 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             )}
           </g>
         ))}
+        {planMode === "piso" && (tool === "parede" || tool === "escada" || tool === "ambiente") && (() => {
+          // Visible snap targets for every wall/stair corner while drawing
+          // or tracing — makes the (otherwise invisible) endpoint-snap
+          // something the user can actually aim for, instead of hoping a
+          // freehand tap lands close enough to it.
+          const pts = [];
+          elements.forEach(e => {
+            if (e.type !== "wall" && e.type !== "stair") return;
+            pts.push({ x: e.x1, y: e.y1, id: e.id + "-1" }, { x: e.x2, y: e.y2, id: e.id + "-2" });
+          });
+          return pts.map(pt => (
+            <circle key={pt.id} cx={pt.x} cy={pt.y} r="4" fill="none" stroke="#2E6FED" strokeWidth="1.5" opacity="0.8" pointerEvents="none" />
+          ));
+        })()}
         {planMode === "piso" && nearestParallelWallDims(elements.filter(el => el.type === "wall")).map(d => {
           const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
           const nx = -(dy / len), ny = dx / len;
