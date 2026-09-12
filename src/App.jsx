@@ -2758,9 +2758,9 @@ function JoinScreen({ onJoin }) {
   return (
     <div className="braves-app-root relative w-full min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden" style={METAL_BG}>
       <Watermark />
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full max-w-sm mt-16">
         <div className="flex flex-col items-center gap-4 mb-7">
-          <img src={SYMBOL_LOGO} alt="Braves BIM Field" style={{ height: 78, width: "auto" }} />
+          <img src={SYMBOL_LOGO} alt="Braves BIM Field" style={{ height: 132, width: "auto" }} />
           <div className="text-center">
             <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>BRAVES BIM FIELD</div>
             <div className="text-[11px] mt-1.5" style={{ color: C.mute, letterSpacing: "0.18em" }}>PROJETOS E CONSTRUÇÕES EFICIENTES</div>
@@ -2823,9 +2823,6 @@ function JoinScreen({ onJoin }) {
           style={{ background: "#F2F1ED", color: "#141311", opacity: busy || (mode === "join" && !code.trim()) ? 0.6 : 1 }}>
           Continuar <ArrowUpRight size={18} style={{ transform: "rotate(45deg)" }} />
         </button>
-        <p className="text-[11px] text-center mt-4" style={{ color: C.muteDim }}>
-          O tablet gera um código; digite-o no celular para sincronizar em tempo real.
-        </p>
       </div>
     </div>
   );
