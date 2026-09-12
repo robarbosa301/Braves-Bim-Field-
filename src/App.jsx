@@ -2386,9 +2386,14 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                 <span style={{ color: C.mute }}>Forro:</span>
                 <TypeSelect value={selected.ceilingFinish || "A definir"} options={CEILING_TYPES} onChange={v => patchSelected({ ceilingFinish: v })} />
               </div>
-              <button onClick={() => rotateRoomLabel(selected)} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                <RotateCcw size={11} /> Girar nome 90° (arraste pra reposicionar)
-              </button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button onClick={() => { setNamingId(selected.id); setNamingValue(selected.name || ""); }} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, border: `1px solid ${C.gold}` }}>
+                  <Pencil size={11} /> Renomear
+                </button>
+                <button onClick={() => rotateRoomLabel(selected)} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                  <RotateCcw size={11} /> Girar nome 90° (arraste pra reposicionar)
+                </button>
+              </div>
             </div>
           )}
           {selected.type === "stair" && (
