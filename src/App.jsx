@@ -1155,6 +1155,22 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     near.sort((a, b) => a.len - b.len);
     return { wall: near[0].wall, proj: near[0].proj };
   }
+  // Like nearestWall, but with a real cutoff distance instead of always
+  // returning the closest wall no matter how far — used to decide whether
+  // a tap actually landed on a wall at all (see ambiente's "tap a wall to
+  // add both its ends" below), not just to attach an opening to one.
+  function nearestWallWithinTolerance(p, screenPxTolerance = 16) {
+    const walls = elements.filter(el => el.type === "wall");
+    if (!walls.length) return null;
+    let best = null, bestD = Infinity;
+    walls.forEach(w => {
+      const proj = projectPointOnSegment(p, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
+      const d = dist(p, proj);
+      if (d < bestD) { bestD = d; best = { wall: w, proj }; }
+    });
+    const worldTolerance = screenPxTolerance * (viewBox.w / dims.w);
+    return best && bestD <= worldTolerance ? best : null;
+  }
   // Finds an existing wall/stair endpoint within tolerance so two segments
   // can be made to share an exact point (closing a shape) even when that
   // point doesn't land on a grid intersection — angled walls in particular
@@ -1229,13 +1245,14 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     // existing wall corners, and missing them by a few px (same issue
     // walls had) leaves gaps that never actually close the shape.
     let p = rawP;
+    let endpointHit = null;
     if (tool === "parede" || tool === "escada" || tool === "ambiente") {
-      const hit = findNearbyEndpoint(rawP, null);
-      p = hit || { x: snap(rawP.x), y: snap(rawP.y) };
+      endpointHit = findNearbyEndpoint(rawP, null);
+      p = endpointHit || { x: snap(rawP.x), y: snap(rawP.y) };
       // A freehand second tap almost never lands on an exact 0/45/90°
       // angle from the first point — nudge it there when it's already
       // close, so walls stay orthogonal instead of drifting off-angle.
-      if (!hit && pending && (tool === "parede" || tool === "escada")) p = angleSnap(pending, p);
+      if (!endpointHit && pending && (tool === "parede" || tool === "escada")) p = angleSnap(pending, p);
     }
 
     if (tool === "selecionar") { const hit = findAt(p); setSelectedId(hit ? hit.id : null); return; }
@@ -1326,6 +1343,25 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         commitElements([...elements, el]);
         setNamingId(el.id); setNamingValue("");
         return;
+      }
+      // Tapping precisely on a very short wall's own corner is genuinely
+      // hard even zoomed in (the two ends can be just a handful of screen
+      // px apart). If the tap wasn't already an exact endpoint but landed
+      // on/near a wall LINE instead, add BOTH of that wall's ends in one
+      // tap — ordered starting from whichever end is closer to the last
+      // point already placed, so tracing continues the right way round —
+      // instead of a single, possibly-imprecise free point.
+      if (!endpointHit) {
+        const wallHit = nearestWallWithinTolerance(rawP);
+        if (wallHit) {
+          const w = wallHit.wall;
+          const ends = [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }];
+          const ref = polygon.length ? polygon[polygon.length - 1] : rawP;
+          ends.sort((a, b) => dist(ref, a) - dist(ref, b));
+          const toAdd = polygon.length && dist(polygon[polygon.length - 1], ends[0]) < 1 ? [ends[1]] : ends;
+          setPolygon([...polygon, ...toAdd]);
+          return;
+        }
       }
       setPolygon([...polygon, p]);
       return;
@@ -1854,7 +1890,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           const active = tool === id;
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
-            <button key={id} onClick={() => { setTool(id); setPending(null); }} title={label}
+            <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); }} title={label}
               className="flex items-center justify-center p-2 rounded"
               style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
               <Icon size={16} />
