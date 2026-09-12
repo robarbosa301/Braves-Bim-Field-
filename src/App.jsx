@@ -1594,29 +1594,21 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     return deg;
   }
   // How far (and to which side) a wall's own length label sits off the
-  // wall line. When another roughly-parallel wall is nearby on one side
-  // (two close, near-parallel walls, like a narrow triangular bay), the
-  // label is pushed toward the OTHER side instead — away from the
-  // neighbor — so the two walls' labels land apart instead of colliding
-  // in the gap between them.
+  // wall line — pushed away from the rough centroid of all the walls
+  // being sketched, so a label on any side of a shape (top, bottom, left,
+  // right) lands outside it instead of on top of the line or collapsing
+  // into the middle when another wall runs close and roughly parallel.
   function wallLabelOffset(el) {
     const dx = el.x2 - el.x1, dy = el.y2 - el.y1, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const nx = -uy, ny = ux;
+    const nx = -dy / len, ny = dx / len;
     const BASE = 16;
-    let hasPos = false, hasNeg = false;
-    elements.forEach(o => {
-      if (o.type !== "wall" || o.id === el.id) return;
-      const ox = o.x2 - o.x1, oy = o.y2 - o.y1, olen = Math.hypot(ox, oy) || 1;
-      if (Math.abs(dx * oy - dy * ox) / (len * olen) > 0.1) return;
-      const omx = (o.x1 + o.x2) / 2, omy = (o.y1 + o.y2) / 2;
-      const signedDist = (omx - el.x1) * nx + (omy - el.y1) * ny;
-      if (signedDist > 0 && signedDist < 200) hasPos = true;
-      if (signedDist < 0 && signedDist > -200) hasNeg = true;
-    });
-    let side = -1;
-    if (hasPos && !hasNeg) side = -1;
-    else if (hasNeg && !hasPos) side = 1;
+    const walls = elements.filter(e => e.type === "wall");
+    let cx = 0, cy = 0;
+    walls.forEach(w => { cx += (w.x1 + w.x2) / 2; cy += (w.y1 + w.y2) / 2; });
+    cx /= walls.length; cy /= walls.length;
+    const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
+    const dot = (cx - midX) * nx + (cy - midY) * ny;
+    const side = dot > 0 ? -1 : 1;
     return { x: nx * BASE * side, y: ny * BASE * side };
   }
   function wallDimensions(w) {
