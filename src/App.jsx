@@ -287,6 +287,34 @@ function polygonCentroid(points) {
   points.forEach(p => { x += p.x; y += p.y; });
   return { x: x / points.length, y: y / points.length };
 }
+// Shared by VectorSketch's "Centralizar e enquadrar tudo" button and its
+// initial view — every time the canvas (re)mounts (e.g. switching away from
+// the Croqui tab and back) it must land centered on the actual drawing
+// instead of at a fixed {0,0} origin, or the sketch reappears displaced.
+function fitViewBoxToElements(elements, w, h) {
+  if (!elements.length) return { x: 0, y: 0, w, h };
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  elements.forEach(el => {
+    if (el.type === "wall" || el.type === "stair") {
+      minX = Math.min(minX, el.x1, el.x2); maxX = Math.max(maxX, el.x1, el.x2);
+      minY = Math.min(minY, el.y1, el.y2); maxY = Math.max(maxY, el.y1, el.y2);
+    } else if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
+      minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x);
+      minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y);
+    } else if (el.type === "room") {
+      el.points.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+    }
+  });
+  if (!isFinite(minX)) return { x: 0, y: 0, w, h };
+  const aspect = w / h;
+  const contentW = Math.max(30, maxX - minX), contentH = Math.max(30, maxY - minY);
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  let newW = contentW * 1.3, newH = newW / aspect;
+  if (newH < contentH * 1.3) { newH = contentH * 1.3; newW = newH * aspect; }
+  newW = Math.max(60, Math.min(4000, newW));
+  newH = newW / aspect;
+  return { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
+}
 function wrapTextLines(text, maxChars) {
   if (!text) return [""];
   const words = text.split(" ");
@@ -1072,7 +1100,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       const BELOW_CANVAS_RESERVED = 64;
       const h = Math.max(220, bottomEdge - svgTop - BELOW_CANVAS_RESERVED);
       setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
-      setVb(v => v || { x: 0, y: 0, w, h });
+      setVb(v => v || fitViewBoxToElements(elements, w, h));
     }
     const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
@@ -1147,28 +1175,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     zoomAround(0.5, 0.5, factor);
   }
   function resetZoom() {
-    if (!elements.length) { setVb({ x: 0, y: 0, w: dims.w, h: dims.h }); return; }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    elements.forEach(el => {
-      if (el.type === "wall" || el.type === "stair") {
-        minX = Math.min(minX, el.x1, el.x2); maxX = Math.max(maxX, el.x1, el.x2);
-        minY = Math.min(minY, el.y1, el.y2); maxY = Math.max(maxY, el.y1, el.y2);
-      } else if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
-        minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x);
-        minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y);
-      } else if (el.type === "room") {
-        el.points.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
-      }
-    });
-    if (!isFinite(minX)) { setVb({ x: 0, y: 0, w: dims.w, h: dims.h }); return; }
-    const aspect = dims.w / dims.h;
-    const contentW = Math.max(30, maxX - minX), contentH = Math.max(30, maxY - minY);
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    let newW = contentW * 1.3, newH = newW / aspect;
-    if (newH < contentH * 1.3) { newH = contentH * 1.3; newW = newH * aspect; }
-    newW = Math.max(60, Math.min(4000, newW));
-    newH = newW / aspect;
-    setVb({ x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH });
+    setVb(fitViewBoxToElements(elements, dims.w, dims.h));
   }
   function ensureVisible(x, y) {
     if (!isFinite(x) || !isFinite(y)) return;
