@@ -364,6 +364,110 @@ function nearestParallelWallDims(walls) {
   }
   return out;
 }
+// Auto-traces a room polygon by flood-filling the open floor area starting
+// from a clicked point, stopping at wall faces — the "click inside" room
+// tool, as opposed to tracing each corner by hand. Works on a grid finer
+// than the drawing's own snap grid so it can still approximate diagonal
+// walls reasonably well. Returns null when the click landed on a wall, the
+// grid got unreasonably large, or the area isn't actually enclosed (the
+// fill reaches the padding border around the walls' bounding box).
+function traceEnclosedRoom(walls, clickPoint, GRID) {
+  if (!walls.length) return null;
+  const CELL = GRID / 2;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  walls.forEach(w => {
+    minX = Math.min(minX, w.x1, w.x2); maxX = Math.max(maxX, w.x1, w.x2);
+    minY = Math.min(minY, w.y1, w.y2); maxY = Math.max(maxY, w.y1, w.y2);
+  });
+  const PAD = CELL * 4;
+  minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+  const cols = Math.ceil((maxX - minX) / CELL);
+  const rows = Math.ceil((maxY - minY) / CELL);
+  if (cols * rows > 40000 || cols < 1 || rows < 1) return null;
+
+  const blocked = new Uint8Array(cols * rows);
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const px = minX + (cx + 0.5) * CELL, py = minY + (cy + 0.5) * CELL;
+      for (const w of walls) {
+        const proj = projectPointOnSegment({ x: px, y: py }, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
+        if (dist({ x: px, y: py }, proj) < w.halfThickPx + CELL * 0.55) {
+          blocked[cy * cols + cx] = 1;
+          break;
+        }
+      }
+    }
+  }
+
+  const startCx = Math.floor((clickPoint.x - minX) / CELL);
+  const startCy = Math.floor((clickPoint.y - minY) / CELL);
+  if (startCx < 0 || startCy < 0 || startCx >= cols || startCy >= rows) return null;
+  if (blocked[startCy * cols + startCx]) return null;
+
+  const filled = new Uint8Array(cols * rows);
+  const stack = [[startCx, startCy]];
+  filled[startCy * cols + startCx] = 1;
+  let touchedEdge = false;
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    if (cx === 0 || cy === 0 || cx === cols - 1 || cy === rows - 1) touchedEdge = true;
+    const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
+    for (const [nx, ny] of neighbors) {
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const idx = ny * cols + nx;
+      if (filled[idx] || blocked[idx]) continue;
+      filled[idx] = 1;
+      stack.push([nx, ny]);
+    }
+  }
+  if (touchedEdge) return null;
+
+  const isFilled = (cx, cy) => cx >= 0 && cy >= 0 && cx < cols && cy < rows && filled[cy * cols + cx];
+  const edges = [];
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      if (!filled[cy * cols + cx]) continue;
+      const tl = { x: minX + cx * CELL, y: minY + cy * CELL };
+      const tr = { x: minX + (cx + 1) * CELL, y: minY + cy * CELL };
+      const bl = { x: minX + cx * CELL, y: minY + (cy + 1) * CELL };
+      const br = { x: minX + (cx + 1) * CELL, y: minY + (cy + 1) * CELL };
+      if (!isFilled(cx, cy - 1)) edges.push([tr, tl]);
+      if (!isFilled(cx, cy + 1)) edges.push([bl, br]);
+      if (!isFilled(cx - 1, cy)) edges.push([tl, bl]);
+      if (!isFilled(cx + 1, cy)) edges.push([br, tr]);
+    }
+  }
+  if (!edges.length) return null;
+
+  const keyOf = (p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+  const byStart = new Map();
+  edges.forEach(e => byStart.set(keyOf(e[0]), e));
+
+  const startEdge = edges[0];
+  const loop = [startEdge[0]];
+  let cur = startEdge[1];
+  let guard = 0;
+  while (keyOf(cur) !== keyOf(startEdge[0]) && guard < edges.length + 5) {
+    loop.push(cur);
+    const next = byStart.get(keyOf(cur));
+    if (!next) return null;
+    cur = next[1];
+    guard++;
+  }
+  if (guard >= edges.length + 5) return null;
+
+  const simplified = [];
+  for (let i = 0; i < loop.length; i++) {
+    const prev = loop[(i - 1 + loop.length) % loop.length];
+    const cur2 = loop[i];
+    const next = loop[(i + 1) % loop.length];
+    const d1x = cur2.x - prev.x, d1y = cur2.y - prev.y;
+    const d2x = next.x - cur2.x, d2y = next.y - cur2.y;
+    const cross = d1x * d2y - d1y * d2x;
+    if (Math.abs(cross) > 1e-6) simplified.push(cur2);
+  }
+  return simplified.length >= 3 ? simplified : loop;
+}
 function findMergeableWall(wall, elements) {
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
@@ -861,6 +965,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   const [planMode, setPlanMode] = useState("piso");
   const [pending, setPending] = useState(null);
   const [polygon, setPolygon] = useState([]);
+  const [ambienteAuto, setAmbienteAuto] = useState(true);
+  const [autoRoomMsg, setAutoRoomMsg] = useState("");
   const [dims, setDims] = useState({ w: 340, h: 300 });
   const [vb, setVb] = useState(null);
   const [deletedStack, setDeletedStack] = useState([]);
@@ -1193,6 +1299,29 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         }
       }
       if (planMode === "forro") return;
+      if (ambienteAuto && polygon.length === 0) {
+        setAutoRoomMsg("");
+        const wallSegs = elements.filter(e => e.type === "wall").map(w => ({
+          x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
+          halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
+        }));
+        const traced = traceEnclosedRoom(wallSegs, p, GRID);
+        if (!traced) {
+          setAutoRoomMsg("Não achei um contorno fechado aqui — verifique se as paredes se encontram, ou desenhe os pontos manualmente.");
+          return;
+        }
+        let area = 0;
+        for (let i = 0; i < traced.length; i++) {
+          const a = traced[i], b = traced[(i + 1) % traced.length];
+          area += a.x * b.y - b.x * a.y;
+        }
+        area = Math.abs(area / 2);
+        const areaM2 = +((area / (GRID * GRID)) * scale * scale).toFixed(2);
+        const el = { id: uid(), type: "room", points: traced, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
+        commitElements([...elements, el]);
+        setNamingId(el.id); setNamingValue("");
+        return;
+      }
       setPolygon([...polygon, p]);
       return;
     }
@@ -1765,10 +1894,24 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       </div>
 
       {tool === "ambiente" && planMode === "piso" && (
-        <div className="flex items-center gap-2 mb-2 text-[11px]" style={{ color: C.mute }}>
-          <span>{polygon.length} ponto(s) marcados</span>
-          <button onClick={closePolygon} disabled={polygon.length < 3}
-            className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, opacity: polygon.length < 3 ? 0.4 : 1 }}>Fechar ambiente</button>
+        <div className="flex flex-col gap-1.5 mb-2">
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => { setAmbienteAuto(true); setAutoRoomMsg(""); }} title="Toque dentro de um ambiente com paredes fechadas"
+              className="text-[10px] px-2 py-1 rounded" style={{ background: ambienteAuto ? C.goldTint : C.panelAlt, color: ambienteAuto ? C.gold : C.mute, border: `1px solid ${ambienteAuto ? C.gold : C.line}` }}>Automático</button>
+            <button onClick={() => { setAmbienteAuto(false); setAutoRoomMsg(""); }} title="Marque cada ponto do contorno na mão — para varandas e ambientes sem paredes fechadas"
+              className="text-[10px] px-2 py-1 rounded" style={{ background: !ambienteAuto ? C.goldTint : C.panelAlt, color: !ambienteAuto ? C.gold : C.mute, border: `1px solid ${!ambienteAuto ? C.gold : C.line}` }}>Manual (pontos)</button>
+          </div>
+          {ambienteAuto && polygon.length === 0 && !autoRoomMsg && (
+            <span className="text-[10px]" style={{ color: C.mute }}>Toque dentro de um ambiente com paredes fechadas.</span>
+          )}
+          {autoRoomMsg && <span className="text-[10px]" style={{ color: C.bad }}>{autoRoomMsg}</span>}
+          {(!ambienteAuto || polygon.length > 0) && (
+            <div className="flex items-center gap-2 text-[11px]" style={{ color: C.mute }}>
+              <span>{polygon.length} ponto(s) marcados</span>
+              <button onClick={closePolygon} disabled={polygon.length < 3}
+                className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, opacity: polygon.length < 3 ? 0.4 : 1 }}>Fechar ambiente</button>
+            </div>
+          )}
         </div>
       )}
 
