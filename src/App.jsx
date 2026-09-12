@@ -1601,7 +1601,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   function wallLabelOffset(el) {
     const dx = el.x2 - el.x1, dy = el.y2 - el.y1, len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len;
-    const BASE = 16;
+    const BASE = 10;
     const walls = elements.filter(e => e.type === "wall");
     let cx = 0, cy = 0;
     walls.forEach(w => { cx += (w.x1 + w.x2) / 2; cy += (w.y1 + w.y2) / 2; });
