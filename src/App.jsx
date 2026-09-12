@@ -1753,12 +1753,16 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   function startLabelDrag(el, e) {
     e.stopPropagation(); e.preventDefault();
     // Don't commit to a drag (and snapshot history for one) on pointerdown
-    // alone — a plain tap-to-rename also lands here first, and it should
+    // alone — a plain tap-to-edit also lands here first, and it should
     // neither pollute the undo stack nor require the pointer to move at
     // all. history/isDraggingRef only get set once real movement is seen,
-    // in onLabelDragMove below.
+    // in onLabelDragMove below. The room name (Piso tab) and the ceiling
+    // finish (Forro tab) are two independent labels on the same room, so
+    // which offset/rotation field this drag writes to depends on which
+    // tab's label was actually grabbed, not the room itself.
     const centroid = polygonCentroid(el.points);
-    setDraggingLabel({ id: el.id, centroid, startP: svgPointRaw(e), moved: false });
+    const offsetField = planMode === "forro" ? "ceilingLabelOffset" : "labelOffset";
+    setDraggingLabel({ id: el.id, centroid, startP: svgPointRaw(e), moved: false, offsetField });
   }
   function onLabelDragMove(e) {
     if (!draggingLabel) return;
@@ -1783,22 +1787,30 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     const cx = Math.max(Math.min(...xs), Math.min(Math.max(...xs), p.x));
     const cy = Math.max(Math.min(...ys), Math.min(Math.max(...ys), p.y));
     const centroid = draggingLabel.centroid;
-    commitElements(elements.map(x => x.id === el.id ? { ...x, labelOffset: { dx: cx - centroid.x, dy: cy - centroid.y } } : x));
+    const field = draggingLabel.offsetField;
+    commitElements(elements.map(x => x.id === el.id ? { ...x, [field]: { dx: cx - centroid.x, dy: cy - centroid.y } } : x));
   }
   function onLabelDragEnd() {
     // A tap that never moved past the drag threshold — treat it as
-    // "tap the name to rename" instead of silently doing nothing, the
-    // same way tapping a wall's length label opens its editor directly.
+    // "tap the label to edit" instead of silently doing nothing, the same
+    // way tapping a wall's length label opens its editor directly. The
+    // room name has its own free-text rename box; the ceiling finish is a
+    // fixed list, so tapping it opens the room's properties panel where
+    // that dropdown (and Girar nome) already live.
     if (draggingLabel && !draggingLabel.moved) {
       const el = elements.find(x => x.id === draggingLabel.id);
-      if (el) { setNamingId(el.id); setNamingValue(el.name || ""); }
+      if (el) {
+        if (draggingLabel.offsetField === "ceilingLabelOffset") setSelectedId(el.id);
+        else { setNamingId(el.id); setNamingValue(el.name || ""); }
+      }
     }
     setDraggingLabel(null);
     isDraggingRef.current = false;
   }
   function rotateRoomLabel(el) {
-    const next = ((el.labelRotation || 0) + 90) % 360;
-    commitElements(elements.map(x => x.id === el.id ? { ...x, labelRotation: next } : x));
+    const field = planMode === "forro" ? "ceilingLabelRotation" : "labelRotation";
+    const next = ((el[field] || 0) + 90) % 360;
+    commitElements(elements.map(x => x.id === el.id ? { ...x, [field]: next } : x));
   }
 
   function beginDragWallMove(w, e) {
@@ -2170,12 +2182,28 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             </g>
           );
         })}
-        {planMode === "forro" && elements.filter(el => el.type === "room").map(el => (
-          <g key={el.id}>
-            <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill="rgba(0,0,0,0.05)" stroke={selectedId === el.id ? "#726F68" : "#8A8880"} strokeWidth={selectedId === el.id ? 2.5 : 1} strokeDasharray="3,3" />
-            <text x={polygonCentroid(el.points).x - 20} y={polygonCentroid(el.points).y} fontSize="8" fill="#6B6862">{el.ceilingFinish && el.ceilingFinish !== "A definir" ? el.ceilingFinish : ""}</text>
-          </g>
-        ))}
+        {planMode === "forro" && elements.filter(el => el.type === "room").map(el => {
+          const centroid = polygonCentroid(el.points);
+          const label = el.ceilingFinish && el.ceilingFinish !== "A definir" ? el.ceilingFinish : "Forro sem acabamento";
+          const lines = wrapTextLines(label, 14);
+          const lineHeight = 10;
+          const lx = centroid.x + (el.ceilingLabelOffset?.dx ?? -20);
+          const ly = centroid.y + (el.ceilingLabelOffset?.dy ?? 0);
+          const topY = ly - ((lines.length - 1) * lineHeight) / 2;
+          const rot = el.ceilingLabelRotation || 0;
+          const isSel = selectedId === el.id;
+          const longest = Math.max(...lines.map(l => l.length), 1);
+          const hitW = longest * 5 + 10, hitH = lines.length * lineHeight + 8;
+          return (
+            <g key={el.id}>
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill="rgba(0,0,0,0.05)" stroke={isSel ? "#726F68" : "#8A8880"} strokeWidth={isSel ? 2.5 : 1} strokeDasharray="3,3" />
+              <g style={{ cursor: "move" }} onMouseDown={e => startLabelDrag(el, e)} onTouchStart={e => startLabelDrag(el, e)} transform={rot ? `rotate(${rot} ${lx} ${ly})` : undefined}>
+                <rect x={lx - hitW / 2} y={ly - hitH / 2} width={hitW} height={hitH} fill="rgba(255,255,255,0.001)" />
+                {lines.map((ln, i) => <text key={i} x={lx} y={topY + i * lineHeight} fontSize="8" fill="#6B6862" textAnchor="middle" style={{ pointerEvents: "none" }}>{ln}</text>)}
+              </g>
+            </g>
+          );
+        })}
         {elements.filter(el => el.type === "wall").map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={selectedId === el.id ? "#726F68" : "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
@@ -2391,7 +2419,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                   <Pencil size={11} /> Renomear
                 </button>
                 <button onClick={() => rotateRoomLabel(selected)} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                  <RotateCcw size={11} /> Girar nome 90° (arraste pra reposicionar)
+                  <RotateCcw size={11} /> Girar {planMode === "forro" ? "forro" : "nome"} 90° (arraste pra reposicionar)
                 </button>
               </div>
             </div>
