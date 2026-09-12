@@ -456,17 +456,55 @@ function traceEnclosedRoom(walls, clickPoint, GRID) {
   }
   if (guard >= edges.length + 5) return null;
 
-  const simplified = [];
-  for (let i = 0; i < loop.length; i++) {
-    const prev = loop[(i - 1 + loop.length) % loop.length];
-    const cur2 = loop[i];
-    const next = loop[(i + 1) % loop.length];
-    const d1x = cur2.x - prev.x, d1y = cur2.y - prev.y;
-    const d2x = next.x - cur2.x, d2y = next.y - cur2.y;
-    const cross = d1x * d2y - d1y * d2x;
-    if (Math.abs(cross) > 1e-6) simplified.push(cur2);
+  // The raster trace above approximates any non-orthogonal wall as a
+  // staircase of CELL-sized steps (each cell is either "in" or "out" of
+  // the room) — an exactly-collinear-point filter only cleans up straight
+  // runs, so a diagonal or acute-angled wall still comes out looking like
+  // a jagged staircase instead of one straight edge. Running it through
+  // Ramer-Douglas-Peucker flattens any deviation up to a bit more than
+  // one step back into a straight line, while real corners (offset by
+  // whole wall thicknesses/segments) stay well outside that tolerance
+  // and survive.
+  const smoothed = rdpSimplifyClosed(loop, CELL * 1.5);
+  return smoothed.length >= 3 ? smoothed : loop;
+}
+function perpDistToLine(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return dist(p, a);
+  return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len;
+}
+function rdpOpen(points, epsilon) {
+  if (points.length < 3) return points.slice();
+  const first = points[0], last = points[points.length - 1];
+  let maxD = -1, idx = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const d = perpDistToLine(points[i], first, last);
+    if (d > maxD) { maxD = d; idx = i; }
   }
-  return simplified.length >= 3 ? simplified : loop;
+  if (maxD > epsilon) {
+    const left = rdpOpen(points.slice(0, idx + 1), epsilon);
+    const right = rdpOpen(points.slice(idx), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+  return [first, last];
+}
+// RDP is defined for an open polyline with two fixed endpoints; a closed
+// room outline has none, so split it into two chains at the point
+// farthest from an arbitrary anchor (loop[0]) and simplify each as an
+// open path, then stitch them back into one loop.
+function rdpSimplifyClosed(loop, epsilon) {
+  if (loop.length < 4) return loop;
+  let maxD = 0, splitIdx = 1;
+  for (let i = 1; i < loop.length; i++) {
+    const d = dist(loop[0], loop[i]);
+    if (d > maxD) { maxD = d; splitIdx = i; }
+  }
+  const chainA = loop.slice(0, splitIdx + 1);
+  const chainB = loop.slice(splitIdx).concat([loop[0]]);
+  const simpA = rdpOpen(chainA, epsilon);
+  const simpB = rdpOpen(chainB, epsilon);
+  return simpA.slice(0, -1).concat(simpB.slice(0, -1));
 }
 function findMergeableWall(wall, elements) {
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy) || 1;
@@ -1030,13 +1068,6 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     const rect = svgRef.current.getBoundingClientRect();
     return { x: ((p.x - viewBox.x) / viewBox.w) * rect.width, y: ((p.y - viewBox.y) / viewBox.h) * rect.height };
   }
-  function svgPoint(e) {
-    const rect = svgRef.current.getBoundingClientRect();
-    const p = e.touches ? e.touches[0] : e;
-    const relX = (p.clientX - rect.left) / rect.width;
-    const relY = (p.clientY - rect.top) / rect.height;
-    return { x: snap(viewBox.x + relX * viewBox.w), y: snap(viewBox.y + relY * viewBox.h) };
-  }
   function svgPointRaw(e) {
     const rect = svgRef.current.getBoundingClientRect();
     const p = e.touches ? e.touches[0] : e;
@@ -1259,7 +1290,14 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (e.touches && e.touches.length > 1) return;
     if (draggingLabel) return;
     e.preventDefault();
-    const rawP = svgPoint(e);
+    // Must be the true unsnapped pointer position, not svgPoint()'s
+    // grid-snapped one — findNearbyEndpoint below does its own
+    // fine-grained (screen-pixel) search, and pre-rounding the input to
+    // the 20-unit grid first can throw away more precision than that
+    // search tolerance, silently pulling the match onto the wrong corner
+    // whenever two corners (or a short wall's own two ends) sit closer
+    // together than the grid step.
+    const rawP = svgPointRaw(e);
     // Ambiente needs this too — its polygon vertices are meant to trace
     // existing wall corners, and missing them by a few px (same issue
     // walls had) leaves gaps that never actually close the shape.
@@ -1365,21 +1403,35 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       }
       // Tapping precisely on a very short wall's own corner is genuinely
       // hard even zoomed in (the two ends can be just a handful of screen
-      // px apart). If the tap wasn't already an exact endpoint but landed
-      // on/near a wall LINE instead, add BOTH of that wall's ends in one
-      // tap — ordered starting from whichever end is closer to the last
-      // point already placed, so tracing continues the right way round —
-      // instead of a single, possibly-imprecise free point.
-      if (!endpointHit) {
+      // px apart) — short enough that the shared endpoint-snap above
+      // (endpointHit) almost always already resolves the tap to whichever
+      // end is nearest, before this code ever sees it. So this can't
+      // gate on "wasn't already an exact endpoint": for a wall shorter
+      // than about twice that snap tolerance, EVERY tap on it resolves
+      // to one end or the other, and the shortcut below would never
+      // fire when it's needed most. Instead, always check for a nearby
+      // wall LINE first and add whichever of its two ends aren't already
+      // traced — falling back to a single free point only when no wall
+      // is close enough at all.
+      {
         const wallHit = nearestWallWithinTolerance(rawP);
         if (wallHit) {
           const w = wallHit.wall;
           const ends = [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }];
           const ref = polygon.length ? polygon[polygon.length - 1] : rawP;
           ends.sort((a, b) => dist(ref, a) - dist(ref, b));
-          const toAdd = polygon.length && dist(polygon[polygon.length - 1], ends[0]) < 1 ? [ends[1]] : ends;
-          setLastPolygonAdd(toAdd.length);
-          setPolygon([...polygon, ...toAdd]);
+          // A tapped corner is often shared by two walls (a T-junction or
+          // the room's own closing corner) and which one comes back as
+          // "nearest" can flip on sub-pixel differences — so rather than
+          // only checking the wall's near end against the polygon's last
+          // point, drop ANY end that's already traced anywhere in the
+          // polygon (its far end could just as easily be a point placed
+          // several taps ago, not only the immediately previous one).
+          const toAdd = ends.filter(e => !polygon.some(q => dist(q, e) < 1));
+          if (toAdd.length) {
+            setLastPolygonAdd(toAdd.length);
+            setPolygon([...polygon, ...toAdd]);
+          }
           return;
         }
       }
