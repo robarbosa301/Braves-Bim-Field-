@@ -2760,7 +2760,7 @@ function JoinScreen({ onJoin }) {
       <Watermark />
       <div className="relative w-full max-w-sm mt-16">
         <div className="braves-anim-in flex flex-col items-center gap-4 mb-7" style={{ animationDelay: "0s" }}>
-          <img src={SYMBOL_LOGO} alt="Braves BIM Field" style={{ height: 132, width: "auto" }} />
+          <img src={SYMBOL_LOGO} alt="Braves BIM Field" className="braves-logo-build" style={{ height: 132, width: "auto" }} />
           <div className="text-center">
             <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>BRAVES BIM FIELD</div>
             <div className="text-[11px] mt-1.5" style={{ color: C.mute, letterSpacing: "0.18em" }}>PROJETOS E CONSTRUÇÕES EFICIENTES</div>
