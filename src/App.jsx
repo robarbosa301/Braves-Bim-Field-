@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, Box, Home, ZoomIn, ZoomOut, Maximize2,
-  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Ruler
+  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Ruler, CornerUpRight
 } from "lucide-react";
 
 // lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
@@ -1350,24 +1350,68 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   // old behavior; "start" keeps the end fixed and stretches from x1/y1, so
   // tapping a specific endpoint handle can grow/shrink the wall from that
   // same end instead of always anchoring at the start.
+  // Moves wallId's chosen endpoint to newMoving, carrying along any other
+  // wall/stair endpoint that was exactly joined to the OLD position — the
+  // shared bit of logic behind both length-editing and straightening, so
+  // neither of them ever pulls a corner apart from its neighbor.
+  function moveWallEndAndLinked(wallId, movingEnd, oldMoving, newMoving) {
+    const linked = [];
+    elements.forEach(e => {
+      if ((e.type !== "wall" && e.type !== "stair") || e.id === wallId) return;
+      if (dist(oldMoving, { x: e.x1, y: e.y1 }) < 3) linked.push({ id: e.id, which: "start" });
+      if (dist(oldMoving, { x: e.x2, y: e.y2 }) < 3) linked.push({ id: e.id, which: "end" });
+    });
+    const patch = movingEnd === "end" ? { x2: newMoving.x, y2: newMoving.y } : { x1: newMoving.x, y1: newMoving.y };
+    commitElements(elements.map(e => {
+      if (e.id === wallId) {
+        const next = { ...e, ...patch };
+        next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
+        return next;
+      }
+      const link = linked.find(l => l.id === e.id);
+      if (!link) return e;
+      const next = link.which === "start" ? { ...e, x1: newMoving.x, y1: newMoving.y } : { ...e, x2: newMoving.x, y2: newMoving.y };
+      next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
+      return next;
+    }));
+    ensureVisible(newMoving.x, newMoving.y);
+  }
   function setWallLengthDirect(wallId, newLenM, movingEnd = "end") {
     const w = wallsById[wallId];
     if (!w) return;
     const fixed = movingEnd === "end" ? { x: w.x1, y: w.y1 } : { x: w.x2, y: w.y2 };
-    const moving = movingEnd === "end" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
-    const dx = moving.x - fixed.x, dy = moving.y - fixed.y, curLen = Math.hypot(dx, dy) || 1;
-    const ux = dx / curLen, uy = dy / curLen;
+    const oldMoving = movingEnd === "end" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
+    // Typing a length must not just preserve whatever slight tilt the wall
+    // already had — if it's already close to 0/45/90°, snap the direction
+    // exactly first, same as dragging does, so this can also be how a
+    // crooked wall gets straightened.
+    const snappedDir = angleSnap(fixed, oldMoving);
+    const dx = snappedDir.x - fixed.x, dy = snappedDir.y - fixed.y, dirLen = Math.hypot(dx, dy) || 1;
+    const ux = dx / dirLen, uy = dy / dirLen;
     const newLenPx = Math.max(4, (toNum(newLenM) / scale) * GRID);
     const newMoving = { x: fixed.x + ux * newLenPx, y: fixed.y + uy * newLenPx };
-    const newLenMActual = pxToMeters(dist(fixed, newMoving));
-    const patch = movingEnd === "end" ? { x2: newMoving.x, y2: newMoving.y } : { x1: newMoving.x, y1: newMoving.y };
-    commitElements(elements.map(e => e.id === w.id ? { ...e, ...patch, length: newLenMActual } : e));
-    ensureVisible(newMoving.x, newMoving.y);
+    moveWallEndAndLinked(w.id, movingEnd, oldMoving, newMoving);
   }
   function applyWallLenEdit() {
     if (!editingWallLen) return;
     setWallLengthDirect(editingWallLen.wallId, editingWallLen.value, editingWallLen.movingEnd || "end");
     setEditingWallLen(null);
+  }
+  // Forces the wall onto the nearest 0/45/90° angle regardless of how far
+  // off it currently is — an explicit action for when the passive 6°
+  // auto-snap (drag, or typing a length) isn't enough to straighten an
+  // already-crooked wall, without guessing at genuinely diagonal ones.
+  function straightenWall(wallId, movingEnd) {
+    const w = wallsById[wallId];
+    if (!w) return;
+    const fixed = movingEnd === "end" ? { x: w.x1, y: w.y1 } : { x: w.x2, y: w.y2 };
+    const oldMoving = movingEnd === "end" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
+    const len = dist(fixed, oldMoving) || 1;
+    const angle = Math.atan2(oldMoving.y - fixed.y, oldMoving.x - fixed.x);
+    const step = Math.PI / 4;
+    const nearest = Math.round(angle / step) * step;
+    const newMoving = { x: fixed.x + Math.cos(nearest) * len, y: fixed.y + Math.sin(nearest) * len };
+    moveWallEndAndLinked(w.id, movingEnd, oldMoving, newMoving);
   }
 
   // Editing a face-to-face dimension moves the currently selected wall
@@ -1699,7 +1743,9 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           <input autoFocus type="text" inputMode="decimal" value={editingWallLen.value} onChange={e => setEditingWallLen({ ...editingWallLen, value: e.target.value })}
             onKeyDown={e => e.key === "Enter" && applyWallLenEdit()}
             className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
-          <button onClick={applyWallLenEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+          <button onClick={() => straightenWall(editingWallLen.wallId, editingWallLen.movingEnd || "end")} title="Deixar reto (0/45/90°)"
+            className="p-1.5 rounded ml-auto shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><CornerUpRight size={13} color={C.chalk} /></button>
+          <button onClick={applyWallLenEdit} className="text-[11px] px-2 py-1 rounded shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
           <button onClick={() => setEditingWallLen(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
