@@ -82,20 +82,24 @@ function useLoadFonts() {
 // expose it as a CSS var so the root container always matches it exactly.
 function useRealViewportHeight() {
   useEffect(() => {
+    // window.innerHeight (the LAYOUT viewport) deliberately does NOT
+    // shrink when the on-screen keyboard opens on iOS/Android — the
+    // keyboard overlays on top instead. visualViewport.height DOES shrink
+    // for that, which sounds more "accurate" but backfires badly here: it
+    // made the whole app root resize to fit above the keyboard on every
+    // dimension edit, and that resize wasn't landing cleanly, leaving a
+    // large blank gap between the app and the keyboard. Sticking to
+    // innerHeight keeps the app's layout stable while typing; the keyboard
+    // just covers whatever's underneath, same as any ordinary page.
     function update() {
-      const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-      document.documentElement.style.setProperty("--app-vh", `${h}px`);
+      document.documentElement.style.setProperty("--app-vh", `${window.innerHeight}px`);
     }
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
-    window.visualViewport?.addEventListener("resize", update);
-    window.visualViewport?.addEventListener("scroll", update);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
-      window.visualViewport?.removeEventListener("resize", update);
-      window.visualViewport?.removeEventListener("scroll", update);
     };
   }, []);
 }
