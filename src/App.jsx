@@ -1601,7 +1601,6 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   function wallLabelOffset(el) {
     const dx = el.x2 - el.x1, dy = el.y2 - el.y1, len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len;
-    const BASE = 10;
     const walls = elements.filter(e => e.type === "wall");
     let cx = 0, cy = 0;
     walls.forEach(w => { cx += (w.x1 + w.x2) / 2; cy += (w.y1 + w.y2) / 2; });
@@ -1609,7 +1608,21 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
     const dot = (cx - midX) * nx + (cy - midY) * ny;
     const side = dot > 0 ? -1 : 1;
-    return { x: nx * BASE * side, y: ny * BASE * side };
+    const offDir = { x: nx * side, y: ny * side };
+
+    // The text is rotated to run parallel to the wall (labelAngleDeg),
+    // which also rotates which way its glyph body grows from the
+    // baseline anchor — for a near-vertical wall that direction ends up
+    // pointing back toward the wall instead of away from it, visually
+    // shrinking the gap unless the base distance is pushed out to
+    // compensate. A more diagonal wall doesn't have this problem (its
+    // glyphs already grow away from the line), so it needs no extra.
+    const rad = labelAngleDeg(el) * Math.PI / 180;
+    const ascentDir = { x: Math.sin(rad), y: -Math.cos(rad) };
+    const towardWall = Math.max(0, -(ascentDir.x * offDir.x + ascentDir.y * offDir.y));
+    const D = 8, ASCENT = 7;
+    const dist = D + towardWall * ASCENT;
+    return { x: offDir.x * dist, y: offDir.y * dist };
   }
   function wallDimensions(w) {
     const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id);
