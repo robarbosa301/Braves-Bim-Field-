@@ -1762,9 +1762,19 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     const p = svgPointRaw(e);
     const el = elements.find(x => x.id === draggingLabel.id);
     if (!el) return;
-    if (!pointInPolygon(p, el.points)) return;
+    // Requiring the exact pointer position to stay inside the polygon
+    // made this unusable on any room that tapers to a narrow point (like
+    // a thin triangle) — a real finger can't trace a path that stays
+    // inside a sliver only centimeters wide while sliding toward the
+    // room's wider end, so the drag would just freeze. Clamp to the
+    // room's bounding box instead: it still keeps the label from being
+    // dragged off into unrelated parts of the canvas, but never blocks
+    // reaching any part of the room's own shape.
+    const xs = el.points.map(pt => pt.x), ys = el.points.map(pt => pt.y);
+    const cx = Math.max(Math.min(...xs), Math.min(Math.max(...xs), p.x));
+    const cy = Math.max(Math.min(...ys), Math.min(Math.max(...ys), p.y));
     const centroid = draggingLabel.centroid;
-    commitElements(elements.map(x => x.id === el.id ? { ...x, labelOffset: { dx: p.x - centroid.x, dy: p.y - centroid.y } } : x));
+    commitElements(elements.map(x => x.id === el.id ? { ...x, labelOffset: { dx: cx - centroid.x, dy: cy - centroid.y } } : x));
   }
   function onLabelDragEnd() { setDraggingLabel(null); isDraggingRef.current = false; }
   function rotateRoomLabel(el) {
