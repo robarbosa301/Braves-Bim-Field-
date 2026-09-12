@@ -1050,12 +1050,13 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   // point doesn't land on a grid intersection — angled walls in particular
   // rarely meet the grid exactly. Returns null (not a fallback point) when
   // nothing is close, so callers can still try angle-snapping first.
-  function findNearbyEndpoint(p, excludeWallId) {
+  function findNearbyEndpoint(p, excludeWallId, excludeIds) {
     const TOL = 14;
     let best = null, bestD = TOL;
     elements.forEach(e => {
       if (e.type !== "wall" && e.type !== "stair") return;
       if (e.id === excludeWallId) return;
+      if (excludeIds && excludeIds.has(e.id)) return;
       [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }].forEach(pt => {
         const d = dist(p, pt);
         if (d < bestD) { bestD = d; best = pt; }
@@ -1461,7 +1462,19 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
     setSelectedId(w.id);
-    setDragSession({ kind: "wall-endpoint", id: w.id, which });
+    const pt = which === "start" ? { x: w.x1, y: w.y1 } : { x: w.x2, y: w.y2 };
+    // Any other wall whose own endpoint exactly coincides with the one
+    // being dragged is a joined neighbor — it needs to move together with
+    // this point, otherwise the corner splits apart during the drag. This
+    // also has to be excluded from the nearby-endpoint snap below, or it'd
+    // just snap the point straight back to where it already was.
+    const linked = [];
+    elements.forEach(e2 => {
+      if ((e2.type !== "wall" && e2.type !== "stair") || e2.id === w.id) return;
+      if (dist(pt, { x: e2.x1, y: e2.y1 }) < 3) linked.push({ id: e2.id, which: "start" });
+      if (dist(pt, { x: e2.x2, y: e2.y2 }) < 3) linked.push({ id: e2.id, which: "end" });
+    });
+    setDragSession({ kind: "wall-endpoint", id: w.id, which, linked });
   }
   function beginDragOpening(el, e) {
     if (tool !== "selecionar") return;
@@ -1487,17 +1500,31 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       }));
     } else if (dragSession.kind === "wall-endpoint") {
       const w = wallsById[dragSession.id];
-      const hit = w && findNearbyEndpoint(p, dragSession.id);
+      const linked = dragSession.linked || [];
+      // Linked (already-joined) neighbors must never be candidates for the
+      // nearby-endpoint snap — they still sit at the OLD position we're
+      // trying to move away from, so snapping to them would just pull the
+      // point straight back and make it impossible to ever straighten.
+      const linkedIds = new Set(linked.map(l => l.id));
+      const hit = w && findNearbyEndpoint(p, dragSession.id, linkedIds);
       let sp = hit || { x: snap(p.x), y: snap(p.y) };
       if (!hit && w) {
         const fixedPt = dragSession.which === "start" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
         sp = angleSnap(fixedPt, sp);
       }
       commitElements(elements.map(el => {
-        if (el.id !== dragSession.id) return el;
-        const next = dragSession.which === "start" ? { ...el, x1: sp.x, y1: sp.y } : { ...el, x2: sp.x, y2: sp.y };
-        next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
-        return next;
+        if (el.id === dragSession.id) {
+          const next = dragSession.which === "start" ? { ...el, x1: sp.x, y1: sp.y } : { ...el, x2: sp.x, y2: sp.y };
+          next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
+          return next;
+        }
+        const link = linked.find(l => l.id === el.id);
+        if (link) {
+          const next = link.which === "start" ? { ...el, x1: sp.x, y1: sp.y } : { ...el, x2: sp.x, y2: sp.y };
+          next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
+          return next;
+        }
+        return el;
       }));
     } else if (dragSession.kind === "opening") {
       const w = wallsById[dragSession.wallId];
