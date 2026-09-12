@@ -1065,18 +1065,23 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     return best;
   }
   // Snaps freePt's angle relative to fixedPt to the nearest 45° step
-  // whenever it's already close (within tolDeg) — the same "ortho" nudge
-  // any CAD sketch tool needs, since a freehand drag on a touchscreen
-  // essentially never lands on an exactly horizontal/vertical/diagonal
-  // angle on its own. Leaves genuinely off-angle points untouched.
-  function angleSnap(fixedPt, freePt, tolDeg = 6) {
+  // whenever it's already close — the same "ortho" nudge any CAD sketch
+  // tool needs, since a freehand drag on a touchscreen essentially never
+  // lands on an exactly horizontal/vertical/diagonal angle on its own.
+  // Closeness is judged by the actual sideways (perpendicular) pixel
+  // deviation at the current drag distance, not by the angle alone — a
+  // fixed angular tolerance is razor-thin on a short wall but enormous
+  // (impossible to pull free of) on a long one, since the same few degrees
+  // sweep a much bigger sideways distance the farther out you are.
+  function angleSnap(fixedPt, freePt, pixelTol = 10) {
     const dx = freePt.x - fixedPt.x, dy = freePt.y - fixedPt.y;
     const d = Math.hypot(dx, dy);
     if (d < 1e-6) return freePt;
     const angle = Math.atan2(dy, dx);
     const step = Math.PI / 4;
     const nearest = Math.round(angle / step) * step;
-    if (Math.abs(angle - nearest) > tolDeg * Math.PI / 180) return freePt;
+    const perpDeviation = Math.abs(Math.sin(angle - nearest)) * d;
+    if (perpDeviation > pixelTol) return freePt;
     return { x: fixedPt.x + Math.cos(nearest) * d, y: fixedPt.y + Math.sin(nearest) * d };
   }
   function findAt(p) {
