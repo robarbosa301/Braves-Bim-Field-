@@ -1584,6 +1584,15 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   }
   function onCanvasPointerUp() { onLabelDragEnd(); setDragSession(null); }
 
+  // Angle (degrees) to rotate a dimension label so it runs parallel to the
+  // wall it measures instead of always sitting flat/horizontal — flipped
+  // 180° whenever the raw angle would otherwise render the text upside
+  // down, so it always reads left-to-right.
+  function labelAngleDeg(w) {
+    let deg = Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180 / Math.PI;
+    if (deg > 90 || deg < -90) deg += 180;
+    return deg;
+  }
   function wallDimensions(w) {
     const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id);
     if (!opens.length) return null;
@@ -1619,7 +1628,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               style={{ cursor: "pointer" }}
               onClick={e => { e.stopPropagation(); setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy }); }} />
           )}
-          <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: editable ? "auto" : "none", cursor: editable ? "pointer" : undefined }}
+          <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle" transform={`rotate(${labelAngleDeg(w)} ${midX} ${midY - 3})`}
+            style={{ pointerEvents: editable ? "auto" : "none", cursor: editable ? "pointer" : undefined }}
             onClick={editable ? (e => { e.stopPropagation(); setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy }); }) : undefined}>{lenM}</text>
         </g>
       );
@@ -1815,8 +1825,11 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
+              const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
+              const angleDeg = labelAngleDeg(el);
               return (
-                <text x={(el.x1 + el.x2) / 2} y={(el.y1 + el.y2) / 2 - 6} fontSize="10" fill="#6b6660" textAnchor="middle"
+                <text x={midX} y={midY - 6} fontSize="10" fill="#6b6660" textAnchor="middle"
+                  transform={`rotate(${angleDeg} ${midX} ${midY - 6})`}
                   style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
                   {el.length} m{canEdit && " ✎"}
