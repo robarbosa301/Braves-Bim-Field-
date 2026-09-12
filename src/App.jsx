@@ -1305,7 +1305,12 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
           halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
         }));
-        const traced = traceEnclosedRoom(wallSegs, p, GRID);
+        // Use the raw tap position, not the endpoint-snapped p — snapping
+        // this click onto a nearby wall corner (meant for tracing exact
+        // vertices, not for "click somewhere inside the room") could land
+        // it right on/against a wall, starting the flood fill from a
+        // sliver cell instead of the room's actual open interior.
+        const traced = traceEnclosedRoom(wallSegs, rawP, GRID);
         if (!traced) {
           setAutoRoomMsg("Não achei um contorno fechado aqui — verifique se as paredes se encontram, ou desenhe os pontos manualmente.");
           return;
