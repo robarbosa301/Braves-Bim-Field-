@@ -2759,7 +2759,7 @@ function JoinScreen({ onJoin }) {
     <div className="braves-app-root relative w-full min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden" style={METAL_BG}>
       <Watermark />
       <div className="relative w-full max-w-sm mt-16">
-        <div className="flex flex-col items-center gap-4 mb-7">
+        <div className="braves-anim-in flex flex-col items-center gap-4 mb-7" style={{ animationDelay: "0s" }}>
           <img src={SYMBOL_LOGO} alt="Braves BIM Field" style={{ height: 132, width: "auto" }} />
           <div className="text-center">
             <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>BRAVES BIM FIELD</div>
@@ -2767,62 +2767,66 @@ function JoinScreen({ onJoin }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 mb-7">
+        <div className="braves-anim-in flex items-center gap-3 mb-7" style={{ animationDelay: "0.1s" }}>
           <div style={{ flex: 1, height: 1, background: C.line }} />
           <span className="text-sm" style={{ color: C.mute }}>Prancheta BIM de campo</span>
           <div style={{ flex: 1, height: 1, background: C.line }} />
         </div>
 
-        <div className="text-sm mb-3" style={{ color: C.mute }}>Este dispositivo é um</div>
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {[{ id: "tablet", label: "Tablet", sub: "Para visualizar plantas", Icon: Tablet }, { id: "phone", label: "Celular", sub: "Para fotos de campo", Icon: Smartphone }].map(({ id, label, sub, Icon }) => (
-            <button key={id} onClick={() => setRole(id)} className="relative py-7 rounded-2xl flex flex-col items-center gap-2.5"
-              style={{ background: C.panel, border: `1px solid ${role === id ? "rgba(255,255,255,0.35)" : C.line}` }}>
-              <CornerBrackets active={role === id} />
-              <Icon size={30} color={role === id ? C.gold : C.chalk} strokeWidth={1.5} />
-              <div className="text-center">
-                <div className="text-base font-semibold" style={{ color: C.chalk }}>{label}</div>
-                <div className="text-[11px] mt-0.5" style={{ color: C.mute }}>{sub}</div>
-              </div>
-            </button>
-          ))}
+        <div className="braves-anim-in" style={{ animationDelay: "0.18s" }}>
+          <div className="text-sm mb-3" style={{ color: C.mute }}>Este dispositivo é um</div>
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {[{ id: "tablet", label: "Tablet", sub: "Para visualizar plantas", Icon: Tablet }, { id: "phone", label: "Celular", sub: "Para fotos de campo", Icon: Smartphone }].map(({ id, label, sub, Icon }) => (
+              <button key={id} onClick={() => setRole(id)} className="relative py-7 rounded-2xl flex flex-col items-center gap-2.5"
+                style={{ background: C.panel, border: `1px solid ${role === id ? "rgba(255,255,255,0.35)" : C.line}` }}>
+                <CornerBrackets active={role === id} />
+                <Icon size={30} color={role === id ? C.gold : C.chalk} strokeWidth={1.5} />
+                <div className="text-center">
+                  <div className="text-base font-semibold" style={{ color: C.chalk }}>{label}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: C.mute }}>{sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5 mb-3">
-          <button onClick={() => setMode("create")} className="py-3.5 rounded-xl text-sm font-medium"
-            style={{ background: mode === "create" ? C.goldTint : "transparent", color: mode === "create" ? C.gold : C.chalk, border: `1px solid ${mode === "create" ? "#FFFFFF" : C.line}` }}>Novo levantamento</button>
-          <button onClick={() => setMode("join")} className="py-3.5 rounded-xl text-sm font-medium"
-            style={{ background: mode === "join" ? C.goldTint : "transparent", color: mode === "join" ? C.gold : C.chalk, border: `1px solid ${mode === "join" ? "#FFFFFF" : C.line}` }}>Meus Projetos</button>
-        </div>
-        {mode === "join" && (
-          <>
-            <input value={code} onChange={e => setCode(e.target.value)} placeholder="Código do projeto (ex: 7K2P)"
-              className="w-full mb-3 px-3 py-2.5 rounded-xl text-sm uppercase" style={{ ...mono, background: C.panel, color: C.chalk, border: `1px solid ${C.line}` }} />
-            {savedProjects.length > 0 && (
-              <div className="mb-3">
-                <div className="text-[10px] mb-1.5" style={{ color: C.mute, letterSpacing: "0.06em" }}>OU ESCOLHA UM LEVANTAMENTO SALVO NESTE APARELHO</div>
-                <div className="space-y-1.5 max-h-52 overflow-y-auto">
-                  {savedProjects.map(p => (
-                    <button key={p.code} onClick={() => handleJoinExisting(p.code)}
-                      className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                      <Building2 size={15} color={C.gold} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
-                        <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"} · {p.roomsCount || 0} ambiente(s)</div>
-                      </div>
-                      <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
-                    </button>
-                  ))}
+        <div className="braves-anim-in" style={{ animationDelay: "0.26s" }}>
+          <div className="grid grid-cols-2 gap-2.5 mb-3">
+            <button onClick={() => setMode("create")} className="py-3.5 rounded-xl text-sm font-medium"
+              style={{ background: mode === "create" ? C.goldTint : "transparent", color: mode === "create" ? C.gold : C.chalk, border: `1px solid ${mode === "create" ? "#FFFFFF" : C.line}` }}>Novo levantamento</button>
+            <button onClick={() => setMode("join")} className="py-3.5 rounded-xl text-sm font-medium"
+              style={{ background: mode === "join" ? C.goldTint : "transparent", color: mode === "join" ? C.gold : C.chalk, border: `1px solid ${mode === "join" ? "#FFFFFF" : C.line}` }}>Meus Projetos</button>
+          </div>
+          {mode === "join" && (
+            <>
+              <input value={code} onChange={e => setCode(e.target.value)} placeholder="Código do projeto (ex: 7K2P)"
+                className="w-full mb-3 px-3 py-2.5 rounded-xl text-sm uppercase" style={{ ...mono, background: C.panel, color: C.chalk, border: `1px solid ${C.line}` }} />
+              {savedProjects.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-[10px] mb-1.5" style={{ color: C.mute, letterSpacing: "0.06em" }}>OU ESCOLHA UM LEVANTAMENTO SALVO NESTE APARELHO</div>
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                    {savedProjects.map(p => (
+                      <button key={p.code} onClick={() => handleJoinExisting(p.code)}
+                        className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                        <Building2 size={15} color={C.gold} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
+                          <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"} · {p.roomsCount || 0} ambiente(s)</div>
+                        </div>
+                        <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
-        <button onClick={mode === "create" ? goToBuilding : () => handleJoinExisting()} disabled={busy || (mode === "join" && !code.trim())}
-          className="w-full py-4 rounded-2xl text-base font-semibold flex items-center justify-center gap-2 mt-2"
-          style={{ background: "#F2F1ED", color: "#141311", opacity: busy || (mode === "join" && !code.trim()) ? 0.6 : 1 }}>
-          Continuar <ArrowUpRight size={18} style={{ transform: "rotate(45deg)" }} />
-        </button>
+              )}
+            </>
+          )}
+          <button onClick={mode === "create" ? goToBuilding : () => handleJoinExisting()} disabled={busy || (mode === "join" && !code.trim())}
+            className="w-full py-4 rounded-2xl text-base font-semibold flex items-center justify-center gap-2 mt-2"
+            style={{ background: "#F2F1ED", color: "#141311", opacity: busy || (mode === "join" && !code.trim()) ? 0.6 : 1 }}>
+            Continuar <ArrowUpRight size={18} style={{ transform: "rotate(45deg)" }} />
+          </button>
+        </div>
       </div>
     </div>
   );
