@@ -428,45 +428,49 @@ namespace BravesBimFieldImporter
                         }
                     }
 
-                    StairsEditScope editScope = new StairsEditScope(doc, "Criar escada do levantamento");
-                    try
+                    // StairsEditScope has no RollBack() (unlike Transaction) — wrapping it
+                    // in "using" instead means an exception thrown before Commit() still
+                    // discards the in-progress edit correctly via Dispose().
+                    using (StairsEditScope editScope = new StairsEditScope(doc, "Criar escada do levantamento"))
                     {
-                        ElementId stairsId = editScope.Start(baseLevelId, topLevelId);
-                        using (Transaction runTx = new Transaction(doc, "Criar lance de escada"))
+                        try
                         {
-                            runTx.Start();
-                            Line locationLine = Line.CreateBound(p1, p2);
-                            StairsRun.CreateStraightRun(doc, stairsId, locationLine, StairsRunJustification.Center);
-                            runTx.Commit();
-                        }
-                        editScope.Commit(new SilentFailuresPreprocessor());
-
-                        Stairs stairs = doc.GetElement(stairsId) as Stairs;
-                        if (stairs != null)
-                        {
-                            using (Transaction tagTx = new Transaction(doc, "Marcar escada do levantamento"))
+                            ElementId stairsId = editScope.Start(baseLevelId, topLevelId);
+                            using (Transaction runTx = new Transaction(doc, "Criar lance de escada"))
                             {
-                                tagTx.Start();
-                                SetMark(stairs, escada.tag);
-                                // Actual run width and the surveyed landing (position/height along
-                                // the run) aren't set on the created geometry — a real landing
-                                // needs a second run plus a turn direction the survey doesn't
-                                // capture (just one straight line), so it's recorded here instead
-                                // of guessed at.
-                                string landingInfo = escada.tem_patamar
-                                    ? $" · com patamar a {escada.posicao_patamar:0.00} do trajeto, altura {escada.altura_patamar_m:0.00} m (não modelado — ajustar manualmente)"
-                                    : "";
-                                string comment = $"Levantamento: largura {escada.largura_m:0.00} m{landingInfo}.";
-                                SetToken(stairs, "escada", escada.id, comment);
-                                tagTx.Commit();
+                                runTx.Start();
+                                Line locationLine = Line.CreateBound(p1, p2);
+                                StairsRun.CreateStraightRun(doc, stairsId, locationLine, StairsRunJustification.Center);
+                                runTx.Commit();
                             }
+                            editScope.Commit(new SilentFailuresPreprocessor());
+
+                            Stairs stairs = doc.GetElement(stairsId) as Stairs;
+                            if (stairs != null)
+                            {
+                                using (Transaction tagTx = new Transaction(doc, "Marcar escada do levantamento"))
+                                {
+                                    tagTx.Start();
+                                    SetMark(stairs, escada.tag);
+                                    // Actual run width and the surveyed landing (position/height along
+                                    // the run) aren't set on the created geometry — a real landing
+                                    // needs a second run plus a turn direction the survey doesn't
+                                    // capture (just one straight line), so it's recorded here instead
+                                    // of guessed at.
+                                    string landingInfo = escada.tem_patamar
+                                        ? $" · com patamar a {escada.posicao_patamar:0.00} do trajeto, altura {escada.altura_patamar_m:0.00} m (não modelado — ajustar manualmente)"
+                                        : "";
+                                    string comment = $"Levantamento: largura {escada.largura_m:0.00} m{landingInfo}.";
+                                    SetToken(stairs, "escada", escada.id, comment);
+                                    tagTx.Commit();
+                                }
+                            }
+                            result.Escadas++;
                         }
-                        result.Escadas++;
-                    }
-                    catch
-                    {
-                        editScope.RollBack();
-                        result.EscadasIgnoradas++;
+                        catch
+                        {
+                            result.EscadasIgnoradas++;
+                        }
                     }
                 }
             }
