@@ -34,6 +34,19 @@ namespace BravesBimFieldImporter
             // (confirmed: a 128/64px source loaded fine in memory but never
             // rendered). Keep the source vector-traced (see the icon generator
             // in scratch history) so 32/16 still comes out crisp, not blurry.
+            //
+            // Also confirmed the hard way: the PNGs must carry NO pHYs (DPI)
+            // chunk, or one that's exactly 96 DPI. WPF's BitmapImage derives
+            // each frame's logical (DIP) size from PixelWidth * 96 / DpiX — a
+            // PNG tagged at 72 DPI (a very common default from image-export
+            // tools/libraries) reports as ~42.7 DIPs for a 32px-wide image
+            // instead of 32, and that mismatch against Revit's fixed 32x32
+            // ribbon slot is what produced blurry, undersized, visibly
+            // cropped icons on a real Revit install — not a Windows display
+            // scaling issue, since it reproduces even at 100% scaling.
+            // Regenerate icons at 96 DPI (or strip the pHYs chunk entirely,
+            // which WPF then defaults to treating as 96) if this ever
+            // resurfaces after a redesign.
             var cloudButton = new PushButtonData(
                 "BravesCloudButton", "Cloud", assemblyPath, typeof(ImportarDaNuvemCommand).FullName)
             {
