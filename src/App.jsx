@@ -373,23 +373,34 @@ function nearestParallelWallDims(walls) {
 // fill reaches the padding border around the walls' bounding box).
 function traceEnclosedRoom(walls, clickPoint, GRID, scale) {
   if (!walls.length) return null;
-  // CELL is expressed in drawing units, but what it actually costs the
-  // room is real-world size: at a coarse "meters per grid square" scale
-  // (a big property surveyed with a loose grid), a fixed GRID/2 cell can
-  // represent a meter or more — bigger than the entire width of a narrow
-  // room like a hallway or this tapering test shape, so the wall-blocking
-  // margin on both sides overlaps and blots out the whole interior near
-  // the narrow end. Aim for a roughly constant ~10cm real-world cell
-  // instead, clamped so it never gets coarser than the old fixed size
-  // (large open rooms don't need finer-than-that resolution) or fine
-  // enough to blow past the cell-count cap on a big footprint.
-  const idealCell = scale ? (0.1 / scale) * GRID : GRID / 2;
-  const CELL = Math.min(GRID / 2, Math.max(2, idealCell));
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   walls.forEach(w => {
     minX = Math.min(minX, w.x1, w.x2); maxX = Math.max(maxX, w.x1, w.x2);
     minY = Math.min(minY, w.y1, w.y2); maxY = Math.max(maxY, w.y1, w.y2);
   });
+  const spanX = maxX - minX, spanY = maxY - minY;
+  // CELL is expressed in drawing units, but what it actually costs the
+  // room is real-world size: at a coarse "meters per grid square" scale
+  // (a big property surveyed with a loose grid), a fixed-in-units cell
+  // can represent a meter or more — bigger than the entire width of a
+  // narrow room like a hallway or a tapering tip, so the wall-blocking
+  // margin on both sides overlaps and blots out the whole interior
+  // there. Aim for a roughly constant ~8cm real-world cell instead of a
+  // fixed drawing-unit one. A single fixed floor on how fine that's
+  // allowed to get (rather than one derived from the cell-count budget
+  // below) was still too coarse for a small, narrow room like this one,
+  // while being needlessly fine for a huge one — so shrink CELL only as
+  // far as this room's OWN bounding box can afford within the cap,
+  // which lets a small room get a much finer cell than a large one.
+  let CELL = Math.min(GRID / 2, scale ? (0.08 / scale) * GRID : GRID / 2);
+  for (let i = 0; i < 30 && CELL < GRID / 2; i++) {
+    const pad = CELL * 4;
+    const cols = Math.ceil((spanX + 2 * pad) / CELL);
+    const rows = Math.ceil((spanY + 2 * pad) / CELL);
+    if (cols * rows <= 40000) break;
+    CELL *= 1.25;
+  }
+  CELL = Math.min(GRID / 2, CELL);
   const PAD = CELL * 4;
   minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
   const cols = Math.ceil((maxX - minX) / CELL);
