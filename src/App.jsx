@@ -966,10 +966,13 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   const [pending, setPending] = useState(null);
   const [polygon, setPolygon] = useState([]);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
+  const [lastPolygonAdd, setLastPolygonAdd] = useState(1);
   const [autoRoomMsg, setAutoRoomMsg] = useState("");
   const [dims, setDims] = useState({ w: 340, h: 300 });
   const [vb, setVb] = useState(null);
   const [deletedStack, setDeletedStack] = useState([]);
+  const [history, setHistory] = useState([]);
+  const isDraggingRef = useRef(false);
   const [namingId, setNamingId] = useState(null);
   const [namingValue, setNamingValue] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -1042,7 +1045,23 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     return { x: viewBox.x + relX * viewBox.w, y: viewBox.y + relY * viewBox.h };
   }
   function pxToMeters(px) { return +((px / GRID) * scale).toFixed(2); }
-  function commitElements(next) { onChange(next); }
+  // Every discrete action (add, delete, edit a length, close a room...)
+  // snapshots the pre-change elements onto a real undo history. A drag
+  // gesture calls this on every pointer move, though — snapshotting each
+  // of those would flood history with intermediate frames of the same
+  // drag, so beginDrag* takes the one snapshot for the whole gesture
+  // up front (via pushHistory) and sets isDraggingRef so this skips its
+  // own auto-push until the drag ends.
+  function pushHistory() {
+    setHistory(h => {
+      const next = [...h, elements];
+      return next.length > 60 ? next.slice(next.length - 60) : next;
+    });
+  }
+  function commitElements(next) {
+    if (!isDraggingRef.current) pushHistory();
+    onChange(next);
+  }
   function patchSelected(patch) { if (!selectedId) return; commitElements(elements.map(e => e.id === selectedId ? { ...e, ...patch } : e)); }
 
   function zoomAround(relX, relY, factor) {
@@ -1359,10 +1378,12 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
           const ref = polygon.length ? polygon[polygon.length - 1] : rawP;
           ends.sort((a, b) => dist(ref, a) - dist(ref, b));
           const toAdd = polygon.length && dist(polygon[polygon.length - 1], ends[0]) < 1 ? [ends[1]] : ends;
+          setLastPolygonAdd(toAdd.length);
           setPolygon([...polygon, ...toAdd]);
           return;
         }
       }
+      setLastPolygonAdd(1);
       setPolygon([...polygon, p]);
       return;
     }
@@ -1407,21 +1428,41 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (namingId) onNameRoom(namingId, namingValue.trim());
     setNamingId(null); setNamingValue("");
   }
+  function deleteRoom(id) {
+    const room = elements.find(e => e.id === id);
+    if (!room) { setNamingId(null); setNamingValue(""); return; }
+    setDeletedStack(s => [...s, [room]]);
+    commitElements(elements.filter(e => e.id !== id));
+    setNamingId(null); setNamingValue("");
+  }
 
   function undoLast() {
-    if (tool === "ambiente" && polygon.length > 0) { setPolygon(polygon.slice(0, -1)); return; }
+    if (tool === "ambiente" && polygon.length > 0) {
+      setPolygon(polygon.slice(0, -Math.min(lastPolygonAdd, polygon.length)));
+      return;
+    }
     if (tool === "parede" && pending && elements.length) {
       const last = elements[elements.length - 1];
       // Mid-chain: undo the last segment but keep the chain going from its
-      // start point, instead of just dropping the pending point.
+      // start point, instead of just dropping the pending point. This is
+      // itself a kind of undo, so it bypasses commitElements/history —
+      // "Recente" shouldn't need pressing twice to get past its own effect.
       if (last.type === "wall" && last.x2 === pending.x && last.y2 === pending.y) {
-        commitElements(elements.slice(0, -1));
+        onChange(elements.slice(0, -1));
         setPending({ x: last.x1, y: last.y1 });
         return;
       }
     }
     if (pending) { setPending(null); return; }
-    commitElements(elements.slice(0, -1));
+    // Real undo: restore the elements as they were before the last
+    // discrete action (add, delete, edit, drag...), not just whatever
+    // happens to be the last entry in the current array — that broke on
+    // anything that wasn't a plain "add" (e.g. undoing a move deleted an
+    // unrelated element instead of moving the wall back).
+    if (!history.length) return;
+    const prev = history[history.length - 1];
+    setHistory(h => h.slice(0, -1));
+    onChange(prev);
   }
   function clearAll() {
     if (!window.confirm("Limpar todo o croqui deste nível? Essa ação não pode ser desfeita.")) return;
@@ -1659,6 +1700,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
 
   function startLabelDrag(el, e) {
     e.stopPropagation(); e.preventDefault();
+    pushHistory();
+    isDraggingRef.current = true;
     const centroid = polygonCentroid(el.points);
     setDraggingLabel({ id: el.id, centroid });
   }
@@ -1671,7 +1714,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     const centroid = draggingLabel.centroid;
     commitElements(elements.map(x => x.id === el.id ? { ...x, labelOffset: { dx: p.x - centroid.x, dy: p.y - centroid.y } } : x));
   }
-  function onLabelDragEnd() { setDraggingLabel(null); }
+  function onLabelDragEnd() { setDraggingLabel(null); isDraggingRef.current = false; }
   function rotateRoomLabel(el) {
     const next = ((el.labelRotation || 0) + 90) % 360;
     commitElements(elements.map(x => x.id === el.id ? { ...x, labelRotation: next } : x));
@@ -1685,12 +1728,16 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     // it, leaving pinch-to-zoom completely dead on selected elements.
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
+    pushHistory();
+    isDraggingRef.current = true;
     setSelectedId(w.id);
     setDragSession({ kind: "wall-move", id: w.id, startPointer: svgPointRaw(e), orig: { x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 } });
   }
   function beginDragWallEndpoint(w, which, e) {
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
+    pushHistory();
+    isDraggingRef.current = true;
     setSelectedId(w.id);
     const pt = which === "start" ? { x: w.x1, y: w.y1 } : { x: w.x2, y: w.y2 };
     // Any other wall whose own endpoint exactly coincides with the one
@@ -1710,6 +1757,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (tool !== "selecionar") return;
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
+    pushHistory();
+    isDraggingRef.current = true;
     setSelectedId(el.id);
     setDragSession({ kind: "opening", id: el.id, wallId: el.wallId });
   }
@@ -1963,6 +2012,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
             onKeyDown={e => e.key === "Enter" && saveName()}
             className="flex-1 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
           <button onClick={saveName} className="text-[11px] px-2 py-1 rounded" style={{ background: C.gold, color: "#141311" }}>Salvar</button>
+          <button onClick={() => deleteRoom(namingId)} title="Apagar este ambiente" className="text-[11px] px-1.5" style={{ color: C.bad }}><Trash2 size={13} /></button>
           <button onClick={() => { setNamingId(null); setNamingValue(""); }} className="text-[11px] px-1.5" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
