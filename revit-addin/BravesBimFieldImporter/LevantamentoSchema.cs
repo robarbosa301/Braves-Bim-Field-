@@ -11,6 +11,7 @@ namespace BravesBimFieldImporter
         public int schema_version;
         public ProjetoInfo projeto;
         public List<NivelInfo> niveis;
+        public List<CoberturaInfo> coberturas;
     }
 
     public class ProjetoInfo
@@ -30,6 +31,8 @@ namespace BravesBimFieldImporter
         public List<ParedeInfo> paredes;
         public List<PortaInfo> portas;
         public List<JanelaInfo> janelas;
+        public List<EscadaInfo> escadas;
+        public List<LuminariaInfo> luminarias;
         public List<AmbienteCroquiInfo> ambientes_croqui;
     }
 
@@ -77,5 +80,47 @@ namespace BravesBimFieldImporter
         public string nome;
         public double area_m2;
         public List<PontoInfo> pontos;
+        public string acabamento_piso;
+        public string cor_piso;
+        public string acabamento_forro;
+    }
+
+    public class EscadaInfo
+    {
+        public string id;
+        public string tag;
+        public double x1, y1, x2, y2;
+        public double largura_m;
+        public string nivel_destino_id;
+        public bool tem_patamar;
+        public double posicao_patamar;
+        public double altura_patamar_m;
+    }
+
+    public class LuminariaInfo
+    {
+        public string id;
+        public string tag;
+        public double x, y;
+    }
+
+    // Coberturas have no real footprint/shape in the app yet — just a name,
+    // the level they sit over, and a list of "águas" (roof planes), each with
+    // a slope angle and area as free text typed by the user. See the roof
+    // creation code in LevantamentoImporter for how this necessarily
+    // approximate data gets turned into actual Revit roof geometry.
+    public class CoberturaInfo
+    {
+        public string id;
+        public string name;
+        public string level;
+        public List<AguaInfo> aguas;
+    }
+
+    public class AguaInfo
+    {
+        public string id;
+        public string inclinacao;
+        public string area;
     }
 }

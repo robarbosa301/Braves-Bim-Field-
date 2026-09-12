@@ -10,19 +10,63 @@ pelo app (aba **Sincronização → JSON**) e cria no Revit, no projeto aberto:
 - **Portas e janelas** (usa a primeira família de porta/janela carregada no
   projeto; ajusta largura/altura se a família tiver esses parâmetros)
 - **Ambientes** (cria um `Room` no centro de cada contorno fechado desenhado
-  no Croqui — precisa que as paredes já formem um contorno fechado)
+  no Croqui — precisa que as paredes já formem um contorno fechado — e grava
+  o piso/forro escolhido no app nos parâmetros nativos "Acabamento do Piso"/
+  "Acabamento do Forro" do `Room`)
+- **Luminárias** (usa a primeira família de luminária carregada no projeto,
+  posicionada na altura do forro de cada nível)
+- **Escadas** (cria uma `Stairs` de lance reto entre o nível de origem e o
+  nível de destino escolhidos no Croqui)
+- **Coberturas** (cria um `FootPrintRoof` — veja a limitação importante
+  abaixo, o app ainda não desenha o contorno real do telhado)
 
-**Ainda não implementado** (fica para uma próxima etapa): coberturas, escadas,
-luminárias, e pisos/acabamentos como parâmetros de material.
+### Limitações desta primeira versão de escadas e coberturas
+
+Estas duas são bem mais aproximadas que o resto do import, porque o Croqui
+ainda não guarda geometria detalhada o suficiente para modelá-las de verdade:
+
+- **Escadas**: o app só guarda uma linha reta (início/fim) e, se houver
+  patamar, sua posição e altura ao longo do trajeto — não a direção do giro.
+  O add-in cria um lance reto simples entre os dois níveis; se a escada
+  levantada tem patamar, os dados reais (posição/altura) ficam gravados em
+  "Comentários" mas **não são modelados** — ajuste manualmente no Revit.
+  Diferente de paredes/portas/ambientes, uma escada já importada antes é
+  sempre **apagada e recriada do zero** a cada nova importação (editar a
+  geometria de uma escada existente via API é bem mais arriscado sem poder
+  testar contra um Revit de verdade) — qualquer ajuste manual feito nela
+  direto no Revit se perde numa reimportação.
+- **Coberturas**: o app guarda só um nome, o nível, e a inclinação/área de
+  cada "água" como texto — nenhum contorno/formato real. O add-in aproxima
+  o contorno pelo **retângulo que envolve todas as paredes do nível**
+  (não o formato real do telhado) e aplica a inclinação da primeira água a
+  todas as bordas; os dados completos de todas as águas ficam em
+  "Comentários" para conferência. Também é sempre apagada e recriada a cada
+  importação.
+
+Se essas simplificações não servem pro seu caso, o jeito mais confiável por
+enquanto é ajustar a escada/cobertura manualmente no Revit depois de importar
+— ou não usar o import automático para elas e modelar do zero.
+
+### Piso/forro do ambiente não vira um Floor/Ceiling de verdade
+
+O acabamento de piso/forro escolhido no Croqui é gravado nos parâmetros de
+texto do `Room` ("Acabamento do Piso"/"Acabamento do Forro"), não como um
+elemento `Floor`/`Ceiling` real com um `Material` do Revit associado — o app
+guarda esses acabamentos como um nome de uma lista fixa (ex: "Porcelanato"),
+não como referência a um material real do seu projeto, então não há como
+casar automaticamente um `Material` sem arriscar pegar o errado.
 
 ### Importar de novo não duplica
 
 Rodar qualquer um dos dois comandos de novo no mesmo projeto Revit
-**atualiza** as paredes/portas/janelas/ambientes já importados (posição,
-tipo, dimensões) em vez de criar um segundo conjunto por cima do primeiro —
-o add-in reconhece cada elemento por um identificador oculto gravado no
-campo Comentários dele. Elementos **novos** no levantamento (ex: uma porta
-que você acabou de adicionar no app) são criados normalmente.
+**atualiza** as paredes/portas/janelas/ambientes/luminárias já importados
+(posição, tipo, dimensões) em vez de criar um segundo conjunto por cima do
+primeiro — o add-in reconhece cada elemento por um identificador oculto
+gravado no campo Comentários dele. Elementos **novos** no levantamento (ex:
+uma porta que você acabou de adicionar no app) são criados normalmente.
+Escadas e coberturas são a exceção — veja a seção
+[Limitações desta primeira versão](#limitações-desta-primeira-versão-de-escadas-e-coberturas)
+acima, elas são sempre apagadas e recriadas do zero a cada importação.
 
 Importante: se você **apagar** algo no app (uma parede, porta, etc.) e
 importar de novo, o elemento correspondente **não é apagado automaticamente**
@@ -38,6 +82,14 @@ o ambiente onde ele foi criado não tem Windows nem Revit instalados. É bem
 provável que a primeira tentativa de build dê algum erro de compilação ou
 que algo precise de ajuste ao rodar de verdade. Isso é esperado — me manda
 a mensagem de erro (do Visual Studio ou do Revit) que eu corrijo.
+
+A parte de **escadas** (`StairsEditScope`/`StairsRun`) e **coberturas**
+(`FootPrintRoof`) usa partes da API do Revit bem mais intrincadas que o
+resto do add-in (paredes/portas/janelas/ambientes já vinham de antes e
+foram usadas com mais confiança) — é onde um erro de compilação ou de
+execução é mais provável de aparecer primeiro. Se o import falhar só
+nessas duas partes, os avisos "⚠ N escada(s)/cobertura(s) ignorada(s)" no
+resumo final ajudam a isolar qual delas.
 
 ## Pré-requisitos
 
