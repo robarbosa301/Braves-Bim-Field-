@@ -1055,7 +1055,14 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
   // rarely meet the grid exactly. Returns null (not a fallback point) when
   // nothing is close, so callers can still try angle-snapping first.
   function findNearbyEndpoint(p, excludeWallId, excludeIds) {
-    const TOL = 14;
+    // Expressed as a screen-pixel radius, not a fixed world-space one — a
+    // fixed SVG-unit tolerance is tied to the drawing's real-world scale,
+    // so two corners genuinely closer together than it (like either end of
+    // a 0.57m wall) could never be told apart no matter how far the user
+    // zoomed in. Converting from screen pixels means zooming in actually
+    // buys more precision, same as any CAD tool.
+    const screenPxTolerance = 14;
+    const TOL = screenPxTolerance * (viewBox.w / dims.w);
     let best = null, bestD = TOL;
     elements.forEach(e => {
       if (e.type !== "wall" && e.type !== "stair") return;
