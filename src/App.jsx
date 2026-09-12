@@ -1593,6 +1593,32 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     if (deg > 90 || deg < -90) deg += 180;
     return deg;
   }
+  // How far (and to which side) a wall's own length label sits off the
+  // wall line. When another roughly-parallel wall is nearby on one side
+  // (two close, near-parallel walls, like a narrow triangular bay), the
+  // label is pushed toward the OTHER side instead — away from the
+  // neighbor — so the two walls' labels land apart instead of colliding
+  // in the gap between them.
+  function wallLabelOffset(el) {
+    const dx = el.x2 - el.x1, dy = el.y2 - el.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const nx = -uy, ny = ux;
+    const BASE = 16;
+    let hasPos = false, hasNeg = false;
+    elements.forEach(o => {
+      if (o.type !== "wall" || o.id === el.id) return;
+      const ox = o.x2 - o.x1, oy = o.y2 - o.y1, olen = Math.hypot(ox, oy) || 1;
+      if (Math.abs(dx * oy - dy * ox) / (len * olen) > 0.1) return;
+      const omx = (o.x1 + o.x2) / 2, omy = (o.y1 + o.y2) / 2;
+      const signedDist = (omx - el.x1) * nx + (omy - el.y1) * ny;
+      if (signedDist > 0 && signedDist < 200) hasPos = true;
+      if (signedDist < 0 && signedDist > -200) hasNeg = true;
+    });
+    let side = -1;
+    if (hasPos && !hasNeg) side = -1;
+    else if (hasNeg && !hasPos) side = 1;
+    return { x: nx * BASE * side, y: ny * BASE * side };
+  }
   function wallDimensions(w) {
     const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id);
     if (!opens.length) return null;
@@ -1827,9 +1853,11 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               const canEdit = tool === "selecionar" && selectedId === el.id;
               const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
               const angleDeg = labelAngleDeg(el);
+              const off = wallLabelOffset(el);
+              const lx = midX + off.x, ly = midY + off.y;
               return (
-                <text x={midX} y={midY - 6} fontSize="10" fill="#6b6660" textAnchor="middle"
-                  transform={`rotate(${angleDeg} ${midX} ${midY - 6})`}
+                <text x={lx} y={ly} fontSize="10" fill="#6b6660" textAnchor="middle"
+                  transform={`rotate(${angleDeg} ${lx} ${ly})`}
                   style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
                   {el.length} m{canEdit && " ✎"}
