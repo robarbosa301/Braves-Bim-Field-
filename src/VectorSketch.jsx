@@ -282,6 +282,52 @@ function mergeWallPair(a, b) {
   for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) { const d = dist(pts[i], pts[j]); if (d > bestD) { bestD = d; best = [pts[i], pts[j]]; } }
   return { x1: best[0].x, y1: best[0].y, x2: best[1].x, y2: best[1].y };
 }
+// Finds a nearby, non-parallel wall whose nearest endpoint to one of
+// `wall`'s own endpoints sits close by but doesn't already coincide with
+// it — the "meant to be the same corner, but one wall was drawn a bit
+// short/long or they cross past each other" case that's fiddly to fix by
+// dragging a single endpoint by hand. Parallel/collinear walls are left
+// to the merge feature above — there's no single corner to trim to.
+function findCornerWall(wall, elements) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const aEnds = [{ x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }];
+  const others = elements.filter(e => e.type === "wall" && e.id !== wall.id);
+  for (const o of others) {
+    const odx = o.x2 - o.x1, ody = o.y2 - o.y1, olen = Math.hypot(odx, ody) || 1;
+    const oux = odx / olen, ouy = ody / olen;
+    if (Math.abs(ux * ouy - uy * oux) < 0.06) continue;
+    const bEnds = [{ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }];
+    for (const ae of aEnds) for (const be of bEnds) {
+      const d = dist(ae, be);
+      if (d > 0.75 && d < GRID * 3) return o;
+    }
+  }
+  return null;
+}
+// Extends/trims two non-parallel walls so they meet exactly at the
+// intersection of their (infinite) centerlines — whichever endpoint of
+// each wall already sits nearest that point is the one pulled onto it,
+// same as dragging that single endpoint by hand, just exact. The other,
+// already-anchored end of each wall never moves.
+function trimWallsToCorner(a, b) {
+  const aux0 = a.x2 - a.x1, auy0 = a.y2 - a.y1, alen = Math.hypot(aux0, auy0) || 1;
+  const aux = aux0 / alen, auy = auy0 / alen;
+  const bux0 = b.x2 - b.x1, buy0 = b.y2 - b.y1, blen = Math.hypot(bux0, buy0) || 1;
+  const bux = bux0 / blen, buy = buy0 / blen;
+  const denom = aux * buy - auy * bux;
+  if (Math.abs(denom) < 1e-6) return null;
+  const t = ((b.x1 - a.x1) * buy - (b.y1 - a.y1) * bux) / denom;
+  const ix = a.x1 + aux * t, iy = a.y1 + auy * t;
+  const aStartD = dist({ x: a.x1, y: a.y1 }, { x: ix, y: iy });
+  const aEndD = dist({ x: a.x2, y: a.y2 }, { x: ix, y: iy });
+  const bStartD = dist({ x: b.x1, y: b.y1 }, { x: ix, y: iy });
+  const bEndD = dist({ x: b.x2, y: b.y2 }, { x: ix, y: iy });
+  return {
+    a: aStartD <= aEndD ? { x1: ix, y1: iy, x2: a.x2, y2: a.y2 } : { x1: a.x1, y1: a.y1, x2: ix, y2: iy },
+    b: bStartD <= bEndD ? { x1: ix, y1: iy, x2: b.x2, y2: b.y2 } : { x1: b.x1, y1: b.y1, x2: ix, y2: iy },
+  };
+}
 
 export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel }) {
   const svgRef = useRef(null);
@@ -804,6 +850,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     next.push(newWall);
     commitElements(next);
     setSelectedId(newWall.id);
+  }
+
+  function tryTrimCorner() {
+    if (!selected || selected.type !== "wall") return;
+    const other = findCornerWall(selected, elements);
+    if (!other) return;
+    const trimmed = trimWallsToCorner(selected, other);
+    if (!trimmed) return;
+    const newA = { ...selected, ...trimmed.a, length: pxToMeters(dist({ x: trimmed.a.x1, y: trimmed.a.y1 }, { x: trimmed.a.x2, y: trimmed.a.y2 })) };
+    const newB = { ...other, ...trimmed.b, length: pxToMeters(dist({ x: trimmed.b.x1, y: trimmed.b.y1 }, { x: trimmed.b.x2, y: trimmed.b.y2 })) };
+    commitElements(elements.map(e => (e.id === newA.id ? newA : e.id === newB.id ? newB : e)));
   }
 
   function splitSelectedWallAt(distM) {
@@ -1730,6 +1787,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               {findMergeableWall(selected, elements) && (
                 <button onClick={tryMergeSelected} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.gold, color: "#141311" }}>
                   <Link2 size={12} /> Unir com parede adjacente (mesmo alinhamento)
+                </button>
+              )}
+              {findCornerWall(selected, elements) && (
+                <button onClick={tryTrimCorner} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.gold, color: "#141311" }}>
+                  <CornerUpRight size={12} /> Aparar/unir canto com parede próxima
                 </button>
               )}
               {!splittingWall ? (
