@@ -2262,7 +2262,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                   transform={`rotate(${angleDeg} ${lx} ${ly})`}
                   style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
-                  {el.length} m{el.demolir ? " · DEMOLIR" : ""}{canEdit && " ✎"}
+                  {el.length} m{canEdit && " ✎"}
                 </text>
               );
             })()}
@@ -2357,7 +2357,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 8} fontSize="9" fill={el.demolir ? C.bad : "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height} · {panels}f{el.demolir ? " · DEMOLIR" : ""}</text>
+              <text x={el.x} y={el.y - 8} fontSize="9" fill={el.demolir ? C.bad : "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height} · {panels}f</text>
             </g>
           );
         })}
