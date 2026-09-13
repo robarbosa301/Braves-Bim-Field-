@@ -1528,7 +1528,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           // that wall's own half-thickness along the line.
           const fx1 = d.x1 + ux * halfThickAPx, fy1 = d.y1 + uy * halfThickAPx;
           const fx2 = d.x2 - ux * halfThickBPx, fy2 = d.y2 - uy * halfThickBPx;
-          const midX = (fx1 + fx2) / 2, midY = (fy1 + fy2) / 2;
+          // For a simple rectangular room, this pair's line (running between
+          // a wall and its opposite) and the OTHER pair's line (the two side
+          // walls) cross exactly at the room's center — putting both labels
+          // at their line's true midpoint then lands them on the exact same
+          // point, stacking the two texts unreadably on top of each other.
+          // Sliding each label off-center by a different amount depending on
+          // whether its line runs mostly vertically or mostly horizontally
+          // keeps it visually anchored to its own dimension line while
+          // reliably landing the two labels somewhere different.
+          const labelT = Math.abs(uy) > Math.abs(ux) ? 0.36 : 0.64;
+          const midX = fx1 + (fx2 - fx1) * labelT, midY = fy1 + (fy2 - fy1) * labelT;
           const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
           const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
           // Which wall of the pair moves when this dimension is edited: keep
