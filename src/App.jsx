@@ -2925,6 +2925,7 @@ export default function PranchetaBIM() {
   const [codeDraft, setCodeDraft] = useState("");
   const [ambientesLevelFilter, setAmbientesLevelFilter] = useState(null);
   const [pressedRoomId, setPressedRoomId] = useState(null);
+  const [confirmDeleteRoomId, setConfirmDeleteRoomId] = useState(null);
   const longPressTimer = useRef(null);
   const justLongPressed = useRef(false);
   const [roofs, setRoofs] = useState([]);
@@ -3406,10 +3407,22 @@ export default function PranchetaBIM() {
             <div className="text-xs font-semibold mb-1" style={{ color: C.gold }}>{ambientesLevelFilter}</div>
             {rooms.filter(r => r.level === ambientesLevelFilter).map(r => {
               const revealed = pressedRoomId === r.id;
+              const confirming = confirmDeleteRoomId === r.id;
               const startPress = () => {
                 longPressTimer.current = setTimeout(() => { setPressedRoomId(r.id); justLongPressed.current = true; }, 500);
               };
               const cancelPress = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
+              if (confirming) {
+                return (
+                  <div key={r.id} className="w-full p-3 rounded-lg flex items-center gap-2 flex-wrap"
+                    style={{ background: "rgba(193,84,63,0.1)", border: `1px solid ${C.bad}` }}>
+                    <span className="text-xs flex-1" style={{ color: C.chalk }}>Apagar "{r.name}"? Essa ação não pode ser desfeita.</span>
+                    <button onClick={() => setConfirmDeleteRoomId(null)} className="text-[11px] px-2.5 py-1.5 rounded" style={{ color: C.mute, background: C.panelAlt }}>Cancelar</button>
+                    <button onClick={() => { removeRoom(r.id); setConfirmDeleteRoomId(null); setPressedRoomId(null); }}
+                      className="text-[11px] px-2.5 py-1.5 rounded" style={{ color: "#141311", background: C.bad }}>Apagar</button>
+                  </div>
+                );
+              }
               return (
                 <div key={r.id} role="button" tabIndex={0}
                   onClick={() => {
@@ -3437,7 +3450,7 @@ export default function PranchetaBIM() {
                     </div>
                   </div>
                   {revealed ? (
-                    <button onClick={e => { e.stopPropagation(); if (window.confirm(`Apagar o ambiente "${r.name}"?`)) { removeRoom(r.id); setPressedRoomId(null); } }}
+                    <button onClick={e => { e.stopPropagation(); setConfirmDeleteRoomId(r.id); }}
                       title="Apagar ambiente" className="p-1.5 rounded shrink-0" style={{ color: C.bad, background: "rgba(193,84,63,0.14)" }}>
                       <Trash2 size={16} />
                     </button>
