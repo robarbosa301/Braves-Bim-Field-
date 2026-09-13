@@ -65,6 +65,19 @@ function getWallTexture(finish, color) {
   return tex;
 }
 
+// A painted wall face is meant to read as one flat, uniform coat of color —
+// tiling getWallTexture's subtle gradient canvas across a whole wall (like
+// every other finish does, to show a repeating brick/tile/wood pattern)
+// instead made the paint look like a grid of visible squares. So Pintura
+// skips the texture entirely and uses the color straight on the material.
+function wallFaceMaterial(finish, color, segLen, segH) {
+  if (finish === "Pintura") return new THREE.MeshStandardMaterial({ color: color || "#E8E4DA", roughness: 0.45 });
+  const tex = getWallTexture(finish, color).clone();
+  tex.needsUpdate = true;
+  tex.repeat.set(Math.max(1, segLen / 1.1), Math.max(1, segH / 1.1));
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
+}
+
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
 export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut }) {
   const mountRef = useRef(null);
@@ -148,8 +161,6 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           if (cursor < len - 0.02) segs.push({ start: cursor, end: len, yBottom: 0, yTop: h });
           if (segs.length === 0) segs.push({ start: 0, end: len, yBottom: 0, yTop: h });
 
-          const texA = getWallTexture(w.finishA, w.paintColorA);
-          const texB = getWallTexture(w.finishB, w.paintColorB);
           // Walls flagged for demolition or new construction (a reforma's
           // scope) render as a translucent red/green block instead of their
           // real finish, so the 3D view calls out the same elements the
@@ -167,10 +178,8 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
             } else if (w.construir) {
               matA = construirMat(); matB = construirMat();
             } else {
-              const tA = texA.clone(); tA.needsUpdate = true; tA.repeat.set(Math.max(1, segLen / 1.1), Math.max(1, segH / 1.1));
-              const tB = texB.clone(); tB.needsUpdate = true; tB.repeat.set(Math.max(1, segLen / 1.1), Math.max(1, segH / 1.1));
-              matA = new THREE.MeshStandardMaterial({ map: tA, roughness: w.finishA === "Pintura" ? 0.45 : 0.92 });
-              matB = new THREE.MeshStandardMaterial({ map: tB, roughness: w.finishB === "Pintura" ? 0.45 : 0.92 });
+              matA = wallFaceMaterial(w.finishA, w.paintColorA, segLen, segH);
+              matB = wallFaceMaterial(w.finishB, w.paintColorB, segLen, segH);
             }
             const geo = new THREE.BoxGeometry(segLen, segH, thickness);
             const mesh = new THREE.Mesh(geo, [matNeutral, matNeutral, matNeutral, matNeutral, matA, matB]);

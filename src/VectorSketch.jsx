@@ -140,7 +140,14 @@ function traceEnclosedRoom(walls, clickPoint, GRID, scale) {
       const px = minX + (cx + 0.5) * CELL, py = minY + (cy + 0.5) * CELL;
       for (const w of walls) {
         const proj = projectPointOnSegment({ x: px, y: py }, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
-        if (dist({ x: px, y: py }, proj) < w.halfThickPx + CELL * 0.55) {
+        // Only a thin safety margin here (not half a cell, as before) — the
+        // flood fill below is already 4-connected, which on its own can't
+        // leak diagonally through a wall corner (that needs 8-connectivity),
+        // so a big margin wasn't actually buying leak-proofing; it was just
+        // eating into the traced room on every side, undercounting its area
+        // by roughly one margin-width per wall (visibly so once CELL isn't
+        // tiny — e.g. ~4cm inset each side at the default ~8cm cell).
+        if (dist({ x: px, y: py }, proj) < w.halfThickPx + CELL * 0.12) {
           blocked[cy * cols + cx] = 1;
           break;
         }
@@ -278,7 +285,7 @@ function mergeWallPair(a, b) {
 
 export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel }) {
   const svgRef = useRef(null);
-  const [tool, setTool] = useState("parede");
+  const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
   const [pending, setPending] = useState(null);
   const [polygon, setPolygon] = useState([]);
@@ -1511,23 +1518,43 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         })()}
         {planMode === "piso" && nearestParallelWallDims(elements.filter(el => el.type === "wall")).map(d => {
           const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
-          const nx = -(dy / len), ny = dx / len;
-          const midX = (d.x1 + d.x2) / 2, midY = (d.y1 + d.y2) / 2;
+          const ux = dx / len, uy = dy / len;
+          const nx = -uy, ny = ux;
           const wallA = wallsById[d.aId], wallB = wallsById[d.bId];
+          const halfThickAPx = wallA ? (wallThicknessM(wallA.wallType) / 2 / scale) * GRID : 0;
+          const halfThickBPx = wallB ? (wallThicknessM(wallB.wallType) / 2 / scale) * GRID : 0;
+          // The line itself must land on the walls' facing FACES, not their
+          // centerlines (d.x1/d.y1 -> d.x2/d.y2 above) — pull each end in by
+          // that wall's own half-thickness along the line.
+          const fx1 = d.x1 + ux * halfThickAPx, fy1 = d.y1 + uy * halfThickAPx;
+          const fx2 = d.x2 - ux * halfThickBPx, fy2 = d.y2 - uy * halfThickBPx;
+          const midX = (fx1 + fx2) / 2, midY = (fy1 + fy2) / 2;
           const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
           const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
-          const movingWallId = selectedId === d.aId ? d.aId : selectedId === d.bId ? d.bId : null;
-          const editable = tool === "selecionar" && movingWallId;
+          // Which wall of the pair moves when this dimension is edited: keep
+          // whichever one is already selected (so editing right after
+          // selecting a wall moves that same wall, not its neighbor), else
+          // default to A — either way the dimension itself is always
+          // clickable, not just when one of its two walls happens to already
+          // be selected (that made most dimensions in a room look editable
+          // but silently do nothing when clicked).
+          const movingWallId = selectedId === d.bId ? d.bId : d.aId;
+          const fixedWallId = movingWallId === d.aId ? d.bId : d.aId;
+          const editable = tool === "selecionar";
           const isEditing = editingParallelDim && editingParallelDim.movingWallId === movingWallId
-            && editingParallelDim.fixedWallId === (movingWallId === d.aId ? d.bId : d.aId);
-          const startEdit = () => setEditingParallelDim({ movingWallId, fixedWallId: movingWallId === d.aId ? d.bId : d.aId, value: faceDistM });
+            && editingParallelDim.fixedWallId === fixedWallId;
+          const startEdit = () => { setSelectedId(movingWallId); setEditingParallelDim({ movingWallId, fixedWallId, value: faceDistM }); };
           return (
             <g key={`pw-${d.aId}-${d.bId}`} opacity="0.9">
-              <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
-              <line x1={d.x1 - nx * 4} y1={d.y1 - ny * 4} x2={d.x1 + nx * 4} y2={d.y1 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
-              <line x1={d.x2 - nx * 4} y1={d.y2 - ny * 4} x2={d.x2 + nx * 4} y2={d.y2 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={fx1} y1={fy1} x2={fx2} y2={fy2} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={fx1 - nx * 4} y1={fy1 - ny * 4} x2={fx1 + nx * 4} y2={fy1 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={fx2 - nx * 4} y1={fy2 - ny * 4} x2={fx2 + nx * 4} y2={fy2 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
               {editable && (
-                <rect x={midX - 15} y={midY - 7} width="30" height="10" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
+                // Bigger than the visible pill below it — a touch-friendly
+                // hit area around a small label is worth more than visual
+                // purity here, especially with several dimensions crowded
+                // into a small room.
+                <rect x={midX - 22} y={midY - 14} width="44" height="28" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
                   style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); startEdit(); }} />
               )}
               <rect x={midX - 15} y={midY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
