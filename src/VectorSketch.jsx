@@ -1412,10 +1412,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     const nx = -uy, ny = ux;
-    // Half a grid square out from the wall's centerline — a full square
-    // (the previous 13, close to GRID's own 20) read as needlessly far
-    // from the wall it's actually measuring.
-    const offset = GRID / 2;
+    // Close to the wall, but with enough clearance that the number and its
+    // tick line don't visually sit on top of the wall's own stroke once
+    // the sketch is zoomed out to fit a whole room (half a grid square, a
+    // fine gap at 1:1 zoom, reads as touching once scaled down that far).
+    const offset = GRID * 0.75;
     const startInset = joinedWallFaceInset(w.id, w.x1, w.y1);
     const endInset = joinedWallFaceInset(w.id, w.x2, w.y2);
     const ivs = opens.map(o => {

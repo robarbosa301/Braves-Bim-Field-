@@ -50,7 +50,15 @@ export function fitViewBoxToElements(elements, w, h) {
   });
   if (!isFinite(minX)) return { x: 0, y: 0, w, h };
   const aspect = w / h;
-  const contentW = Math.max(30, maxX - minX), contentH = Math.max(30, maxY - minY);
+  // Labels drawn around a wall (its own length, a dimension pushed out to
+  // dodge another one, a room name...) can sit well outside the raw wall/
+  // room geometry this loop measures — the 1.3x proportional padding below
+  // scales with the room, so a small room's absolute margin could still be
+  // narrower than a label's own reach, clipping it against the fitted
+  // view's edge. A flat minimum on top of that keeps every label inside
+  // the frame regardless of how small the plan is.
+  const LABEL_PAD = 70;
+  const contentW = Math.max(30, maxX - minX) + LABEL_PAD * 2, contentH = Math.max(30, maxY - minY) + LABEL_PAD * 2;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   let newW = contentW * 1.3, newH = newW / aspect;
   if (newH < contentH * 1.3) { newH = contentH * 1.3; newW = newH * aspect; }
