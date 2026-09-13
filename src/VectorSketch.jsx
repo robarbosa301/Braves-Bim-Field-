@@ -1705,11 +1705,25 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const wallA = wallsById[d.aId], wallB = wallsById[d.bId];
           const halfThickAPx = wallA ? (wallThicknessM(wallA.wallType) / 2 / scale) * GRID : 0;
           const halfThickBPx = wallB ? (wallThicknessM(wallB.wallType) / 2 / scale) * GRID : 0;
+          // Manual nudge, free in the plane of the line: perpendicular to it
+          // (nx,ny — parallel to the walls themselves) and along it (ux,uy).
+          // Persisted on the wall (not local state) so it survives this
+          // component remounting on tab switch, and each axis is clamped
+          // independently so it can't be dragged out of the room.
+          const dimNudge = readDimNudge(wallA, d.bId);
+          const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+          const perp = Math.max(-maxPerp, Math.min(maxPerp, dimNudge.perp));
           // The line itself must land on the walls' facing FACES, not their
           // centerlines (d.x1/d.y1 -> d.x2/d.y2 above) — pull each end in by
-          // that wall's own half-thickness along the line.
-          const fx1 = d.x1 + ux * halfThickAPx, fy1 = d.y1 + uy * halfThickAPx;
-          const fx2 = d.x2 - ux * halfThickBPx, fy2 = d.y2 - uy * halfThickBPx;
+          // that wall's own half-thickness along the line. The perpendicular
+          // nudge (sx,sy) shifts the WHOLE measuring line sideways along the
+          // walls, not just its label — by default, two dimensions in a
+          // rectangular room both cross through the room's center, forming a
+          // cluttered "+"; this lets each one be pulled toward whichever
+          // side of the room actually has room for it.
+          const sx = nx * perp, sy = ny * perp;
+          const fx1 = d.x1 + ux * halfThickAPx + sx, fy1 = d.y1 + uy * halfThickAPx + sy;
+          const fx2 = d.x2 - ux * halfThickBPx + sx, fy2 = d.y2 - uy * halfThickBPx + sy;
           // For a simple rectangular room, this pair's line (running between
           // a wall and its opposite) and the OTHER pair's line (the two side
           // walls) cross exactly at the room's center — putting both labels
@@ -1724,23 +1738,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
           const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
           const faceLen = Math.hypot(fx2 - fx1, fy2 - fy1) || 1;
-          // Manual nudge, free in the plane of the line: perpendicular to it
-          // (nx,ny — parallel to the walls themselves) to pull whichever
-          // dimension ends up "in front" out from behind another one it's
-          // colliding with, and along it (ux,uy) to slide the label between
-          // the two wall faces instead of always sitting at the fixed
-          // labelT point. Persisted on the wall (not local state) so it
-          // survives this component remounting on tab switch, and each axis
-          // is clamped independently so the label can't be dragged out of
-          // the room in either direction.
-          const dimNudge = readDimNudge(wallA, d.bId);
-          const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
-          const perp = Math.max(-maxPerp, Math.min(maxPerp, dimNudge.perp));
+          // A second, smaller degree of freedom along the line itself (ux,uy)
+          // slides the label between the two wall faces instead of always
+          // sitting at the fixed labelT point — useful once the line's own
+          // position no longer forces it away from an opening or another label.
           const alongMargin = Math.min(10, faceLen / 2);
           const alongLo = Math.min(alongMargin - faceLen * labelT, faceLen - alongMargin - faceLen * labelT);
           const alongHi = Math.max(alongMargin - faceLen * labelT, faceLen - alongMargin - faceLen * labelT);
           const along = Math.max(alongLo, Math.min(alongHi, dimNudge.along));
-          const labelX = midX + nx * perp + ux * along, labelY = midY + ny * perp + uy * along;
+          const labelX = midX + ux * along, labelY = midY + uy * along;
           // Rotate the label to read parallel to its own dimension line
           // (matching standard architectural dimension convention) instead
           // of always horizontal — flipped 180° whenever the raw angle
