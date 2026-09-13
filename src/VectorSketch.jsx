@@ -1234,7 +1234,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
     const deltaPerp = dxp * d.nx + dyp * d.ny;
     const deltaAlong = dxp * d.ux + dyp * d.uy;
-    const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+    const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID / 2);
     const perp = Math.max(-maxPerp, Math.min(maxPerp, d.startNudge.perp + deltaPerp));
     // The label's un-nudged position already sits at labelT along the
     // face-to-face line (T0), not at its midpoint — clamp the ALONG offset
@@ -1749,7 +1749,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           // component remounting on tab switch, and each axis is clamped
           // independently so it can't be dragged out of the room.
           const dimNudge = readDimNudge(wallA, d.bId);
-          const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+          // Half a grid square of clearance at each end of the shared
+          // overlap span — a full square (the previous margin) stopped the
+          // dragged bar noticeably short of the wall it's measuring.
+          const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID / 2);
           const perp = Math.max(-maxPerp, Math.min(maxPerp, dimNudge.perp));
           // The line itself must land on the walls' facing FACES, not their
           // centerlines (d.x1/d.y1 -> d.x2/d.y2 above) — pull each end in by
