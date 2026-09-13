@@ -1367,7 +1367,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // being sketched, so a label on any side of a shape (top, bottom, left,
   // right) lands outside it instead of on top of the line or collapsing
   // into the middle when another wall runs close and roughly parallel.
-  function wallLabelOffset(el) {
+  function wallLabelOffset(el, extra = 0) {
     const dx = el.x2 - el.x1, dy = el.y2 - el.y1, len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len;
     const walls = elements.filter(e => e.type === "wall");
@@ -1390,7 +1390,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const ascentDir = { x: Math.sin(rad), y: -Math.cos(rad) };
     const towardWall = Math.max(0, -(ascentDir.x * offDir.x + ascentDir.y * offDir.y));
     const D = 8, ASCENT = 7;
-    const dist = D + towardWall * ASCENT;
+    const dist = D + towardWall * ASCENT + extra;
     return { x: offDir.x * dist, y: offDir.y * dist };
   }
   function wallDimensions(w) {
@@ -1400,7 +1400,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     const nx = -uy, ny = ux;
-    const offset = 13;
+    // Half a grid square out from the wall's centerline — a full square
+    // (the previous 13, close to GRID's own 20) read as needlessly far
+    // from the wall it's actually measuring.
+    const offset = GRID / 2;
     const ivs = opens.map(o => {
       const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
       const halfW = (toNum(o.width, 0.8) / scale) * GRID / 2;
@@ -1658,36 +1661,30 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
+              const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
+              const angleDeg = labelAngleDeg(el);
               // The wall's own length label defaults to the wall's exact
-              // midpoint — but so does its own size/type tag whenever a
-              // door or window sits there (very common for a centered
-              // opening), and both sit on the same "outward from the room"
-              // side, landing right on top of each other. If an opening's
-              // own position falls near the midpoint, slide the label to
-              // whichever quarter point is farthest from every opening
-              // instead, the same dodge used for colliding pair-dimensions.
-              // Compared in raw pixels, not a fraction of the wall's own
-              // length — a short wall's 25%-of-length gap can still be
-              // narrower than two overlapping text labels, while a long
-              // wall's would never collide at all, so a fixed fraction
-              // threshold either over- or under-triggers depending on the
-              // wall's length.
+              // midpoint — but so does a door/window's own size/type tag
+              // whenever it sits there (a centered opening being the
+              // common case), and both sit on the same "outward from the
+              // room" side, landing right on top of each other. Keep the
+              // label centered either way (moving it off-center reads as
+              // wrong for a wall's overall length) and instead push it
+              // further out along that same side, past the tag's own
+              // reach, whenever an opening sits close enough to the
+              // midpoint to collide. Compared in raw pixels, not a
+              // fraction of the wall's own length — a short wall's own
+              // 25%-of-length gap can still be narrower than two
+              // overlapping text labels, while a long wall's never would,
+              // so a fixed fraction threshold either over- or
+              // under-triggers depending on the wall's length.
               const wdx = el.x2 - el.x1, wdy = el.y2 - el.y1, wlen = Math.hypot(wdx, wdy) || 1;
               const opensPx = elements
                 .filter(o => (o.type === "door" || o.type === "window") && o.wallId === el.id)
                 .map(o => ((o.x - el.x1) * wdx + (o.y - el.y1) * wdy) / wlen);
               const COLLIDE_PX = 45;
-              let labelT = 0.5;
-              if (opensPx.some(p => Math.abs(p - wlen * 0.5) < COLLIDE_PX)) {
-                labelT = [0.25, 0.75].reduce((best, c) => {
-                  const worst = Math.min(...opensPx.map(p => Math.abs(p - wlen * c)));
-                  const bestWorst = Math.min(...opensPx.map(p => Math.abs(p - wlen * best)));
-                  return worst > bestWorst ? c : best;
-                }, 0.25);
-              }
-              const midX = el.x1 + wdx * labelT, midY = el.y1 + wdy * labelT;
-              const angleDeg = labelAngleDeg(el);
-              const off = wallLabelOffset(el);
+              const collides = opensPx.some(p => Math.abs(p - wlen * 0.5) < COLLIDE_PX);
+              const off = wallLabelOffset(el, collides ? 20 : 0);
               const lx = midX + off.x, ly = midY + off.y;
               return (
                 <text x={lx} y={ly} fontSize="10" fill={phaseColor(el) || "#6b6660"} textAnchor="middle"
@@ -1857,7 +1854,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 8} fontSize="9" fill={phaseColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height} · {panels}f</text>
+              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 14})`}>{el.width}×{el.height} · {panels}f</text>
             </g>
           );
         })}
