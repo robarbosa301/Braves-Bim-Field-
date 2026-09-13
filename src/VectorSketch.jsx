@@ -222,7 +222,63 @@ function traceEnclosedRoom(walls, clickPoint, GRID, scale) {
   // whole wall thicknesses/segments) stay well outside that tolerance
   // and survive.
   const smoothed = rdpSimplifyClosed(loop, CELL * 1.5);
-  return smoothed.length >= 3 ? smoothed : loop;
+  const finalLoop = smoothed.length >= 3 ? smoothed : loop;
+  // The raster trace, even after RDP smoothing, still only approximates
+  // each wall's real face — it's built from CELL-sized steps offset by the
+  // fill-blocking margin above, so every edge sits some fraction of a cell
+  // shy of where the wall's actual face is, undercounting the room's area
+  // by a small but visible amount (worse the smaller the room, since CELL
+  // itself is a bigger fraction of it). Re-snapping each edge onto the
+  // wall it's actually tracing — using the wall's own geometry, not the
+  // raster — removes that error instead of just shrinking it further.
+  return snapRoomToWallFaces(finalLoop, walls, CELL * 2.5);
+}
+// Replaces each edge of a raster-traced room outline with the EXACT face
+// line of whichever wall it's tracing (a line parallel to that wall's
+// centerline, offset by precisely its own half-thickness), then rebuilds
+// each corner as the intersection of its two adjacent corrected edges —
+// turning the raster's blocky approximation into the true wall-face
+// polygon, independent of CELL size. Falls back to the original raster
+// edge/vertex wherever no wall match is found or two adjacent edges turn
+// out (near-)parallel, so a partial or ambiguous match never makes the
+// result worse than the untouched raster trace.
+function snapRoomToWallFaces(loop, walls, tolerance) {
+  const n = loop.length;
+  if (n < 3) return loop;
+  const faceLines = loop.map((p1, i) => {
+    const p2 = loop[(i + 1) % n];
+    const ex = p2.x - p1.x, ey = p2.y - p1.y, elen = Math.hypot(ex, ey);
+    if (elen < 1e-6) return null;
+    const eux = ex / elen, euy = ey / elen;
+    const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    let best = null;
+    for (const w of walls) {
+      const wx = w.x2 - w.x1, wy = w.y2 - w.y1, wlen = Math.hypot(wx, wy) || 1;
+      const wux = wx / wlen, wuy = wy / wlen;
+      if (Math.abs(eux * wuy - euy * wux) > 0.03) continue; // not parallel to this wall
+      const proj = projectPointOnSegment(mid, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
+      const nx = -wuy, ny = wux;
+      const signedDist = (mid.x - proj.x) * nx + (mid.y - proj.y) * ny;
+      const diff = Math.abs(Math.abs(signedDist) - w.halfThickPx);
+      if (diff < tolerance && (!best || diff < best.diff)) {
+        best = { diff, ux: wux, uy: wuy, nx, ny, footpoint: proj, sign: signedDist >= 0 ? 1 : -1, halfThickPx: w.halfThickPx };
+      }
+    }
+    if (!best) return null;
+    return {
+      ux: best.ux, uy: best.uy,
+      point: { x: best.footpoint.x + best.nx * best.sign * best.halfThickPx, y: best.footpoint.y + best.ny * best.sign * best.halfThickPx },
+    };
+  });
+  return loop.map((p, i) => {
+    const prev = faceLines[(i - 1 + n) % n];
+    const cur = faceLines[i];
+    if (!prev || !cur) return p;
+    const denom = prev.ux * cur.uy - prev.uy * cur.ux;
+    if (Math.abs(denom) < 1e-6) return p;
+    const t = ((cur.point.x - prev.point.x) * cur.uy - (cur.point.y - prev.point.y) * cur.ux) / denom;
+    return { x: prev.point.x + prev.ux * t, y: prev.point.y + prev.uy * t };
+  });
 }
 function perpDistToLine(p, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
