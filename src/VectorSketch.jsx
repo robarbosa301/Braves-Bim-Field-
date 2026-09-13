@@ -78,7 +78,7 @@ function nearestParallelWallDims(walls) {
       const midT = (cand.overlapMin + cand.overlapMax) / 2;
       const p1 = { x: a.x1 + ux * midT, y: a.y1 + uy * midT };
       const p2 = { x: p1.x + nx * cand.signedDist, y: p1.y + ny * cand.signedDist };
-      pairs.push({ aId: a.id, bId: cand.wallId, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, distPx: cand.distPx });
+      pairs.push({ aId: a.id, bId: cand.wallId, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, distPx: cand.distPx, overlapMin: cand.overlapMin, overlapMax: cand.overlapMax });
     }
   }
   const seen = new Set();
@@ -304,6 +304,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [showGrid, setShowGrid] = useState(true);
   const [showAbove, setShowAbove] = useState(false);
   const [draggingLabel, setDraggingLabel] = useState(null);
+  const [draggingDimLabel, setDraggingDimLabel] = useState(null);
   const [editingDim, setEditingDim] = useState(null);
   const [editingWallLen, setEditingWallLen] = useState(null);
   const [editingLumDim, setEditingLumDim] = useState(null);
@@ -453,7 +454,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       setVb({ x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH });
       return;
     }
-    if (e.touches.length === 1 && (dragSession || draggingLabel)) onCanvasPointerMove(e);
+    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel)) onCanvasPointerMove(e);
   }
   function onTouchEndCanvas(e) { if (e.touches.length < 2) pinch.current = null; if (e.touches.length === 0) onCanvasPointerUp(); }
 
@@ -553,7 +554,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
   function handleTap(e) {
     if (e.touches && e.touches.length > 1) return;
-    if (draggingLabel) return;
+    if (draggingLabel || draggingDimLabel) return;
     e.preventDefault();
     // Must be the true unsnapped pointer position, not svgPoint()'s
     // grid-snapped one — findNearbyEndpoint below does its own
@@ -1071,6 +1072,44 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setDraggingLabel(null);
     isDraggingRef.current = false;
   }
+
+  // Lets the user manually slide a parallel-wall dimension's label along
+  // its own perpendicular (nx,ny, already computed where this is called
+  // from) — needed when two dimensions land close enough together that one
+  // covers the other and it can't be tapped to edit anymore. The nudge is
+  // stored on the wall (dimNudge, keyed by the other wall's id) rather than
+  // component state so it survives VectorSketch remounting on tab switch,
+  // and is clamped to the pair's own overlap span so the label can't be
+  // dragged past the shared span between the two walls (i.e. out of the room).
+  function beginDragDimLabel(wallA, otherId, nx, ny, overlapMin, overlapMax, startEdit, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    const startNudge = (wallA.dimNudge && wallA.dimNudge[otherId]) || 0;
+    setDraggingDimLabel({ wallId: wallA.id, otherId, nx, ny, overlapMin, overlapMax, startP: svgPointRaw(e), startNudge, moved: false, startEdit });
+  }
+  function onDimLabelDragMove(e) {
+    if (!draggingDimLabel) return;
+    const p = svgPointRaw(e);
+    const d = draggingDimLabel;
+    if (!d.moved) {
+      if (dist(p, d.startP) < 3) return; // still just a tap-in-progress
+      pushHistory();
+      isDraggingRef.current = true;
+      setDraggingDimLabel(s => (s ? { ...s, moved: true } : s));
+    }
+    const delta = (p.x - d.startP.x) * d.nx + (p.y - d.startP.y) * d.ny;
+    const maxNudge = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+    const nudge = Math.max(-maxNudge, Math.min(maxNudge, d.startNudge + delta));
+    commitElements(elements.map(el => el.id === d.wallId
+      ? { ...el, dimNudge: { ...(el.dimNudge || {}), [d.otherId]: nudge } }
+      : el));
+  }
+  function onDimLabelDragEnd() {
+    if (draggingDimLabel && !draggingDimLabel.moved) draggingDimLabel.startEdit();
+    setDraggingDimLabel(null);
+    isDraggingRef.current = false;
+  }
   function rotateRoomLabel(el) {
     const field = planMode === "forro" ? "ceilingLabelRotation" : "labelRotation";
     const next = ((el[field] || 0) + 90) % 360;
@@ -1121,6 +1160,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function onCanvasPointerMove(e) {
     onLabelDragMove(e);
+    onDimLabelDragMove(e);
     if (!dragSession) return;
     if (e.cancelable) e.preventDefault();
     const p = svgPointRaw(e);
@@ -1169,7 +1209,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       commitElements(elements.map(el => el.id === dragSession.id ? { ...el, x: proj.x, y: proj.y } : el));
     }
   }
-  function onCanvasPointerUp() { onLabelDragEnd(); setDragSession(null); }
+  function onCanvasPointerUp() { onLabelDragEnd(); onDimLabelDragEnd(); setDragSession(null); }
 
   // Angle (degrees) to rotate a dimension label so it runs parallel to the
   // wall it measures instead of always sitting flat/horizontal — flipped
@@ -1541,6 +1581,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const midX = fx1 + (fx2 - fx1) * labelT, midY = fy1 + (fy2 - fy1) * labelT;
           const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
           const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
+          // Manual nudge along the label's own perpendicular (nx,ny — the
+          // same direction as the tick marks below, i.e. parallel to the
+          // walls themselves): the user's way to pull whichever dimension
+          // ends up "in front" out from behind another one it's colliding
+          // with. Persisted on the wall (not local state) so it survives
+          // this component remounting on tab switch, and clamped to the
+          // pair's own overlap span so it can't be dragged past where the
+          // two walls actually face each other (i.e. out of the room).
+          const rawNudge = (wallA && wallA.dimNudge && wallA.dimNudge[d.bId]) || 0;
+          const maxNudge = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+          const nudge = Math.max(-maxNudge, Math.min(maxNudge, rawNudge));
+          const labelX = midX + nx * nudge, labelY = midY + ny * nudge;
           // Which wall of the pair moves when this dimension is edited: keep
           // whichever one is already selected (so editing right after
           // selecting a wall moves that same wall, not its neighbor), else
@@ -1563,14 +1615,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 // Bigger than the visible pill below it — a touch-friendly
                 // hit area around a small label is worth more than visual
                 // purity here, especially with several dimensions crowded
-                // into a small room.
-                <rect x={midX - 22} y={midY - 14} width="44" height="28" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
-                  style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); startEdit(); }} />
+                // into a small room. Mousedown/touchstart (not onClick) so
+                // it can double as the handle for the perpendicular drag
+                // above — a plain tap (no movement) still falls through to
+                // startEdit via onDimLabelDragEnd, same as the room-name
+                // label pattern.
+                <rect x={labelX - 22} y={labelY - 14} width="44" height="28" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
+                  style={{ cursor: "move" }}
+                  onMouseDown={e => wallA && beginDragDimLabel(wallA, d.bId, nx, ny, d.overlapMin, d.overlapMax, startEdit, e)}
+                  onTouchStart={e => wallA && beginDragDimLabel(wallA, d.bId, nx, ny, d.overlapMin, d.overlapMax, startEdit, e)} />
               )}
-              <rect x={midX - 15} y={midY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
-              <text x={midX} y={midY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
-                style={{ pointerEvents: editable ? "auto" : "none", cursor: editable ? "pointer" : undefined }}
-                onClick={editable ? (e => { e.stopPropagation(); startEdit(); }) : undefined}>{faceDistM} m</text>
+              <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
+              <text x={labelX} y={labelY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
+                style={{ pointerEvents: "none" }}>{faceDistM} m</text>
             </g>
           );
         })}
