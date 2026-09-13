@@ -6,7 +6,7 @@ import {
   ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy, LogIn,
   Undo2, Eraser, Square, Triangle, LayoutPanelTop, Rotate3d, Box, Home, ZoomIn, ZoomOut, Maximize2,
-  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Ruler, CornerUpRight, Hammer
+  MousePointer2, Lightbulb, Link2, ArrowUpRight, Move, DoorOpen, Scissors, Ruler, CornerUpRight, Hammer, HardHat
 } from "lucide-react";
 
 // lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
@@ -47,6 +47,7 @@ const C = {
   gold: "#FFFFFF",
   goldTint: "rgba(255,255,255,0.14)",
   bad: "#C1543F",
+  good: "#6B9C5A",
 };
 
 const heading = { fontFamily: "'Poppins',-apple-system,'SF Pro Display','Segoe UI',Roboto,sans-serif", letterSpacing: "0.01em" };
@@ -192,6 +193,13 @@ function conditionColor(cond) {
   if (cond === "Bom") return C.gold;
   if (cond === "Ruim") return C.bad;
   return C.mute;
+}
+// Reforma phase override for a wall/door/window's Croqui color — null means
+// "existing, unchanged" and callers fall back to their normal styling.
+function phaseColor(el) {
+  if (el.demolir) return C.bad;
+  if (el.construir) return C.good;
+  return null;
 }
 
 function defaultLevels() {
@@ -579,7 +587,7 @@ function mergeWallPair(a, b) {
 function wallToM(w, toM) {
   return {
     id: w.id, tag: w.tag || "", x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2), height: toNum(w.height, 2.8),
-    wallType: w.wallType || WALL_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir,
+    wallType: w.wallType || WALL_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir, construir: !!w.construir,
     finishA: w.finishA || w.finish || "A definir", paintColorA: w.paintColorA || w.paintColor || "#E8E4DA",
     finishB: w.finishB || w.finish || "A definir", paintColorB: w.paintColorB || w.paintColor || "#E8E4DA",
   };
@@ -587,13 +595,13 @@ function wallToM(w, toM) {
 function doorToM(d, toM) {
   return {
     id: d.id, tag: d.tag || "", wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1),
-    panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0], condition: d.condition || "A confirmar", demolir: !!d.demolir,
+    panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0], condition: d.condition || "A confirmar", demolir: !!d.demolir, construir: !!d.construir,
   };
 }
 function windowToM(w, toM) {
   return {
     id: w.id, tag: w.tag || "", wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0),
-    panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir,
+    panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir, construir: !!w.construir,
   };
 }
 function stairToM(s2, toM) { return { id: s2.id, tag: s2.tag || "", x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
@@ -647,17 +655,17 @@ function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roofs }) {
         id: l.id, nome: l.name, cota_m: m.elevation, pe_direito_padrao_m: toNum(l.wallHeightDefault, 2.8),
         paredes: m.walls.map(w => ({
           id: w.id, tag: w.tag, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, altura_m: w.height,
-          tipo: w.wallType, condicao: w.condition, demolir: w.demolir,
+          tipo: w.wallType, condicao: w.condition, demolir: w.demolir, construir: w.construir,
           acabamento_face_a: w.finishA, cor_face_a: w.paintColorA,
           acabamento_face_b: w.finishB, cor_face_b: w.paintColorB,
         })),
         portas: m.doors.map(d => ({
           id: d.id, tag: d.tag, parede_id: d.wallId, x: d.x, y: d.y,
-          largura_m: d.width, altura_m: d.height, folhas: d.panels, tipo: d.doorType, condicao: d.condition, demolir: d.demolir,
+          largura_m: d.width, altura_m: d.height, folhas: d.panels, tipo: d.doorType, condicao: d.condition, demolir: d.demolir, construir: d.construir,
         })),
         janelas: m.windows.map(w => ({
           id: w.id, tag: w.tag, parede_id: w.wallId, x: w.x, y: w.y,
-          largura_m: w.width, altura_m: w.height, peitoril_m: w.peitoril, folhas: w.panels, tipo: w.windowType, condicao: w.condition, demolir: w.demolir,
+          largura_m: w.width, altura_m: w.height, peitoril_m: w.peitoril, folhas: w.panels, tipo: w.windowType, condicao: w.condition, demolir: w.demolir, construir: w.construir,
         })),
         escadas: m.stairs.map(s => ({
           id: s.id, tag: s.tag, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, largura_m: s.width,
@@ -825,18 +833,22 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
 
           const texA = getWallTexture(w.finishA, w.paintColorA);
           const texB = getWallTexture(w.finishB, w.paintColorB);
-          // Walls flagged for demolition (a reforma's scope of removal) render
-          // as a translucent red block instead of their real finish, so the
-          // 3D view calls out the same elements the Croqui already marks with
-          // a red dashed outline — same convention, two views.
+          // Walls flagged for demolition or new construction (a reforma's
+          // scope) render as a translucent red/green block instead of their
+          // real finish, so the 3D view calls out the same elements the
+          // Croqui already marks with a dashed outline — same convention
+          // (and same colors), two views.
           const demolirMat = () => new THREE.MeshStandardMaterial({ color: 0xC1543F, roughness: 0.6, transparent: true, opacity: 0.5 });
-          const matNeutral = w.demolir ? demolirMat() : new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.9 });
+          const construirMat = () => new THREE.MeshStandardMaterial({ color: 0x6B9C5A, roughness: 0.6, transparent: true, opacity: 0.5 });
+          const matNeutral = w.demolir ? demolirMat() : w.construir ? construirMat() : new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.9 });
           segs.forEach(seg => {
             const segLen = seg.end - seg.start, segH = seg.yTop - seg.yBottom;
             if (segLen <= 0.02 || segH <= 0.02) return;
             let matA, matB;
             if (w.demolir) {
               matA = demolirMat(); matB = demolirMat();
+            } else if (w.construir) {
+              matA = construirMat(); matB = construirMat();
             } else {
               const tA = texA.clone(); tA.needsUpdate = true; tA.repeat.set(Math.max(1, segLen / 1.1), Math.max(1, segH / 1.1));
               const tB = texB.clone(); tB.needsUpdate = true; tB.repeat.set(Math.max(1, segLen / 1.1), Math.max(1, segH / 1.1));
@@ -863,8 +875,8 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
             const gap = Math.min(0.03, panelWidth * 0.08);
             const isSliding = /correr/i.test(o.doorType || o.windowType || "");
             const isDoorKind = o.kind === "door";
-            const color = o.demolir ? 0xC1543F : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
-            const matOpts = o.demolir
+            const color = o.demolir ? 0xC1543F : o.construir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
+            const matOpts = (o.demolir || o.construir)
               ? { roughness: 0.6, transparent: true, opacity: 0.5 }
               : isDoorKind
                 ? { roughness: 0.5 }
@@ -1375,7 +1387,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       if (p.x === pending.x && p.y === pending.y) { setPending(null); return; }
       const length = pxToMeters(dist(pending, p));
       const wallCount = elements.filter(x => x.type === "wall").length;
-      const el = { id: uid(), type: "wall", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar", demolir: false };
+      const el = { id: uid(), type: "wall", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar", demolir: false, construir: false };
       commitElements([...elements, el]);
       // Chain mode: keep drawing from this wall's endpoint instead of
       // requiring a fresh start tap for every segment. Tap the same point
@@ -1488,8 +1500,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
       const count = elements.filter(x => x.type === type).length;
       const tagPrefix = tool === "porta" ? "PT" : "JN";
       const el = tool === "porta"
-        ? { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 0.8, height: 2.10, doorType: DOOR_TYPES[0], panels: 1, condition: "A confirmar", demolir: false }
-        : { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 1.2, height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2, condition: "A confirmar", demolir: false };
+        ? { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 0.8, height: 2.10, doorType: DOOR_TYPES[0], panels: 1, condition: "A confirmar", demolir: false, construir: false }
+        : { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 1.2, height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2, condition: "A confirmar", demolir: false, construir: false };
       commitElements([...elements, el]);
       setSelectedId(el.id);
     }
@@ -2248,8 +2260,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
         {elements.filter(el => el.type === "wall").map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={selectedId === el.id ? "#726F68" : el.demolir ? C.bad : "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={el.demolir ? "7,5" : undefined}
+              stroke={selectedId === el.id ? "#726F68" : phaseColor(el) || "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={phaseColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
@@ -2258,7 +2270,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               const off = wallLabelOffset(el);
               const lx = midX + off.x, ly = midY + off.y;
               return (
-                <text x={lx} y={ly} fontSize="10" fill={el.demolir ? C.bad : "#6b6660"} textAnchor="middle"
+                <text x={lx} y={ly} fontSize="10" fill={phaseColor(el) || "#6b6660"} textAnchor="middle"
                   transform={`rotate(${angleDeg} ${lx} ${ly})`}
                   style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
@@ -2347,9 +2359,9 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               <rect x={el.x - widthPx / 2 - 4} y={el.y - 14} width={widthPx + 8} height={28} fill="rgba(0,0,0,0.001)"
                 style={{ cursor: tool === "selecionar" ? "grab" : "default" }} onMouseDown={e => beginDragOpening(el, e)} onTouchStart={e => beginDragOpening(el, e)} />
               <rect x={el.x - widthPx / 2} y={el.y - 3.5} width={widthPx} height={7}
-                fill={el.demolir ? "rgba(193,84,63,0.35)" : (isDoor ? "#4A4A46" : "#B9B6AE")}
-                stroke={isSel ? "#726F68" : el.demolir ? C.bad : "#1B1E1A"} strokeWidth={isSel ? 2.5 : 1}
-                strokeDasharray={el.demolir ? "3,2" : undefined}
+                fill={el.demolir ? "rgba(193,84,63,0.35)" : el.construir ? "rgba(107,156,90,0.35)" : (isDoor ? "#4A4A46" : "#B9B6AE")}
+                stroke={isSel ? "#726F68" : phaseColor(el) || "#1B1E1A"} strokeWidth={isSel ? 2.5 : 1}
+                strokeDasharray={phaseColor(el) ? "3,2" : undefined}
                 opacity={isDoor ? 1 : 0.85}
                 style={{ pointerEvents: "none" }} />
               {Array.from({ length: panels - 1 }).map((_, i) => (
@@ -2357,7 +2369,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 8} fontSize="9" fill={el.demolir ? C.bad : "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height} · {panels}f</text>
+              <text x={el.x} y={el.y - 8} fontSize="9" fill={phaseColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 8})`}>{el.width}×{el.height} · {panels}f</text>
             </g>
           );
         })}
@@ -2409,7 +2421,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                 <NumField value={selected.length} onCommit={v => setWallLengthDirect(selected.id, v)} unit="m comprimento" />
                 <NumField value={selected.height} onChange={v => patchSelected({ height: v })} unit="m altura" />
                 <ConditionSelect value={selected.condition} onChange={v => patchSelected({ condition: v })} />
-                <DemolirToggle checked={selected.demolir} onChange={v => patchSelected({ demolir: v })} />
+                <PhaseToggles demolir={selected.demolir} construir={selected.construir} onChange={patchSelected} />
               </div>
               {findMergeableWall(selected, elements) && (
                 <button onClick={tryMergeSelected} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.gold, color: "#141311" }}>
@@ -2440,7 +2452,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
                 ? <TypeSelect value={selected.doorType || DOOR_TYPES[0]} options={DOOR_TYPES} onChange={v => patchSelected({ doorType: v })} />
                 : <TypeSelect value={selected.windowType || WINDOW_TYPES[0]} options={WINDOW_TYPES} onChange={v => patchSelected({ windowType: v })} />}
               <NumField value={selected.panels || 1} onChange={v => patchSelected({ panels: v })} unit="folhas" w="w-10" />
-              <DemolirToggle checked={selected.demolir} onChange={v => patchSelected({ demolir: v })} />
+              <PhaseToggles demolir={selected.demolir} construir={selected.construir} onChange={patchSelected} />
             </div>
           )}
           {(selected.type === "door" || selected.type === "window") && (
@@ -2592,6 +2604,27 @@ function DemolirToggle({ checked, onChange }) {
     </label>
   );
 }
+// Same idea, opposite direction: marks a wall/door/window as new work to be
+// built in the reforma — green instead of red, everywhere Demolir is red.
+function ConstruirToggle({ checked, onChange }) {
+  return (
+    <label className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded cursor-pointer"
+      style={{ color: checked ? C.good : C.mute, background: checked ? "rgba(107,156,90,0.14)" : "rgba(255,255,255,0.06)", border: `1px solid ${checked ? C.good : C.line}` }}>
+      <input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} className="w-3 h-3" />
+      <HardHat size={11} /> À construir
+    </label>
+  );
+}
+// A wall/door/window is at most one of "existing to demolish" or "new to
+// build" at a time — checking one here always clears the other.
+function PhaseToggles({ demolir, construir, onChange }) {
+  return (
+    <>
+      <DemolirToggle checked={demolir} onChange={v => onChange({ demolir: v, construir: v ? false : construir })} />
+      <ConstruirToggle checked={construir} onChange={v => onChange({ construir: v, demolir: v ? false : demolir })} />
+    </>
+  );
+}
 
 function WallRow({ el, adjacency, onPatch, onDelete }) {
   return (
@@ -2602,7 +2635,7 @@ function WallRow({ el, adjacency, onPatch, onDelete }) {
       <span className="text-[10px]" style={{ color: C.mute }}>{el.length} m ×</span>
       <NumField value={el.height} onChange={v => onPatch({ height: v })} unit="m altura" />
       <ConditionSelect value={el.condition} onChange={v => onPatch({ condition: v })} />
-      <DemolirToggle checked={el.demolir} onChange={v => onPatch({ demolir: v })} />
+      <PhaseToggles demolir={el.demolir} construir={el.construir} onChange={onPatch} />
       <button onClick={onDelete}><Trash2 size={12} color={C.mute} /></button>
       <div className="w-full flex items-center gap-1.5 mt-1 flex-wrap">
         <span className="text-[10px] w-full" style={{ color: C.mute }}>Acabamento — visível no 3D (cada face pode ter um diferente):</span>
@@ -2634,7 +2667,7 @@ function DoorRow({ el, onPatch, onDelete }) {
       <NumField value={el.width} onChange={v => onPatch({ width: v })} unit="larg." />
       <NumField value={el.height} onChange={v => onPatch({ height: v })} unit="alt." />
       <ConditionSelect value={el.condition} onChange={v => onPatch({ condition: v })} />
-      <DemolirToggle checked={el.demolir} onChange={v => onPatch({ demolir: v })} />
+      <PhaseToggles demolir={el.demolir} construir={el.construir} onChange={onPatch} />
       <button onClick={onDelete}><Trash2 size={12} color={C.mute} /></button>
     </div>
   );
@@ -2650,7 +2683,7 @@ function WindowRow({ el, onPatch, onDelete }) {
       <NumField value={el.height} onChange={v => onPatch({ height: v })} unit="alt." />
       <NumField value={el.peitoril} onChange={v => onPatch({ peitoril: v })} unit="peitoril" />
       <ConditionSelect value={el.condition} onChange={v => onPatch({ condition: v })} />
-      <DemolirToggle checked={el.demolir} onChange={v => onPatch({ demolir: v })} />
+      <PhaseToggles demolir={el.demolir} construir={el.construir} onChange={onPatch} />
       <button onClick={onDelete}><Trash2 size={12} color={C.mute} /></button>
     </div>
   );
@@ -3193,13 +3226,13 @@ export default function PranchetaBIM() {
   }
   function exportJSON() { download("levantamento_bim.json", JSON.stringify(buildSchema(), null, 2), "application/json"); pushLog("Arquivo levantamento_bim.json exportado.", "info"); }
   function exportCSV() {
-    const rows = [["Nível/Ambiente", "Tag", "Categoria", "Tipo", "Dimensões", "Condição", "Demolir"]];
+    const rows = [["Nível/Ambiente", "Tag", "Categoria", "Tipo", "Dimensões", "Condição", "Demolir", "À construir"]];
     levels.forEach(l => (l.sketchElements || []).forEach(el => {
-      if (el.type === "wall") rows.push([l.name, el.tag, "Parede", el.wallType, `${el.length}×${el.height} m`, el.condition, el.demolir ? "Sim" : "Não"]);
-      if (el.type === "door") rows.push([l.name, el.tag, "Porta", el.doorType, `${el.width}×${el.height} m`, el.condition, el.demolir ? "Sim" : "Não"]);
-      if (el.type === "window") rows.push([l.name, el.tag, "Janela", el.windowType, `${el.width}×${el.height} m (peit. ${el.peitoril})`, el.condition, el.demolir ? "Sim" : "Não"]);
+      if (el.type === "wall") rows.push([l.name, el.tag, "Parede", el.wallType, `${el.length}×${el.height} m`, el.condition, el.demolir ? "Sim" : "Não", el.construir ? "Sim" : "Não"]);
+      if (el.type === "door") rows.push([l.name, el.tag, "Porta", el.doorType, `${el.width}×${el.height} m`, el.condition, el.demolir ? "Sim" : "Não", el.construir ? "Sim" : "Não"]);
+      if (el.type === "window") rows.push([l.name, el.tag, "Janela", el.windowType, `${el.width}×${el.height} m (peit. ${el.peitoril})`, el.condition, el.demolir ? "Sim" : "Não", el.construir ? "Sim" : "Não"]);
     }));
-    rooms.forEach(r => r.floors.forEach(f => rows.push([r.name, f.tag, "Piso", f.type, `${f.area} m²`, f.condition, ""])));
+    rooms.forEach(r => r.floors.forEach(f => rows.push([r.name, f.tag, "Piso", f.type, `${f.area} m²`, f.condition, "", ""])));
     download("levantamento_elementos.csv", rows.map(r => r.join(";")).join("\n"), "text/csv");
     pushLog("Arquivo levantamento_elementos.csv exportado.", "info");
   }
