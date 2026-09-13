@@ -3150,6 +3150,22 @@ export default function PranchetaBIM() {
 
   const activeRoom = rooms.find(r => r.id === activeRoomId) || null;
   const croquiLevel = levels.find(l => l.id === croquiLevelId) || levels[0] || null;
+  const activeRoomLevel = activeRoom ? levels.find(l => l.name === activeRoom.level) : null;
+  // The room's own polygon (traced in Croqui) carries the forro/piso finish
+  // chosen there; walls have no direct link to a room, so which face (and
+  // therefore which finish/condition) bounds this room is worked out the
+  // same way WallRow's "Face → ambiente" label already does.
+  const activeRoomPolygon = activeRoomLevel ? (activeRoomLevel.sketchElements || []).find(e => e.type === "room" && e.roomId === activeRoom.id) : null;
+  const activeRoomWallFaces = activeRoomLevel && activeRoom
+    ? (activeRoomLevel.sketchElements || []).filter(e => e.type === "wall").flatMap(w => {
+        const adj = wallRoomAdjacency(activeRoomLevel, w);
+        const faces = [];
+        if (adj.faceA === activeRoom.name) faces.push({ wall: w, finish: w.finishA, color: w.paintColorA });
+        if (adj.faceB === activeRoom.name) faces.push({ wall: w, finish: w.finishB, color: w.paintColorB });
+        return faces;
+      })
+    : [];
+  const activeRoomWallAreaTotal = activeRoomWallFaces.reduce((s, f) => s + toNum(f.wall.length, 0) * toNum(f.wall.height, 0), 0);
 
   function removeRoom(id) {
     const room = rooms.find(r => r.id === id);
@@ -3426,6 +3442,9 @@ export default function PranchetaBIM() {
               <div className="text-lg font-semibold mb-2" style={{ ...heading, color: C.chalk, fontSize: "20px" }}>{activeRoom.name}</div>
               <StatRow label="Nível" value={activeRoom.level} />
               <StatRow label="Área" value={activeRoom.area ? `${activeRoom.area} m²` : "ainda não definida"} />
+              <StatRow label="Área de parede" value={activeRoomWallFaces.length ? `${activeRoomWallAreaTotal.toFixed(2)} m²` : "sem parede vinculada"} />
+              <StatRow label="Piso" value={activeRoomPolygon?.floorFinish || "A definir"} />
+              <StatRow label="Forro" value={activeRoomPolygon?.ceilingFinish || "A definir"} />
               <StatRow label="Uso" value={activeRoom.use || "—"} />
               <StatRow label="Condição geral" value={activeRoom.condition} />
               {activeRoom.geo && <StatRow label="GPS" value={`${activeRoom.geo.lat}, ${activeRoom.geo.lon}`} />}
@@ -3454,6 +3473,28 @@ export default function PranchetaBIM() {
               <span className="text-[11px]" style={{ color: C.mute }}>Paredes, portas e janelas agora se desenham na aba Croqui (nível inteiro, geometria real).</span>
               <button onClick={() => { const lvl = levels.find(l => l.name === activeRoom.level); if (lvl) setCroquiLevelId(lvl.id); setTab("croqui"); }}
                 className="text-[11px] px-2.5 py-1.5 rounded shrink-0 ml-2" style={{ background: C.goldTint, color: C.gold }}>Ir ao Croqui</button>
+            </div>
+
+            <div className="mb-3">
+              <div className="text-xs font-medium mb-1.5" style={{ color: C.chalk }}>Paredes</div>
+              <div className="space-y-1.5">
+                {activeRoomWallFaces.length === 0 && <div className="text-[11px] italic" style={{ color: C.mute }}>Nenhuma parede vinculada a este ambiente ainda — desenhe o contorno encostado nas paredes reais no Croqui.</div>}
+                {activeRoomWallFaces.map(({ wall, finish, color }, i) => (
+                  <div key={`${wall.id}-${i}`} className="flex items-center gap-2 px-2.5 py-2 rounded flex-wrap" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                    <BrickWall size={13} color={C.mute} />
+                    <span className="text-xs font-semibold" style={{ ...mono, color: C.gold }}>{wall.tag}</span>
+                    <span className="text-[11px]" style={{ color: C.mute }}>{wall.length}×{wall.height} m = {(toNum(wall.length, 0) * toNum(wall.height, 0)).toFixed(2)} m²</span>
+                    <span className="text-[11px]" style={{ color: C.chalk }}>{finish || "A definir"}</span>
+                    {finish === "Pintura" && color && <span className="w-3.5 h-3.5 rounded-full inline-block shrink-0" style={{ background: color, border: `1px solid ${C.line}` }} />}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded ml-auto shrink-0" style={{ color: conditionColor(wall.condition), background: "rgba(255,255,255,0.06)" }}>{wall.condition}</span>
+                    {wall.demolir && <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ color: C.bad, background: "rgba(193,84,63,0.14)" }}>Demolir</span>}
+                    {wall.construir && <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ color: C.good, background: "rgba(107,156,90,0.14)" }}>À construir</span>}
+                  </div>
+                ))}
+                {activeRoomWallFaces.length > 0 && (
+                  <div className="text-[11px] text-right pr-1" style={{ color: C.mute }}>Total de parede: {activeRoomWallAreaTotal.toFixed(2)} m²</div>
+                )}
+              </div>
             </div>
 
             <div className="mb-3">
