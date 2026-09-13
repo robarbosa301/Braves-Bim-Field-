@@ -971,10 +971,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       .map(o => ({ ...o, pos: (o.x - w.x1) * ux + (o.y - w.y1) * uy, halfW: (toNum(o.width, 0.8) / scale) * GRID / 2 }))
       .sort((a, b) => a.pos - b.pos);
     const dx0 = w.x2 - w.x1, dy0 = w.y2 - w.y1, len = Math.hypot(dx0, dy0) || 1;
+    const startInset = joinedWallFaceInset(w.id, w.x1, w.y1);
+    const endInset = joinedWallFaceInset(w.id, w.x2, w.y2);
     const gaps = [];
-    let cursor = 0;
+    let cursor = startInset;
     opens.forEach(o => { const start = o.pos - o.halfW, end = o.pos + o.halfW; if (start - cursor > 3) gaps.push({ start: cursor, end: start, afterOpeningId: o.id }); cursor = Math.max(cursor, end); });
-    if (len - cursor > 3) gaps.push({ start: cursor, end: len, afterOpeningId: null });
+    if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null });
     const gap = gaps[gapIndex];
     if (!gap) { setEditingDim(null); return; }
     const newLenPx = Math.max(2, (toNum(value) / scale) * GRID);
@@ -984,9 +986,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (gap.afterOpeningId) {
       const fromIdx = opens.findIndex(o => o.id === gap.afterOpeningId);
       const shifted = opens.slice(fromIdx);
-      const prevEnd = fromIdx > 0 ? opens[fromIdx - 1].pos + opens[fromIdx - 1].halfW : 0;
+      const prevEnd = fromIdx > 0 ? opens[fromIdx - 1].pos + opens[fromIdx - 1].halfW : startInset;
       const minDelta = prevEnd - (shifted[0].pos - shifted[0].halfW) + 2;
-      const maxDelta = len - (shifted[shifted.length - 1].pos + shifted[shifted.length - 1].halfW) - 2;
+      const maxDelta = (len - endInset) - (shifted[shifted.length - 1].pos + shifted[shifted.length - 1].halfW) - 2;
       const delta = Math.max(minDelta, Math.min(maxDelta, rawDelta));
       const shiftIds = new Set(shifted.map(o => o.id));
       let lastXY = null;
@@ -998,7 +1000,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       }));
       if (lastXY) ensureVisible(lastXY.x, lastXY.y);
     } else {
-      const minLen = cursor + 2;
+      const minLen = cursor + endInset + 2;
       const newLen = Math.max(minLen, len + rawDelta);
       const newX2 = w.x1 + ux * newLen, newY2 = w.y1 + uy * newLen;
       const newLenM = pxToMeters(dist({ x: w.x1, y: w.y1 }, { x: newX2, y: newY2 }));
@@ -1393,6 +1395,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const dist = D + towardWall * ASCENT + extra;
     return { x: offDir.x * dist, y: offDir.y * dist };
   }
+  // A wall's own x1,y1/x2,y2 sit on its CENTERLINE, which is also where a
+  // perpendicular wall's centerline meets it at a corner — but the actual
+  // usable gap to a door or window starts at that neighbor's FACE, not
+  // its centerline. Finds a wall joined at this exact endpoint (if any)
+  // and returns half its thickness in px, else 0.
+  function joinedWallFaceInset(wallId, px, py) {
+    const other = elements.find(e => e.type === "wall" && e.id !== wallId &&
+      (dist({ x: e.x1, y: e.y1 }, { x: px, y: py }) < 3 || dist({ x: e.x2, y: e.y2 }, { x: px, y: py }) < 3));
+    return other ? (wallThicknessM(other.wallType) / 2 / scale) * GRID : 0;
+  }
   function wallDimensions(w) {
     const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id);
     if (!opens.length) return null;
@@ -1404,15 +1416,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     // (the previous 13, close to GRID's own 20) read as needlessly far
     // from the wall it's actually measuring.
     const offset = GRID / 2;
+    const startInset = joinedWallFaceInset(w.id, w.x1, w.y1);
+    const endInset = joinedWallFaceInset(w.id, w.x2, w.y2);
     const ivs = opens.map(o => {
       const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
       const halfW = (toNum(o.width, 0.8) / scale) * GRID / 2;
       return { id: o.id, start: pos - halfW, end: pos + halfW };
     }).sort((a, b) => a.start - b.start);
     const gaps = [];
-    let cursor = 0;
+    let cursor = startInset;
     ivs.forEach(iv => { if (iv.start - cursor > 3) gaps.push({ start: cursor, end: iv.start, afterOpeningId: iv.id }); cursor = Math.max(cursor, iv.end); });
-    if (len - cursor > 3) gaps.push({ start: cursor, end: len, afterOpeningId: null });
+    if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null });
     return gaps.map((g, i) => {
       const { start: s, end: e2 } = g;
       const p1 = { x: w.x1 + ux * s + nx * offset, y: w.y1 + uy * s + ny * offset };
