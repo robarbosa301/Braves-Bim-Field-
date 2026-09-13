@@ -921,17 +921,25 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
         (lvl.rooms || []).forEach(r => {
           if (r.points.length < 3) return;
           const shape = new THREE.Shape(r.points.map(p => new THREE.Vector2(p.x, -p.y)));
-          const floorTex = getWallTexture(r.floorFinish, r.floorColor).clone(); floorTex.needsUpdate = true; floorTex.repeat.set(3, 3);
-          const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85, side: THREE.DoubleSide }));
-          floorMesh.rotation.x = -Math.PI / 2;
-          floorMesh.position.y = elev + 0.01;
-          scene.add(floorMesh);
+          // Only render a floor/ceiling plane once that finish was actually
+          // chosen in Croqui — "A definir" (the default before anyone picks
+          // one) isn't real survey data, so it shouldn't show up in 3D as if
+          // it were.
+          if (r.floorFinish && r.floorFinish !== "A definir") {
+            const floorTex = getWallTexture(r.floorFinish, r.floorColor).clone(); floorTex.needsUpdate = true; floorTex.repeat.set(3, 3);
+            const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85, side: THREE.DoubleSide }));
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.position.y = elev + 0.01;
+            scene.add(floorMesh);
+          }
 
-          const ceilTex = getWallTexture(r.ceilingFinish, "#EDEBE4").clone(); ceilTex.needsUpdate = true; ceilTex.repeat.set(3, 3);
-          const ceilMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.95, side: THREE.DoubleSide }));
-          ceilMesh.rotation.x = -Math.PI / 2;
-          ceilMesh.position.y = elev + levelWallHeight - 0.01;
-          scene.add(ceilMesh);
+          if (r.ceilingFinish && r.ceilingFinish !== "A definir") {
+            const ceilTex = getWallTexture(r.ceilingFinish, "#EDEBE4").clone(); ceilTex.needsUpdate = true; ceilTex.repeat.set(3, 3);
+            const ceilMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.95, side: THREE.DoubleSide }));
+            ceilMesh.rotation.x = -Math.PI / 2;
+            ceilMesh.position.y = elev + levelWallHeight - 0.01;
+            scene.add(ceilMesh);
+          }
         });
 
         (lvl.stairs || []).forEach(st => {
