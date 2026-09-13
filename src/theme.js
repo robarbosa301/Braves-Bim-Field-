@@ -15,3 +15,19 @@ export const C = {
   bad: "#C1543F",
   good: "#6B9C5A",
 };
+
+export const heading = { fontFamily: "'Poppins',-apple-system,'SF Pro Display','Segoe UI',Roboto,sans-serif", letterSpacing: "0.01em" };
+export const mono = { fontFamily: "'JetBrains Mono','IBM Plex Mono',monospace" };
+
+export function conditionColor(cond) {
+  if (cond === "Bom") return C.gold;
+  if (cond === "Ruim") return C.bad;
+  return C.mute;
+}
+// Reforma phase override for a wall/door/window's Croqui color — null means
+// "existing, unchanged" and callers fall back to their normal styling.
+export function phaseColor(el) {
+  if (el.demolir) return C.bad;
+  if (el.construir) return C.good;
+  return null;
+}
