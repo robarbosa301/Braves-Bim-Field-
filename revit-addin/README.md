@@ -253,6 +253,14 @@ com o que foi medido no app (tentando os parâmetros `Height`/`Width` e também
 `Altura`/`Largura`, seja como parâmetro de instância ou de tipo) — isso
 funciona independente do casamento de família ter sido perfeito ou não.
 
+Quando largura/altura só existem como parâmetro de **tipo** na família (comum
+em famílias mais simples) e o projeto tem poucas famílias carregadas, duas
+portas/janelas de tamanhos diferentes podem acabar casando com o **mesmo**
+tipo — nesse caso o add-in cria automaticamente uma cópia desse tipo dedicada
+a cada tamanho (ex: `Porta Simples - 80x210`), em vez de ajustar o tipo
+compartilhado e sem querer redimensionar todas as outras portas que o usam
+também. Reimportar reaproveita essas cópias em vez de criar novas a cada vez.
+
 #### Nenhuma informação do levantamento é perdida
 
 Mesmo quando nenhuma família carregada no projeto parece com o que foi

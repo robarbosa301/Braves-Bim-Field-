@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.DB.Structure;
@@ -141,6 +142,14 @@ namespace BravesBimFieldImporter
                     Dictionary<string, ElementId> existingLuminariasByToken = IndexExistingByToken(doc, BuiltInCategory.OST_LightingFixtures, "luminaria");
                     Dictionary<string, ElementId> existingRoofsByToken = IndexExistingByToken(doc, BuiltInCategory.OST_Roofs, "cobertura");
 
+                    // Per-size duplicated door/window types created by
+                    // ApplyOpeningSize below, keyed per this one import run —
+                    // ElementIds aren't valid across documents, so this can't
+                    // be a static/shared cache (a real type-with-this-name
+                    // lookup inside GetOrCreateSizedSymbol is what actually
+                    // makes duplicates persist correctly across re-imports).
+                    var sizedSymbolCache = new Dictionary<string, ElementId>();
+
                     // Level name -> id, for coberturas (which reference a level by
                     // NAME, not id — see CoberturaInfo.level).
                     var levelIdByName = schema.niveis
@@ -219,8 +228,9 @@ namespace BravesBimFieldImporter
                                 () => doc.Create.NewFamilyInstance(pos, doorSymbol, host, level, StructuralType.NonStructural),
                                 pos);
 
-                            TrySetDimension(inst, new[] { "Height", "Altura", "Altura da porta" }, porta.altura_m);
-                            TrySetDimension(inst, new[] { "Width", "Largura", "Largura da porta" }, porta.largura_m);
+                            inst = ApplyOpeningSize(doc, inst,
+                                new[] { "Width", "Largura", "Largura da porta" }, new[] { "Height", "Altura", "Altura da porta" },
+                                porta.largura_m, porta.altura_m, sizedSymbolCache);
                             SetMark(inst, porta.tag);
                             SetSurveyComments(inst, "porta", porta.id, porta.tipo, porta.folhas, porta.largura_m, porta.altura_m, null, doorMatched);
                             ApplyReformaPhase(inst, porta.demolir, porta.construir, existingPhase, currentPhase, phasingAvailable, result);
@@ -241,8 +251,9 @@ namespace BravesBimFieldImporter
                                 () => doc.Create.NewFamilyInstance(pos, windowSymbol, host, level, StructuralType.NonStructural),
                                 pos);
 
-                            TrySetDimension(inst, new[] { "Height", "Altura", "Altura da janela" }, janela.altura_m);
-                            TrySetDimension(inst, new[] { "Width", "Largura", "Largura da janela" }, janela.largura_m);
+                            inst = ApplyOpeningSize(doc, inst,
+                                new[] { "Width", "Largura", "Largura da janela" }, new[] { "Height", "Altura", "Altura da janela" },
+                                janela.largura_m, janela.altura_m, sizedSymbolCache);
                             SetMark(inst, janela.tag);
                             SetSurveyComments(inst, "janela", janela.id, janela.tipo, janela.folhas, janela.largura_m, janela.altura_m, janela.peitoril_m, windowMatched);
                             ApplyReformaPhase(inst, janela.demolir, janela.construir, existingPhase, currentPhase, phasingAvailable, result);
@@ -710,25 +721,90 @@ namespace BravesBimFieldImporter
             return sb.ToString().ToLowerInvariant();
         }
 
-        // Door/window width/height are usually Type parameters (shared by every
-        // instance of that type), not Instance ones, and Brazilian templates often
-        // use Portuguese names — so try each candidate name against both the
-        // instance and, failing that, its type/symbol before giving up.
-        private static void TrySetDimension(FamilyInstance inst, string[] candidateNames, double meters)
+        // Applies a door/window's real surveyed width/height. Brazilian
+        // templates often use Portuguese parameter names, and width/height can
+        // be either an Instance or a Type parameter depending on the family —
+        // LookupParameter on the instance itself only ever finds
+        // instance-bound ones, so trying that first and falling back to the
+        // type/symbol (as this used to do unconditionally) is how you tell
+        // which kind you've got.
+        //
+        // The bug that fix alone doesn't cover: when it's a Type parameter and
+        // the project only has one door/window family loaded, every surveyed
+        // door/window gets matched to that same type (see PickBestSymbol) —
+        // setting the dimension there directly resizes ALL of them to
+        // whichever was imported last, silently making differently-sized
+        // openings identical in Revit. So when a dimension can't be set at
+        // the instance level, this instance gets its own dedicated type
+        // (reusing one already created for this exact size, if a previous
+        // opening needed it) instead of resizing the shared one.
+        private static FamilyInstance ApplyOpeningSize(Document doc, FamilyInstance inst, string[] widthNames, string[] heightNames, double widthM, double heightM, Dictionary<string, ElementId> sizedSymbolCache)
         {
-            if (meters <= 0) return;
-            double feet = MetersToFeet(meters);
+            bool widthOnInstance = TrySetInstanceDimension(inst, widthNames, widthM);
+            bool heightOnInstance = TrySetInstanceDimension(inst, heightNames, heightM);
+            if (widthOnInstance && heightOnInstance) return inst;
 
+            FamilySymbol sized = GetOrCreateSizedSymbol(doc, inst.Symbol, widthM, heightM, sizedSymbolCache);
+            if (sized != null && sized.Id != inst.Symbol.Id)
+            {
+                ElementId changedId = inst.ChangeTypeId(sized.Id);
+                if (changedId != ElementId.InvalidElementId && changedId != inst.Id)
+                    inst = doc.GetElement(changedId) as FamilyInstance;
+            }
+            if (!widthOnInstance) TrySetTypeDimension(inst.Symbol, widthNames, widthM);
+            if (!heightOnInstance) TrySetTypeDimension(inst.Symbol, heightNames, heightM);
+            return inst;
+        }
+
+        private static FamilySymbol GetOrCreateSizedSymbol(Document doc, FamilySymbol baseSymbol, double widthM, double heightM, Dictionary<string, ElementId> sizedSymbolCache)
+        {
+            string sizeSuffix = $"{Math.Round(widthM * 100)}x{Math.Round(heightM * 100)}";
+            // Strip a size suffix this same method added on a previous import
+            // (e.g. re-matching landed on an already-duplicated "Porta - 80x210"
+            // as its starting symbol) so re-importing never stacks suffixes
+            // into "Porta - 80x210 - 80x210".
+            string baseName = Regex.Replace(baseSymbol.Name, @"\s*-\s*\d+x\d+$", "");
+            string newName = $"{baseName} - {sizeSuffix}";
+            string cacheKey = $"{baseSymbol.Id.IntegerValue}|{sizeSuffix}";
+
+            if (sizedSymbolCache.TryGetValue(cacheKey, out ElementId cachedId) && doc.GetElement(cachedId) is FamilySymbol cached)
+                return cached;
+
+            // Reuse a type a previous import already created with this exact
+            // name, rather than duplicating again (Duplicate() would throw on
+            // the name collision, and there's no reason to make a second one).
+            FamilySymbol existing = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>()
+                .FirstOrDefault(s => s.Family.Id == baseSymbol.Family.Id && string.Equals(s.Name, newName, StringComparison.OrdinalIgnoreCase));
+
+            FamilySymbol sized = existing ?? (baseSymbol.Duplicate(newName) as FamilySymbol);
+            if (sized != null)
+            {
+                if (!sized.IsActive) sized.Activate();
+                sizedSymbolCache[cacheKey] = sized.Id;
+            }
+            return sized;
+        }
+
+        private static bool TrySetInstanceDimension(FamilyInstance inst, string[] candidateNames, double meters)
+        {
+            if (meters <= 0) return true;
+            double feet = MetersToFeet(meters);
             foreach (string name in candidateNames)
             {
                 Parameter p = inst.LookupParameter(name);
-                if (p != null && !p.IsReadOnly) { p.Set(feet); return; }
+                if (p != null && !p.IsReadOnly) { p.Set(feet); return true; }
             }
+            return false;
+        }
 
-            FamilySymbol symbol = inst.Symbol;
+        private static void TrySetTypeDimension(FamilySymbol symbol, string[] candidateNames, double meters)
+        {
+            if (meters <= 0 || symbol == null) return;
+            double feet = MetersToFeet(meters);
             foreach (string name in candidateNames)
             {
-                Parameter p = symbol?.LookupParameter(name);
+                Parameter p = symbol.LookupParameter(name);
                 if (p != null && !p.IsReadOnly) { p.Set(feet); return; }
             }
         }
