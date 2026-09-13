@@ -1192,20 +1192,32 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     isDraggingRef.current = false;
   }
 
-  // Lets the user manually slide a parallel-wall dimension's label along
-  // its own perpendicular (nx,ny, already computed where this is called
-  // from) — needed when two dimensions land close enough together that one
-  // covers the other and it can't be tapped to edit anymore. The nudge is
-  // stored on the wall (dimNudge, keyed by the other wall's id) rather than
-  // component state so it survives VectorSketch remounting on tab switch,
-  // and is clamped to the pair's own overlap span so the label can't be
-  // dragged past the shared span between the two walls (i.e. out of the room).
-  function beginDragDimLabel(wallA, otherId, nx, ny, overlapMin, overlapMax, startEdit, e) {
+  // A pre-2D-drag save could have a plain number here (the old
+  // perpendicular-only nudge) — read it back as { perp, along: 0 } so
+  // existing projects don't lose their adjustment when this loads.
+  function readDimNudge(wallA, otherId) {
+    const raw = wallA && wallA.dimNudge && wallA.dimNudge[otherId];
+    if (raw && typeof raw === "object") return raw;
+    return { perp: typeof raw === "number" ? raw : 0, along: 0 };
+  }
+  // Lets the user manually slide a parallel-wall dimension's label freely
+  // in the plane of its own dimension line — perpendicular to it (nx,ny,
+  // parallel to the walls themselves) to pull it out from behind another
+  // dimension it's colliding with, AND along it (ux,uy, between the two
+  // wall faces) to reposition it along the line the same way the label's
+  // own rotation now reads (parallel to the line, not always horizontal).
+  // The nudge is stored on the wall (dimNudge, keyed by the other wall's
+  // id) rather than component state so it survives VectorSketch remounting
+  // on tab switch, and each axis is clamped independently — perp to the
+  // pair's shared overlap span, along to the gap between the two wall
+  // faces — so the label can't be dragged out of the room in either
+  // direction.
+  function beginDragDimLabel(wallA, otherId, ux, uy, nx, ny, overlapMin, overlapMax, faceLen, labelT, startEdit, e) {
     if (tool !== "selecionar") return;
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
-    const startNudge = (wallA.dimNudge && wallA.dimNudge[otherId]) || 0;
-    setDraggingDimLabel({ wallId: wallA.id, otherId, nx, ny, overlapMin, overlapMax, startP: svgPointRaw(e), startNudge, moved: false, startEdit });
+    const startNudge = readDimNudge(wallA, otherId);
+    setDraggingDimLabel({ wallId: wallA.id, otherId, ux, uy, nx, ny, overlapMin, overlapMax, faceLen, labelT, startP: svgPointRaw(e), startNudge, moved: false, startEdit });
   }
   function onDimLabelDragMove(e) {
     if (!draggingDimLabel) return;
@@ -1217,11 +1229,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       isDraggingRef.current = true;
       setDraggingDimLabel(s => (s ? { ...s, moved: true } : s));
     }
-    const delta = (p.x - d.startP.x) * d.nx + (p.y - d.startP.y) * d.ny;
-    const maxNudge = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
-    const nudge = Math.max(-maxNudge, Math.min(maxNudge, d.startNudge + delta));
+    const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
+    const deltaPerp = dxp * d.nx + dyp * d.ny;
+    const deltaAlong = dxp * d.ux + dyp * d.uy;
+    const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+    const perp = Math.max(-maxPerp, Math.min(maxPerp, d.startNudge.perp + deltaPerp));
+    // The label's un-nudged position already sits at labelT along the
+    // face-to-face line (T0), not at its midpoint — clamp the ALONG offset
+    // relative to that base position, keeping a small margin so the label
+    // never slides on top of either wall's own face.
+    const T0 = d.faceLen * d.labelT;
+    const margin = Math.min(10, d.faceLen / 2);
+    const alongLo = Math.min(margin - T0, d.faceLen - margin - T0);
+    const alongHi = Math.max(margin - T0, d.faceLen - margin - T0);
+    const along = Math.max(alongLo, Math.min(alongHi, d.startNudge.along + deltaAlong));
     commitElements(elements.map(el => el.id === d.wallId
-      ? { ...el, dimNudge: { ...(el.dimNudge || {}), [d.otherId]: nudge } }
+      ? { ...el, dimNudge: { ...(el.dimNudge || {}), [d.otherId]: { perp, along } } }
       : el));
   }
   function onDimLabelDragEnd() {
@@ -1700,18 +1723,31 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const midX = fx1 + (fx2 - fx1) * labelT, midY = fy1 + (fy2 - fy1) * labelT;
           const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
           const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
-          // Manual nudge along the label's own perpendicular (nx,ny — the
-          // same direction as the tick marks below, i.e. parallel to the
-          // walls themselves): the user's way to pull whichever dimension
-          // ends up "in front" out from behind another one it's colliding
-          // with. Persisted on the wall (not local state) so it survives
-          // this component remounting on tab switch, and clamped to the
-          // pair's own overlap span so it can't be dragged past where the
-          // two walls actually face each other (i.e. out of the room).
-          const rawNudge = (wallA && wallA.dimNudge && wallA.dimNudge[d.bId]) || 0;
-          const maxNudge = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
-          const nudge = Math.max(-maxNudge, Math.min(maxNudge, rawNudge));
-          const labelX = midX + nx * nudge, labelY = midY + ny * nudge;
+          const faceLen = Math.hypot(fx2 - fx1, fy2 - fy1) || 1;
+          // Manual nudge, free in the plane of the line: perpendicular to it
+          // (nx,ny — parallel to the walls themselves) to pull whichever
+          // dimension ends up "in front" out from behind another one it's
+          // colliding with, and along it (ux,uy) to slide the label between
+          // the two wall faces instead of always sitting at the fixed
+          // labelT point. Persisted on the wall (not local state) so it
+          // survives this component remounting on tab switch, and each axis
+          // is clamped independently so the label can't be dragged out of
+          // the room in either direction.
+          const dimNudge = readDimNudge(wallA, d.bId);
+          const maxPerp = Math.max(0, (d.overlapMax - d.overlapMin) / 2 - GRID);
+          const perp = Math.max(-maxPerp, Math.min(maxPerp, dimNudge.perp));
+          const alongMargin = Math.min(10, faceLen / 2);
+          const alongLo = Math.min(alongMargin - faceLen * labelT, faceLen - alongMargin - faceLen * labelT);
+          const alongHi = Math.max(alongMargin - faceLen * labelT, faceLen - alongMargin - faceLen * labelT);
+          const along = Math.max(alongLo, Math.min(alongHi, dimNudge.along));
+          const labelX = midX + nx * perp + ux * along, labelY = midY + ny * perp + uy * along;
+          // Rotate the label to read parallel to its own dimension line
+          // (matching standard architectural dimension convention) instead
+          // of always horizontal — flipped 180° whenever the raw angle
+          // would otherwise render the text upside down, same as a wall's
+          // own length label.
+          let dimDeg = Math.atan2(uy, ux) * 180 / Math.PI;
+          if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
           // Which wall of the pair moves when this dimension is edited: keep
           // whichever one is already selected (so editing right after
           // selecting a wall moves that same wall, not its neighbor), else
@@ -1730,23 +1766,25 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <line x1={fx1} y1={fy1} x2={fx2} y2={fy2} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
               <line x1={fx1 - nx * 4} y1={fy1 - ny * 4} x2={fx1 + nx * 4} y2={fy1 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
               <line x1={fx2 - nx * 4} y1={fy2 - ny * 4} x2={fx2 + nx * 4} y2={fy2 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
-              {editable && (
-                // Bigger than the visible pill below it — a touch-friendly
-                // hit area around a small label is worth more than visual
-                // purity here, especially with several dimensions crowded
-                // into a small room. Mousedown/touchstart (not onClick) so
-                // it can double as the handle for the perpendicular drag
-                // above — a plain tap (no movement) still falls through to
-                // startEdit via onDimLabelDragEnd, same as the room-name
-                // label pattern.
-                <rect x={labelX - 22} y={labelY - 14} width="44" height="28" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
-                  style={{ cursor: "move" }}
-                  onMouseDown={e => wallA && beginDragDimLabel(wallA, d.bId, nx, ny, d.overlapMin, d.overlapMax, startEdit, e)}
-                  onTouchStart={e => wallA && beginDragDimLabel(wallA, d.bId, nx, ny, d.overlapMin, d.overlapMax, startEdit, e)} />
-              )}
-              <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
-              <text x={labelX} y={labelY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
-                style={{ pointerEvents: "none" }}>{faceDistM} m</text>
+              <g transform={dimDeg ? `rotate(${dimDeg} ${labelX} ${labelY})` : undefined}>
+                {editable && (
+                  // Bigger than the visible pill below it — a touch-friendly
+                  // hit area around a small label is worth more than visual
+                  // purity here, especially with several dimensions crowded
+                  // into a small room. Mousedown/touchstart (not onClick) so
+                  // it can double as the handle for the free 2D drag above —
+                  // a plain tap (no movement) still falls through to
+                  // startEdit via onDimLabelDragEnd, same as the room-name
+                  // label pattern.
+                  <rect x={labelX - 22} y={labelY - 14} width="44" height="28" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
+                    style={{ cursor: "move" }}
+                    onMouseDown={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)}
+                    onTouchStart={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)} />
+                )}
+                <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
+                <text x={labelX} y={labelY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
+                  style={{ pointerEvents: "none" }}>{faceDistM} m</text>
+              </g>
             </g>
           );
         })}
