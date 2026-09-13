@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, Suspense } from "react";
 import {
   MapPin, LayoutGrid, Camera, RefreshCw, Wifi, WifiOff, Plus, Trash2,
   CheckCircle2, BrickWall, Building2,
-  ChevronRight, ChevronDown, Pencil, FileJson, FileText, Layers3,
+  ChevronRight, ChevronDown, Pencil, Layers3,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, Rotate3d, Box, Home,
   DoorOpen, Scissors
@@ -14,6 +14,7 @@ import { toNum, uid } from "./utils.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import JoinScreen from "./JoinScreen.jsx";
 import VectorSketch from "./VectorSketch.jsx";
+import SyncTab from "./SyncTab.jsx";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES } from "./constants.js";
 import { GRID, pointInPolygon } from "./geometry.js";
 import {
@@ -1100,41 +1101,7 @@ export default function PranchetaBIM() {
         )}
 
         {tab === "sync" && (
-          <div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button onClick={runSync} disabled={syncing}
-                className="py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-                style={{ background: syncing ? C.panelAlt : C.gold, color: "#141311", opacity: syncing ? 0.7 : 1 }}>
-                <RefreshCw size={15} className={syncing ? "animate-spin" : ""} /> {syncing ? "Sincronizando…" : "Sincronizar agora"}
-              </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={exportJSON} className="py-3 rounded-lg text-xs flex flex-col items-center justify-center gap-1" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                  <FileJson size={15} color={C.gold} /> JSON
-                </button>
-                <button onClick={exportCSV} className="py-3 rounded-lg text-xs flex flex-col items-center justify-center gap-1" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                  <FileText size={15} color={C.gold} /> CSV
-                </button>
-              </div>
-            </div>
-            <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-              <div className="text-[11px] mb-2" style={{ color: C.mute }}>REGISTRO DE SINCRONIZAÇÃO</div>
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {log.map(entry => (
-                  <div key={entry.id} className="flex items-start gap-2 text-[11px]">
-                    <span style={{ ...mono, color: C.mute }}>{entry.t}</span>
-                    <span style={{ color: entry.kind === "done" ? C.gold : entry.kind === "revit" || entry.kind === "cad" ? C.gold : C.chalk, flex: 1 }}>
-                      {entry.kind === "done" && <CheckCircle2 size={11} className="inline mr-1" style={{ marginBottom: "1px" }} />}
-                      {entry.msg}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <a href={`${import.meta.env.BASE_URL}privacidade.html`} target="_blank" rel="noopener noreferrer"
-              className="block text-center text-[11px] py-2" style={{ color: C.muteDim }}>
-              Política de Privacidade
-            </a>
-          </div>
+          <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} log={log} />
         )}
       </div>
 
