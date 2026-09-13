@@ -47,7 +47,7 @@ const C = {
   gold: "#FFFFFF",
   goldTint: "rgba(255,255,255,0.14)",
   bad: "#C1543F",
-  good: "#6B9C5A",
+  good: "#D1A53A",
 };
 
 const heading = { fontFamily: "'Poppins',-apple-system,'SF Pro Display','Segoe UI',Roboto,sans-serif", letterSpacing: "0.01em" };
@@ -834,12 +834,12 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
           const texA = getWallTexture(w.finishA, w.paintColorA);
           const texB = getWallTexture(w.finishB, w.paintColorB);
           // Walls flagged for demolition or new construction (a reforma's
-          // scope) render as a translucent red/green block instead of their
+          // scope) render as a translucent red/yellow block instead of their
           // real finish, so the 3D view calls out the same elements the
           // Croqui already marks with a dashed outline — same convention
           // (and same colors), two views.
           const demolirMat = () => new THREE.MeshStandardMaterial({ color: 0xC1543F, roughness: 0.6, transparent: true, opacity: 0.5 });
-          const construirMat = () => new THREE.MeshStandardMaterial({ color: 0x6B9C5A, roughness: 0.6, transparent: true, opacity: 0.5 });
+          const construirMat = () => new THREE.MeshStandardMaterial({ color: 0xD1A53A, roughness: 0.6, transparent: true, opacity: 0.5 });
           const matNeutral = w.demolir ? demolirMat() : w.construir ? construirMat() : new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.9 });
           segs.forEach(seg => {
             const segLen = seg.end - seg.start, segH = seg.yTop - seg.yBottom;
@@ -875,7 +875,7 @@ function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sect
             const gap = Math.min(0.03, panelWidth * 0.08);
             const isSliding = /correr/i.test(o.doorType || o.windowType || "");
             const isDoorKind = o.kind === "door";
-            const color = o.demolir ? 0xC1543F : o.construir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
+            const color = o.demolir ? 0xC1543F : o.construir ? 0xD1A53A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
             const matOpts = (o.demolir || o.construir)
               ? { roughness: 0.6, transparent: true, opacity: 0.5 }
               : isDoorKind
@@ -2359,7 +2359,7 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
               <rect x={el.x - widthPx / 2 - 4} y={el.y - 14} width={widthPx + 8} height={28} fill="rgba(0,0,0,0.001)"
                 style={{ cursor: tool === "selecionar" ? "grab" : "default" }} onMouseDown={e => beginDragOpening(el, e)} onTouchStart={e => beginDragOpening(el, e)} />
               <rect x={el.x - widthPx / 2} y={el.y - 3.5} width={widthPx} height={7}
-                fill={el.demolir ? "rgba(193,84,63,0.35)" : el.construir ? "rgba(107,156,90,0.35)" : (isDoor ? "#4A4A46" : "#B9B6AE")}
+                fill={el.demolir ? "rgba(193,84,63,0.35)" : el.construir ? "rgba(209,165,58,0.35)" : (isDoor ? "#4A4A46" : "#B9B6AE")}
                 stroke={isSel ? "#726F68" : phaseColor(el) || "#1B1E1A"} strokeWidth={isSel ? 2.5 : 1}
                 strokeDasharray={phaseColor(el) ? "3,2" : undefined}
                 opacity={isDoor ? 1 : 0.85}
@@ -2605,11 +2605,11 @@ function DemolirToggle({ checked, onChange }) {
   );
 }
 // Same idea, opposite direction: marks a wall/door/window as new work to be
-// built in the reforma — green instead of red, everywhere Demolir is red.
+// built in the reforma — yellow instead of red, everywhere Demolir is red.
 function ConstruirToggle({ checked, onChange }) {
   return (
     <label className="flex items-center gap-1 text-[10px] px-1.5 py-1 rounded cursor-pointer"
-      style={{ color: checked ? C.good : C.mute, background: checked ? "rgba(107,156,90,0.14)" : "rgba(255,255,255,0.06)", border: `1px solid ${checked ? C.good : C.line}` }}>
+      style={{ color: checked ? C.good : C.mute, background: checked ? "rgba(209,165,58,0.14)" : "rgba(255,255,255,0.06)", border: `1px solid ${checked ? C.good : C.line}` }}>
       <input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} className="w-3 h-3" />
       <HardHat size={11} /> À construir
     </label>
