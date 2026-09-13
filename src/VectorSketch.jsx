@@ -664,6 +664,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         const el = { id: uid(), type: "room", points: traced, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
         commitElements([...elements, el]);
         setNamingId(el.id); setNamingValue("");
+        // Placing a room is a one-shot action, not a mode you stay in —
+        // leaving "tool" on "ambiente" afterward silently disabled every
+        // wall dimension (editable/draggable only in "selecionar") right
+        // when the user is most likely to want to check/adjust them.
+        setTool("selecionar");
         return;
       }
       // Tapping precisely on a very short wall's own corner is genuinely
@@ -739,6 +744,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     commitElements([...elements, el]);
     setPolygon([]);
     setNamingId(el.id); setNamingValue("");
+    setTool("selecionar");
   }
 
   function saveName() {
