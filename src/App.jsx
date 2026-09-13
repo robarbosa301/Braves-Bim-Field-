@@ -2836,7 +2836,12 @@ function JoinScreen({ onJoin }) {
         <div className="braves-anim-in flex flex-col items-center gap-4 mb-7" style={{ animationDelay: "0s" }}>
           <img src={SYMBOL_LOGO} alt="Braves BIM Field" className="braves-logo-build" style={{ height: 132, width: "auto" }} />
           <div className="text-center">
-            <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>BRAVES BIM FIELD</div>
+            <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>
+              <span className="braves-text-write-wrap">
+                <span className="braves-text-write">BRAVES BIM FIELD</span>
+                <span className="braves-text-cursor" />
+              </span>
+            </div>
             <div className="text-[11px] mt-1.5" style={{ color: C.mute, letterSpacing: "0.18em" }}>PROJETOS E CONSTRUÇÕES EFICIENTES</div>
           </div>
         </div>
