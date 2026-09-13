@@ -7,7 +7,7 @@ import {
   polygonCentroid,
   fitViewBoxToElements,
   wrapTextLines,
-} from "./App.jsx";
+} from "./geometry.js";
 
 describe("snap", () => {
   it("rounds to the nearest grid step (GRID = 20)", () => {

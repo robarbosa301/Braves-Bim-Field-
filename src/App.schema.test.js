@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  wallThicknessM,
   composeAddress,
   wallToM,
   doorToM,
@@ -9,6 +8,7 @@ import {
   buildLevantamentoSchema,
 } from "./App.jsx";
 import { conditionColor, phaseColor } from "./theme.js";
+import { wallThicknessM } from "./constants.js";
 
 describe("wallThicknessM", () => {
   it("looks up known wall types", () => {
