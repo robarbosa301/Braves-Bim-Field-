@@ -20,14 +20,20 @@ service cloud.firestore {
     // device-id, etc. — the app's generic key-value store.
     match /kv/{key} {
       allow read: if true;
-      allow write: if request.resource.size() < 250000;
+      // create/update are size-capped; delete has no request.resource to
+      // size-check at all (it's null), so folding delete into the same
+      // "write" rule as the size check made every delete evaluate false —
+      // silently blocking e.g. the app's "change project code" cleanup.
+      allow create, update: if request.resource.size() < 250000;
+      allow delete: if true;
     }
 
     // Structured per-project metadata (name, address, room count) that the
     // Revit add-in searches by name via the REST API.
     match /projects/{code} {
       allow read: if true;
-      allow write: if request.resource.size() < 20000;
+      allow create, update: if request.resource.size() < 20000;
+      allow delete: if true;
     }
 
     // Everything else is denied outright — no other collection exists in
