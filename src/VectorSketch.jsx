@@ -1658,7 +1658,34 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
-              const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
+              // The wall's own length label defaults to the wall's exact
+              // midpoint — but so does its own size/type tag whenever a
+              // door or window sits there (very common for a centered
+              // opening), and both sit on the same "outward from the room"
+              // side, landing right on top of each other. If an opening's
+              // own position falls near the midpoint, slide the label to
+              // whichever quarter point is farthest from every opening
+              // instead, the same dodge used for colliding pair-dimensions.
+              // Compared in raw pixels, not a fraction of the wall's own
+              // length — a short wall's 25%-of-length gap can still be
+              // narrower than two overlapping text labels, while a long
+              // wall's would never collide at all, so a fixed fraction
+              // threshold either over- or under-triggers depending on the
+              // wall's length.
+              const wdx = el.x2 - el.x1, wdy = el.y2 - el.y1, wlen = Math.hypot(wdx, wdy) || 1;
+              const opensPx = elements
+                .filter(o => (o.type === "door" || o.type === "window") && o.wallId === el.id)
+                .map(o => ((o.x - el.x1) * wdx + (o.y - el.y1) * wdy) / wlen);
+              const COLLIDE_PX = 45;
+              let labelT = 0.5;
+              if (opensPx.some(p => Math.abs(p - wlen * 0.5) < COLLIDE_PX)) {
+                labelT = [0.25, 0.75].reduce((best, c) => {
+                  const worst = Math.min(...opensPx.map(p => Math.abs(p - wlen * c)));
+                  const bestWorst = Math.min(...opensPx.map(p => Math.abs(p - wlen * best)));
+                  return worst > bestWorst ? c : best;
+                }, 0.25);
+              }
+              const midX = el.x1 + wdx * labelT, midY = el.y1 + wdy * labelT;
               const angleDeg = labelAngleDeg(el);
               const off = wallLabelOffset(el);
               const lx = midX + off.x, ly = midY + off.y;
