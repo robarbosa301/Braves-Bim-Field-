@@ -51,4 +51,8 @@ export default defineConfig({
   // Locally (dev/build) it stays "/" so npm run dev keeps working normally.
   base: process.env.GITHUB_ACTIONS ? "/Braves-Bim-Field-/" : "/",
   plugins: [react(), pwaShellPlugin()],
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.js"],
+  },
 });

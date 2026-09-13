@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, Suspense } from "react";
-import * as THREE from "three";
 import {
   MapPin, LayoutGrid, Grid3x3, Grid2x2, Camera, RefreshCw, Wifi, WifiOff, Plus, X, Trash2, RotateCcw,
   CheckCircle2, DoorClosed, RectangleHorizontal, BrickWall, Building2,
@@ -174,21 +173,21 @@ const genCode = () => Math.random().toString(36).slice(2, 6).toUpperCase();
 
 const WALL_TYPES = ["Alvenaria 15cm", "Alvenaria 20cm", "Concreto", "Drywall", "Vidro"];
 const WALL_THICKNESS_M = { "Alvenaria 15cm": 0.15, "Alvenaria 20cm": 0.20, "Concreto": 0.20, "Drywall": 0.10, "Vidro": 0.10 };
-function wallThicknessM(wallType) { return WALL_THICKNESS_M[wallType] ?? 0.15; }
+export function wallThicknessM(wallType) { return WALL_THICKNESS_M[wallType] ?? 0.15; }
 const FINISH_TYPES = ["A definir", "Pintura", "Reboco sem pintura", "Sem reboco (aparente)", "Revestimento cerâmico", "Textura acrílica"];
 const DOOR_TYPES = ["Madeira maciça", "Madeira semi-oca", "Alumínio", "Vidro temperado", "Correr — alumínio", "Correr — vidro", "Pivotante", "Sanfonada", "Camarão", "Blindada"];
 const WINDOW_TYPES = ["Alumínio de correr", "Vidro de correr", "Basculante", "Maxim-ar", "Vidro fixo", "Guilhotina", "Veneziana", "Pivotante"];
 const FLOOR_TYPES = ["Porcelanato", "Cerâmica", "Contrapiso aparente", "Madeira/Laminado", "Vinílico", "A definir"];
 const CEILING_TYPES = ["Laje aparente", "Forro de gesso", "Forro em PVC", "Forro mineral (lay-in)", "A definir"];
 
-function conditionColor(cond) {
+export function conditionColor(cond) {
   if (cond === "Bom") return C.gold;
   if (cond === "Ruim") return C.bad;
   return C.mute;
 }
 // Reforma phase override for a wall/door/window's Croqui color — null means
 // "existing, unchanged" and callers fall back to their normal styling.
-function phaseColor(el) {
+export function phaseColor(el) {
   if (el.demolir) return C.bad;
   if (el.construir) return C.good;
   return null;
@@ -244,7 +243,7 @@ async function idbSet(key, value) {
   } catch (e) { return false; }
 }
 
-function composeAddress(b) {
+export function composeAddress(b) {
   if (!b) return "";
   const line1 = [b.street, b.number].filter(Boolean).join(", ");
   const line2 = [b.neighborhood, b.city, b.state].filter(Boolean).join(", ");
@@ -263,9 +262,9 @@ async function removeFromProjectIndex(code) {
 
 // ---- geometry helpers -------------------------------------------------------
 const GRID = 20;
-function snap(v) { return Math.round(v / GRID) * GRID; }
-function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
-function projectPointOnSegment(p, a, b) {
+export function snap(v) { return Math.round(v / GRID) * GRID; }
+export function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+export function projectPointOnSegment(p, a, b) {
   const ab = { x: b.x - a.x, y: b.y - a.y };
   const ap = { x: p.x - a.x, y: p.y - a.y };
   const lenSq = ab.x * ab.x + ab.y * ab.y || 1;
@@ -273,7 +272,7 @@ function projectPointOnSegment(p, a, b) {
   t = Math.max(0, Math.min(1, t));
   return { x: a.x + ab.x * t, y: a.y + ab.y * t, t };
 }
-function pointInPolygon(p, poly) {
+export function pointInPolygon(p, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
@@ -282,7 +281,7 @@ function pointInPolygon(p, poly) {
   }
   return inside;
 }
-function polygonCentroid(points) {
+export function polygonCentroid(points) {
   let x = 0, y = 0;
   points.forEach(p => { x += p.x; y += p.y; });
   return { x: x / points.length, y: y / points.length };
@@ -291,7 +290,7 @@ function polygonCentroid(points) {
 // initial view — every time the canvas (re)mounts (e.g. switching away from
 // the Croqui tab and back) it must land centered on the actual drawing
 // instead of at a fixed {0,0} origin, or the sketch reappears displaced.
-function fitViewBoxToElements(elements, w, h) {
+export function fitViewBoxToElements(elements, w, h) {
   if (!elements.length) return { x: 0, y: 0, w, h };
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   elements.forEach(el => {
@@ -315,7 +314,7 @@ function fitViewBoxToElements(elements, w, h) {
   newH = newW / aspect;
   return { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
 }
-function wrapTextLines(text, maxChars) {
+export function wrapTextLines(text, maxChars) {
   if (!text) return [""];
   const words = text.split(" ");
   const lines = [];
@@ -576,7 +575,7 @@ function mergeWallPair(a, b) {
   for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) { const d = dist(pts[i], pts[j]); if (d > bestD) { bestD = d; best = [pts[i], pts[j]]; } }
   return { x1: best[0].x, y1: best[0].y, x2: best[1].x, y2: best[1].y };
 }
-function wallToM(w, toM) {
+export function wallToM(w, toM) {
   return {
     id: w.id, tag: w.tag || "", x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2), height: toNum(w.height, 2.8),
     wallType: w.wallType || WALL_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir, construir: !!w.construir,
@@ -584,13 +583,13 @@ function wallToM(w, toM) {
     finishB: w.finishB || w.finish || "A definir", paintColorB: w.paintColorB || w.paintColor || "#E8E4DA",
   };
 }
-function doorToM(d, toM) {
+export function doorToM(d, toM) {
   return {
     id: d.id, tag: d.tag || "", wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1),
     panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0], condition: d.condition || "A confirmar", demolir: !!d.demolir, construir: !!d.construir,
   };
 }
-function windowToM(w, toM) {
+export function windowToM(w, toM) {
   return {
     id: w.id, tag: w.tag || "", wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0),
     panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir, construir: !!w.construir,
@@ -600,7 +599,7 @@ function stairToM(s2, toM) { return { id: s2.id, tag: s2.tag || "", x1: toM(s2.x
 function luminariaToM(l, toM) { return { id: l.id, tag: l.tag || "", x: toM(l.x), y: toM(l.y) }; }
 function roomToM(r, toM) { return { id: r.id, roomId: r.roomId || null, points: r.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: r.area, ceilingFinish: r.ceilingFinish, floorFinish: r.floorFinish, floorColor: r.floorColor, name: r.name }; }
 
-function levelToMeters(level) {
+export function levelToMeters(level) {
   const s = toNum(level.sketchScale, 0.5);
   const toM = (px) => (px / GRID) * s;
   const els = level.sketchElements || [];
@@ -637,7 +636,7 @@ function levelToMetersForRoom(level, room) {
 // for the Revit add-in to consume directly (via exported file or straight
 // from Firestore) — no grid/pixel math needed downstream. Pure function so it
 // can run both from the export button and from persist() before a cloud sync.
-function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roofs }) {
+export function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roofs }) {
   return {
     schema_version: 1,
     projeto: { empresa: "BRAVES", codigo: code, nome: buildingInfo?.name || "", data: new Date().toISOString(), unidade: "metros" },

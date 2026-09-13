@@ -28,7 +28,7 @@ export default [
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
-      "no-unused-vars": ["warn", { varsIgnorePattern: "^[A-Z_]", args: "none" }],
+      "no-unused-vars": ["warn", { varsIgnorePattern: "^_", args: "none" }],
       "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },

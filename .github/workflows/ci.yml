@@ -6,7 +6,7 @@ on:
     branches: [main, claude/migrate-app-5qr3fp]
 
 jobs:
-  lint-and-build:
+  lint-test-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run test
       - run: npm run build
         env:
           # Firebase web config isn't a secret — it ends up in the public JS
