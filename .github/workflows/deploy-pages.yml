@@ -34,6 +34,10 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: "braves-bim-field.firebasestorage.app"
           VITE_FIREBASE_MESSAGING_SENDER_ID: "570778724156"
           VITE_FIREBASE_APP_ID: "1:570778724156:web:6c14855b4c88db157fa039"
+          # Same deal as the Firebase config above — a Sentry DSN only says
+          # where to send error reports, it isn't a credential that grants
+          # access to anything.
+          VITE_SENTRY_DSN: "https://694448697453d2ab69ed0beb5d972ce5@o4512078415265792.ingest.us.sentry.io/4512078573207552"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

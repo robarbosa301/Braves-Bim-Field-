@@ -51,6 +51,18 @@ service cloud.firestore {
 
 Como não há autenticação, qualquer pessoa com o código do projeto (ou que descubra a chave do Firebase) pode ler/escrever esses dados — é a mesma limitação de segurança que o app já tinha originalmente como Artifact.
 
+### Monitoramento de erros (Sentry)
+
+Erros que acontecem no celular/tablet de quem está usando o app em campo não aparecem em lugar nenhum por padrão — ninguém está com o console do navegador aberto. O app reporta esses erros automaticamente pro [Sentry](https://sentry.io) quando configurado (`src/main.jsx`), incluindo uma tela de fallback (em vez de tela branca) caso o app quebre de vez.
+
+Sem configurar, o app funciona normalmente, só não reporta nada.
+
+#### Como configurar
+
+1. Crie uma conta gratuita em [sentry.io](https://sentry.io) e um projeto da plataforma **React**.
+2. Copie a DSN em **Settings → Projects → (seu projeto) → Client Keys (DSN)**.
+3. Adicione `VITE_SENTRY_DSN=` (com o valor da DSN) no seu `.env`.
+
 ### Abrindo os levantamentos no Revit
 
 Na aba **Sincronização**, o botão **JSON** exporta `levantamento_bim.json` com
