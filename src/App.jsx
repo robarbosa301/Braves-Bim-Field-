@@ -966,9 +966,8 @@ function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, o
     // existing wall corners, and missing them by a few px (same issue
     // walls had) leaves gaps that never actually close the shape.
     let p = rawP;
-    let endpointHit = null;
     if (tool === "parede" || tool === "escada" || tool === "ambiente") {
-      endpointHit = findNearbyEndpoint(rawP, null);
+      const endpointHit = findNearbyEndpoint(rawP, null);
       p = endpointHit || { x: snap(rawP.x), y: snap(rawP.y) };
       // A freehand second tap almost never lands on an exact 0/45/90°
       // angle from the first point — nudge it there when it's already

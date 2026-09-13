@@ -12,10 +12,9 @@ const config = {
 
 export const firebaseEnabled = Boolean(config.apiKey && config.projectId);
 
-let app = null;
 let db = null;
 if (firebaseEnabled) {
-  app = getApps()[0] || initializeApp(config);
+  const app = getApps()[0] || initializeApp(config);
   db = getFirestore(app);
 } else {
   console.warn(
