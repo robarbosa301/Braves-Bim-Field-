@@ -6,9 +6,12 @@ pelo app (aba **Sincronização → JSON**) e cria no Revit, no projeto aberto:
 - **Níveis** (reaproveitando um nível existente com nome ou cota parecida; cria os que faltarem)
 - **Paredes** (tenta casar o tipo do levantamento — ex: "Alvenaria 15cm" — com um
   tipo de parede do seu projeto com o **mesmo nome exato**; se não achar, usa o
-  tipo padrão do projeto)
+  tipo padrão do projeto; se marcada como "Demolir" ou "À construir" no app,
+  vira Fase de Demolição/Fase Criada no Revit — veja
+  [Reforma: Demolir/À construir](#reforma-demolirà-construir-vira-fases-do-revit))
 - **Portas e janelas** (usa a primeira família de porta/janela carregada no
-  projeto; ajusta largura/altura se a família tiver esses parâmetros)
+  projeto; ajusta largura/altura se a família tiver esses parâmetros; mesma
+  marcação de Demolir/À construir das paredes)
 - **Ambientes** (cria um `Room` no centro de cada contorno fechado desenhado
   no Croqui — precisa que as paredes já formem um contorno fechado — e grava
   o piso/forro escolhido no app nos parâmetros nativos "Acabamento do Piso"/
@@ -46,6 +49,34 @@ ainda não guarda geometria detalhada o suficiente para modelá-las de verdade:
 Se essas simplificações não servem pro seu caso, o jeito mais confiável por
 enquanto é ajustar a escada/cobertura manualmente no Revit depois de importar
 — ou não usar o import automático para elas e modelar do zero.
+
+### Reforma: Demolir/À construir vira Fases do Revit
+
+No Croqui do app, uma parede/porta/janela pode ser marcada como **Demolir**
+(vermelho tracejado) ou **À construir** (verde tracejado) — pense numa
+reforma, onde é preciso distinguir o que existe e sai do que é novo. O add-in
+lê essa marcação e usa o mecanismo nativo de **Fases** do Revit (Gerenciar →
+Fases) para reproduzi-la:
+
+- **Demolir** → a **Fase de Criação** do elemento vira a fase mais antiga do
+  projeto, e sua **Fase de Demolição** vira a fase mais recente — o Revit
+  passa a mostrá-lo demolido (tracejado/esmaecido, conforme os filtros de
+  fase da sua vista) a partir dali.
+- **À construir** → a **Fase de Criação** vira a fase mais recente do
+  projeto — o Revit passa a tratá-lo como obra nova.
+
+Isso usa exatamente os mesmos parâmetros que você ajustaria manualmente na
+paleta de Propriedades — então filtros de fase, "Mostrar Anterior + Demolição"/
+"Mostrar Novo" e as substituições gráficas de cada fase (tracejado/esmaecido
+para demolido, etc.) funcionam sem nenhum ajuste extra de template de vista.
+
+**Pré-requisito**: seu projeto Revit precisa ter **pelo menos 2 fases**
+cadastradas (Gerenciar → Fases) — a maioria dos templates de arquitetura já
+vem com duas (ex: "Existente" e "Construção Nova"), e é a mais antiga e a
+mais recente da sua lista que o add-in usa, seja qual for o nome delas. Se o
+projeto só tiver uma fase, essas marcações são ignoradas (nada quebra, só não
+tem "antes/depois" pra aplicar) e o resumo final avisa: "O projeto precisa de
+pelo menos 2 fases... nenhuma foi aplicada".
 
 ### Piso/forro do ambiente não vira um Floor/Ceiling de verdade
 

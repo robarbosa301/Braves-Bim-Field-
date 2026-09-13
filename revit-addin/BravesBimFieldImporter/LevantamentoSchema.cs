@@ -44,6 +44,11 @@ namespace BravesBimFieldImporter
         public double altura_m;
         public string tipo;
         public string condicao;
+        // Reforma markers from the app's Croqui (mutually exclusive there) —
+        // see LevantamentoImporter.ApplyReformaPhase for how these become
+        // Revit's own Phase Created/Phase Demolished parameters.
+        public bool demolir;
+        public bool construir;
     }
 
     public class PortaInfo
@@ -55,6 +60,8 @@ namespace BravesBimFieldImporter
         public double largura_m, altura_m;
         public int folhas;
         public string tipo;
+        public bool demolir;
+        public bool construir;
     }
 
     public class JanelaInfo
@@ -66,6 +73,8 @@ namespace BravesBimFieldImporter
         public double largura_m, altura_m, peitoril_m;
         public int folhas;
         public string tipo;
+        public bool demolir;
+        public bool construir;
     }
 
     public class PontoInfo

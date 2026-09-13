@@ -27,6 +27,17 @@ namespace BravesBimFieldImporter
         // same survey (so there's no top level to build the run up to).
         public int EscadasIgnoradas;
 
+        // How many walls/doors/windows came marked "Demolir"/"À construir" in
+        // the survey and got Revit's own Phase Demolished/Phase Created set
+        // accordingly. See LevantamentoImporter.ApplyReformaPhase.
+        public int MarcadosDemolir, MarcadosConstruir;
+
+        // The target project has fewer than 2 phases set up (Manage > Phases),
+        // so there was no "existing" phase to assign demolished elements to
+        // and no "current" phase for new ones — Demolir/À construir markers
+        // from the survey were skipped instead of guessed at.
+        public bool FasesIndisponiveis;
+
         public override string ToString()
         {
             string revisar = (PortasParaRevisar + JanelasParaRevisar) > 0
@@ -39,8 +50,13 @@ namespace BravesBimFieldImporter
             string escadasMsg = EscadasIgnoradas > 0
                 ? $"\n⚠ {EscadasIgnoradas} escada(s) ignorada(s) — nível de destino não encontrado."
                 : "";
+            string reformaMsg = FasesIndisponiveis
+                ? "\n⚠ O projeto precisa de pelo menos 2 fases (Gerenciar → Fases) para aplicar as marcações de Demolir/À construir do levantamento — nenhuma foi aplicada."
+                : (MarcadosDemolir + MarcadosConstruir) > 0
+                    ? $"\n{MarcadosDemolir} elemento(s) marcado(s) para demolir e {MarcadosConstruir} para construir (fases do Revit)."
+                    : "";
             return $"{Niveis} nível(is)\n{Paredes} parede(s)\n{Portas} porta(s)\n{Janelas} janela(s)\n{Ambientes} ambiente(s)\n" +
-                   $"{Escadas} escada(s)\n{Luminarias} luminária(s)\n{Coberturas} cobertura(s)" + revisar + luminariasMsg + escadasMsg;
+                   $"{Escadas} escada(s)\n{Luminarias} luminária(s)\n{Coberturas} cobertura(s)" + revisar + luminariasMsg + escadasMsg + reformaMsg;
         }
     }
 
@@ -82,6 +98,18 @@ namespace BravesBimFieldImporter
                 try
                 {
                     levelIdByNivelId = MapOrCreateLevels(doc, schema.niveis);
+
+                    // Demolir/À construir from the app become Revit's own Phase
+                    // Demolished/Phase Created — the earliest project phase stands in
+                    // for "existing" and the latest for "current/new work", regardless
+                    // of how they're actually named (every real renovation project has
+                    // at least an "Existing"-like and a "New Construction"-like phase;
+                    // a project with only one phase has no meaningful "before/after" to
+                    // assign, so phasing is skipped rather than guessed at — see
+                    // ImportResult.FasesIndisponiveis).
+                    Phase existingPhase = doc.Phases.Size > 0 ? doc.Phases.get_Item(0) : null;
+                    Phase currentPhase = doc.Phases.Size > 0 ? doc.Phases.get_Item(doc.Phases.Size - 1) : null;
+                    bool phasingAvailable = existingPhase != null && currentPhase != null && existingPhase.Id != currentPhase.Id;
 
                     ElementId defaultWallTypeId = doc.GetDefaultElementTypeId(ElementTypeGroup.WallType);
                     Dictionary<string, ElementId> wallTypesByName = new FilteredElementCollector(doc)
@@ -164,6 +192,7 @@ namespace BravesBimFieldImporter
 
                             SetMark(wall, parede.tag);
                             SetToken(wall, "parede", parede.id);
+                            ApplyReformaPhase(wall, parede.demolir, parede.construir, existingPhase, currentPhase, phasingAvailable, result);
                             wallIdByParedeId[parede.id] = wall.Id;
                             result.Paredes++;
                         }
@@ -194,6 +223,7 @@ namespace BravesBimFieldImporter
                             TrySetDimension(inst, new[] { "Width", "Largura", "Largura da porta" }, porta.largura_m);
                             SetMark(inst, porta.tag);
                             SetSurveyComments(inst, "porta", porta.id, porta.tipo, porta.folhas, porta.largura_m, porta.altura_m, null, doorMatched);
+                            ApplyReformaPhase(inst, porta.demolir, porta.construir, existingPhase, currentPhase, phasingAvailable, result);
                             if (!doorMatched) result.PortasParaRevisar++;
                             result.Portas++;
                         }
@@ -215,6 +245,7 @@ namespace BravesBimFieldImporter
                             TrySetDimension(inst, new[] { "Width", "Largura", "Largura da janela" }, janela.largura_m);
                             SetMark(inst, janela.tag);
                             SetSurveyComments(inst, "janela", janela.id, janela.tipo, janela.folhas, janela.largura_m, janela.altura_m, janela.peitoril_m, windowMatched);
+                            ApplyReformaPhase(inst, janela.demolir, janela.construir, existingPhase, currentPhase, phasingAvailable, result);
                             if (!windowMatched) result.JanelasParaRevisar++;
                             result.Janelas++;
                         }
@@ -706,6 +737,34 @@ namespace BravesBimFieldImporter
         {
             if (string.IsNullOrEmpty(tag)) return;
             el.LookupParameter("Mark")?.Set(tag);
+        }
+
+        // Marks a wall/door/window as demolished or newly built by setting
+        // Revit's own Phase Created / Phase Demolished instance parameters,
+        // the same ones a person would set by hand in the Properties palette —
+        // so phase filters, the "Show Previous + Demo" / "Show New" view
+        // settings, and each phase's graphic overrides (dashed/halftone for
+        // demolished, etc.) all work exactly as they would for phasing set up
+        // manually, with no extra view template work needed on the Revit side.
+        // "Existing" and "current/new" here are just the project's earliest
+        // and latest phases (see phasingAvailable's setup in Importar) — not
+        // specific phase names, since those vary project to project.
+        private static void ApplyReformaPhase(Element el, bool demolir, bool construir, Phase existingPhase, Phase currentPhase, bool phasingAvailable, ImportResult result)
+        {
+            if (!demolir && !construir) return;
+            if (!phasingAvailable) { result.FasesIndisponiveis = true; return; }
+
+            if (demolir)
+            {
+                el.get_Parameter(BuiltInParameter.PHASE_CREATED)?.Set(existingPhase.Id);
+                el.get_Parameter(BuiltInParameter.PHASE_DEMOLISHED)?.Set(currentPhase.Id);
+                result.MarcadosDemolir++;
+            }
+            else
+            {
+                el.get_Parameter(BuiltInParameter.PHASE_CREATED)?.Set(currentPhase.Id);
+                result.MarcadosConstruir++;
+            }
         }
 
         private static double MetersToFeet(double meters) => UnitUtils.ConvertToInternalUnits(meters, UnitTypeId.Meters);
