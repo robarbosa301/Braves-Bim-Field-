@@ -1682,31 +1682,36 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               // midpoint — but so does a door/window's own size/type tag
               // whenever it sits there (a centered opening being the
               // common case), and both sit on the same "outward from the
-              // room" side, landing right on top of each other. Keep the
-              // label centered either way (moving it off-center reads as
-              // wrong for a wall's overall length) and instead push it
-              // further out along that same side, past the tag's own
-              // reach, whenever an opening sits close enough to the
-              // midpoint to collide. Compared in raw pixels, not a
-              // fraction of the wall's own length — a short wall's own
-              // 25%-of-length gap can still be narrower than two
-              // overlapping text labels, while a long wall's never would,
-              // so a fixed fraction threshold either over- or
+              // room" side. There isn't enough room on that side to push
+              // one of them further out without it clipping against the
+              // sketch's own fitted view, and sliding the wall's own
+              // length off-center reads as wrong — so when they'd
+              // collide, fold the opening's own tag into this same label
+              // (one line, e.g. "4.35 m · 0.8×2.1 · 1f") instead of
+              // drawing both; the opening's own render skips its tag in
+              // that case (see mergedTagWallLabel below). Compared in raw
+              // pixels, not a fraction of the wall's own length — a short
+              // wall's own 25%-of-length gap can still be narrower than
+              // two overlapping text labels, while a long wall's never
+              // would, so a fixed fraction threshold either over- or
               // under-triggers depending on the wall's length.
               const wdx = el.x2 - el.x1, wdy = el.y2 - el.y1, wlen = Math.hypot(wdx, wdy) || 1;
-              const opensPx = elements
+              const nearCenter = elements
                 .filter(o => (o.type === "door" || o.type === "window") && o.wallId === el.id)
-                .map(o => ((o.x - el.x1) * wdx + (o.y - el.y1) * wdy) / wlen);
-              const COLLIDE_PX = 45;
-              const collides = opensPx.some(p => Math.abs(p - wlen * 0.5) < COLLIDE_PX);
-              const off = wallLabelOffset(el, collides ? 20 : 0);
+                .map(o => ({ o, p: ((o.x - el.x1) * wdx + (o.y - el.y1) * wdy) / wlen }))
+                .filter(x => Math.abs(x.p - wlen * 0.5) < 45)
+                .sort((a, b) => Math.abs(a.p - wlen * 0.5) - Math.abs(b.p - wlen * 0.5))[0];
+              const off = wallLabelOffset(el, 0);
               const lx = midX + off.x, ly = midY + off.y;
+              const mergedTag = nearCenter
+                ? ` · ${nearCenter.o.width}×${nearCenter.o.height} · ${Math.max(1, Math.round(toNum(nearCenter.o.panels, nearCenter.o.type === "door" ? 1 : 2)))}f`
+                : "";
               return (
                 <text x={lx} y={ly} fontSize="10" fill={phaseColor(el) || "#6b6660"} textAnchor="middle"
                   transform={`rotate(${angleDeg} ${lx} ${ly})`}
                   style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
-                  {el.length} m{canEdit && " ✎"}
+                  {el.length} m{mergedTag}{canEdit && " ✎"}
                 </text>
               );
             })()}
@@ -1857,6 +1862,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const isSel = selectedId === el.id;
           const panels = Math.max(1, Math.round(toNum(el.panels, isDoor ? 1 : 2)));
           const panelWidthPx = widthPx / panels;
+          // Mirrors the same "near the wall's midpoint" check the wall's
+          // own length label uses to decide whether to fold this tag into
+          // itself — when it does, skip drawing it here too, or it'd show
+          // twice.
+          let mergedIntoWallLabel = false;
+          if (w) {
+            const wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wlen = Math.hypot(wdx, wdy) || 1;
+            const posOnWall = ((el.x - w.x1) * wdx + (el.y - w.y1) * wdy) / wlen;
+            mergedIntoWallLabel = Math.abs(posOnWall - wlen * 0.5) < 45;
+          }
           return (
             <g key={el.id} transform={`rotate(${angleDeg} ${el.x} ${el.y})`}>
               <rect x={el.x - widthPx / 2 - 4} y={el.y - 14} width={widthPx + 8} height={28} fill="rgba(0,0,0,0.001)"
@@ -1872,7 +1887,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 14})`}>{el.width}×{el.height} · {panels}f</text>
+              {!mergedIntoWallLabel && (
+                <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 14})`}>{el.width}×{el.height} · {panels}f</text>
+              )}
             </g>
           );
         })}
