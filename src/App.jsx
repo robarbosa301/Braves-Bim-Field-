@@ -3436,7 +3436,13 @@ export default function PranchetaBIM() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <button onClick={() => setActiveRoomId(null)} className="text-xs flex items-center gap-1" style={{ color: C.mute }}>← Voltar aos ambientes</button>
-              <button onClick={() => { setActiveRoomId(null); setTab("ambientes"); }} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}><Home size={12} /> Início</button>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => { if (window.confirm(`Apagar o ambiente "${activeRoom.name}"?`)) removeRoom(activeRoom.id); }}
+                  title="Apagar ambiente" className="p-1.5 rounded" style={{ color: C.bad, background: "rgba(193,84,63,0.12)" }}>
+                  <Trash2 size={13} />
+                </button>
+                <button onClick={() => { setActiveRoomId(null); setTab("ambientes"); }} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}><Home size={12} /> Início</button>
+              </div>
             </div>
             <div className="p-3 rounded-lg mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
               <div className="text-lg font-semibold mb-2" style={{ ...heading, color: C.chalk, fontSize: "20px" }}>{activeRoom.name}</div>
