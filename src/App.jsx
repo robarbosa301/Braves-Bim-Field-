@@ -2924,6 +2924,9 @@ export default function PranchetaBIM() {
   const [editingCode, setEditingCode] = useState(false);
   const [codeDraft, setCodeDraft] = useState("");
   const [ambientesLevelFilter, setAmbientesLevelFilter] = useState(null);
+  const [pressedRoomId, setPressedRoomId] = useState(null);
+  const longPressTimer = useRef(null);
+  const justLongPressed = useRef(false);
   const [roofs, setRoofs] = useState([]);
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [croquiLevelId, setCroquiLevelId] = useState(null);
@@ -3401,25 +3404,55 @@ export default function PranchetaBIM() {
           <div className="space-y-2">
             <button onClick={() => setAmbientesLevelFilter(null)} className="text-xs mb-1 flex items-center gap-1" style={{ color: C.mute }}>← Voltar aos níveis</button>
             <div className="text-xs font-semibold mb-1" style={{ color: C.gold }}>{ambientesLevelFilter}</div>
-            {rooms.filter(r => r.level === ambientesLevelFilter).map(r => (
-              <button key={r.id} onClick={() => setActiveRoomId(r.id)}
-                className="w-full text-left p-3 rounded-lg flex items-center gap-3"
-                style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                <div className="w-9 h-9 rounded flex items-center justify-center" style={{ background: C.panelAlt }}>
-                  <Building2 size={16} color={C.gold} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium" style={{ color: C.chalk }}>{r.name}</div>
-                  <div className="text-[11px] flex items-center gap-1.5" style={{ color: C.mute }}>
-                    <span>{r.area ? `${r.area} m²` : "área não definida"}</span>
-                    {r.photos > 0 && <span className="flex items-center gap-0.5"><Camera size={10} />{r.photos}</span>}
-                    {r.geo && <MapPin size={10} />}
+            {rooms.filter(r => r.level === ambientesLevelFilter).map(r => {
+              const revealed = pressedRoomId === r.id;
+              const startPress = () => {
+                longPressTimer.current = setTimeout(() => { setPressedRoomId(r.id); justLongPressed.current = true; }, 500);
+              };
+              const cancelPress = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
+              return (
+                <div key={r.id} role="button" tabIndex={0}
+                  onClick={() => {
+                    // A long press's own mouseup/touchend is still followed by a
+                    // native click on release — without this, that trailing
+                    // click would immediately re-toggle the just-revealed trash
+                    // icon back off before anyone could tap it.
+                    if (justLongPressed.current) { justLongPressed.current = false; return; }
+                    if (revealed) { setPressedRoomId(null); return; }
+                    setActiveRoomId(r.id);
+                  }}
+                  onTouchStart={startPress} onTouchEnd={cancelPress} onTouchMove={cancelPress}
+                  onMouseDown={startPress} onMouseUp={cancelPress} onMouseLeave={cancelPress}
+                  className="w-full text-left p-3 rounded-lg flex items-center gap-3 cursor-pointer"
+                  style={{ background: C.panel, border: `1px solid ${revealed ? C.bad : C.line}` }}>
+                  <div className="w-9 h-9 rounded flex items-center justify-center" style={{ background: C.panelAlt }}>
+                    <Building2 size={16} color={C.gold} />
                   </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: C.chalk }}>{r.name}</div>
+                    <div className="text-[11px] flex items-center gap-1.5" style={{ color: C.mute }}>
+                      <span>{r.area ? `${r.area} m²` : "área não definida"}</span>
+                      {r.photos > 0 && <span className="flex items-center gap-0.5"><Camera size={10} />{r.photos}</span>}
+                      {r.geo && <MapPin size={10} />}
+                    </div>
+                  </div>
+                  {revealed ? (
+                    <button onClick={e => { e.stopPropagation(); if (window.confirm(`Apagar o ambiente "${r.name}"?`)) { removeRoom(r.id); setPressedRoomId(null); } }}
+                      title="Apagar ambiente" className="p-1.5 rounded shrink-0" style={{ color: C.bad, background: "rgba(193,84,63,0.14)" }}>
+                      <Trash2 size={16} />
+                    </button>
+                  ) : (
+                    <>
+                      <span className="text-[10px] px-2 py-1 rounded" style={{ color: conditionColor(r.condition), background: "rgba(255,255,255,0.06)" }}>{r.condition}</span>
+                      <ChevronRight size={16} color={C.mute} />
+                    </>
+                  )}
                 </div>
-                <span className="text-[10px] px-2 py-1 rounded" style={{ color: conditionColor(r.condition), background: "rgba(255,255,255,0.06)" }}>{r.condition}</span>
-                <ChevronRight size={16} color={C.mute} />
-              </button>
-            ))}
+              );
+            })}
+            {rooms.filter(r => r.level === ambientesLevelFilter).length > 0 && (
+              <p className="text-[10px] text-center" style={{ color: C.muteDim }}>Segure um ambiente pra apagar.</p>
+            )}
 
             {rooms.filter(r => r.level === ambientesLevelFilter).length === 0 && (
               <div className="text-[11px] italic text-center py-6" style={{ color: C.mute }}>Nenhum ambiente traçado ainda neste nível.</div>
@@ -3436,13 +3469,7 @@ export default function PranchetaBIM() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <button onClick={() => setActiveRoomId(null)} className="text-xs flex items-center gap-1" style={{ color: C.mute }}>← Voltar aos ambientes</button>
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => { if (window.confirm(`Apagar o ambiente "${activeRoom.name}"?`)) removeRoom(activeRoom.id); }}
-                  title="Apagar ambiente" className="p-1.5 rounded" style={{ color: C.bad, background: "rgba(193,84,63,0.12)" }}>
-                  <Trash2 size={13} />
-                </button>
-                <button onClick={() => { setActiveRoomId(null); setTab("ambientes"); }} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}><Home size={12} /> Início</button>
-              </div>
+              <button onClick={() => { setActiveRoomId(null); setTab("ambientes"); }} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}><Home size={12} /> Início</button>
             </div>
             <div className="p-3 rounded-lg mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
               <div className="text-lg font-semibold mb-2" style={{ ...heading, color: C.chalk, fontSize: "20px" }}>{activeRoom.name}</div>
@@ -3515,10 +3542,6 @@ export default function PranchetaBIM() {
                 {activeRoom.floors.map(f => <FloorRow key={f.id} el={f} onPatch={p => patchFloor(activeRoom.id, f.id, p)} onDelete={() => removeFloor(activeRoom.id, f.id)} />)}
               </div>
             </div>
-            <button onClick={() => { if (window.confirm(`Apagar o ambiente "${activeRoom.name}"?`)) removeRoom(activeRoom.id); }}
-              className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ color: C.bad, background: "rgba(193,84,63,0.12)" }}>
-              <Trash2 size={11} /> Apagar ambiente
-            </button>
           </div>
         )}
 
