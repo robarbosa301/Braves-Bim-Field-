@@ -3061,8 +3061,12 @@ export default function PranchetaBIM() {
         const parsed = JSON.parse(raw);
         if ((parsed.updatedAt || 0) > lastUpdatedAt.current) {
           lastUpdatedAt.current = parsed.updatedAt;
-          setRooms(parsed.rooms || []); setLog(parsed.log || []);
-          setLevels(parsed.levels || []); setRoofs(parsed.roofs || []);
+          const nextRooms = parsed.rooms || [], nextLog = parsed.log || [];
+          const nextLevels = parsed.levels || [], nextRoofs = parsed.roofs || [];
+          roomsRef.current = nextRooms; logRef.current = nextLog;
+          levelsRef.current = nextLevels; roofsRef.current = nextRoofs;
+          setRooms(nextRooms); setLog(nextLog);
+          setLevels(nextLevels); setRoofs(nextRoofs);
           if (parsed.buildingInfo) setBuildingInfo(parsed.buildingInfo);
           idbSet(`project:${session.code}`, parsed);
         }
@@ -3073,6 +3077,26 @@ export default function PranchetaBIM() {
     const pl = setInterval(poll, 4000);
     return () => { stopped = true; clearInterval(hb); clearInterval(pl); };
   }, [session]);
+
+  // rooms/levels/roofs/log each get their own updateX helper below, and
+  // several flows (deleting a room, naming a Croqui polygon) call two or
+  // three of them back-to-back in the same handler. Each helper's persist()
+  // call used to read the OTHER fields straight from this render's rooms/
+  // levels/roofs/log closures — still the pre-update values, since setState
+  // hasn't re-rendered yet. Two persist() calls firing that close together
+  // race (both async), and whichever's write lands last would silently
+  // resurrect whatever the other call just changed (a deleted room
+  // reappearing after leaving and returning to the tab, for one real case).
+  // These refs are updated synchronously inside each helper instead, so a
+  // chained call always sees the others' just-made change immediately.
+  const roomsRef = useRef(rooms);
+  const levelsRef = useRef(levels);
+  const roofsRef = useRef(roofs);
+  const logRef = useRef(log);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+  useEffect(() => { levelsRef.current = levels; }, [levels]);
+  useEffect(() => { roofsRef.current = roofs; }, [roofs]);
+  useEffect(() => { logRef.current = log; }, [log]);
 
   async function persist(next) {
     const updatedAt = Date.now();
@@ -3092,11 +3116,37 @@ export default function PranchetaBIM() {
     }
   }
   function pushLog(msg, kind = "ok") {
-    setLog(l => { const next = [{ id: uid(), t: new Date().toLocaleTimeString("pt-BR"), msg, kind }, ...l]; persist({ rooms, log: next, levels, roofs }); return next; });
+    setLog(l => {
+      const next = [{ id: uid(), t: new Date().toLocaleTimeString("pt-BR"), msg, kind }, ...l];
+      logRef.current = next;
+      persist({ rooms: roomsRef.current, log: next, levels: levelsRef.current, roofs: roofsRef.current });
+      return next;
+    });
   }
-  function updateRooms(fn) { setRooms(rs => { const next = fn(rs); persist({ rooms: next, log, levels, roofs }); return next; }); }
-  function updateLevels(fn) { setLevels(ls => { const next = fn(ls); persist({ rooms, log, levels: next, roofs }); return next; }); }
-  function updateRoofs(fn) { setRoofs(rs => { const next = fn(rs); persist({ rooms, log, levels, roofs: next }); return next; }); }
+  function updateRooms(fn) {
+    setRooms(rs => {
+      const next = fn(rs);
+      roomsRef.current = next;
+      persist({ rooms: next, log: logRef.current, levels: levelsRef.current, roofs: roofsRef.current });
+      return next;
+    });
+  }
+  function updateLevels(fn) {
+    setLevels(ls => {
+      const next = fn(ls);
+      levelsRef.current = next;
+      persist({ rooms: roomsRef.current, log: logRef.current, levels: next, roofs: roofsRef.current });
+      return next;
+    });
+  }
+  function updateRoofs(fn) {
+    setRoofs(rs => {
+      const next = fn(rs);
+      roofsRef.current = next;
+      persist({ rooms: roomsRef.current, log: logRef.current, levels: levelsRef.current, roofs: next });
+      return next;
+    });
+  }
 
   const activeRoom = rooms.find(r => r.id === activeRoomId) || null;
   const croquiLevel = levels.find(l => l.id === croquiLevelId) || levels[0] || null;
