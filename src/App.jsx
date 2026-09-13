@@ -3610,6 +3610,10 @@ export default function PranchetaBIM() {
                 ))}
               </div>
             </div>
+            <a href={`${import.meta.env.BASE_URL}privacidade.html`} target="_blank" rel="noopener noreferrer"
+              className="block text-center text-[11px] py-2" style={{ color: C.muteDim }}>
+              Política de Privacidade
+            </a>
           </div>
         )}
       </div>

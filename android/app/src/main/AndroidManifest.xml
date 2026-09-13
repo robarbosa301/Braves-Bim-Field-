@@ -32,4 +32,21 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Photo capture in Croqui/Ambientes (the room-photo attach button) opens
+         the device camera through the WebView's file input; some Android
+         WebView builds refuse that capture intent unless the host app itself
+         holds CAMERA, not just the delegate camera app. Declared optional
+         (required="false") since the app is still usable — sketching,
+         measurements, sync — without a camera present. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- "Marcar local" (mark location) on a room uses the browser
+         geolocation API; the WebView can only satisfy that permission
+         prompt if one of these is declared here too. Fine location isn't
+         required for this feature (room-level accuracy is enough), but
+         requesting it also covers coarse on devices that only grant that. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 </manifest>

@@ -24,6 +24,15 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Apple rejects the app at review without these: every native
+	     permission prompt needs a usage string explaining why the app
+	     wants it, shown to the user in the OS dialog. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Usada para tirar fotos dos ambientes durante o levantamento de campo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Usada para anexar fotos já existentes na galeria aos ambientes do levantamento.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Usada para registrar a posição de cada ambiente quando você toca em "Marcar local".</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
