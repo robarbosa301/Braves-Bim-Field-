@@ -3111,6 +3111,18 @@ export default function PranchetaBIM() {
     setNewRoom({ name: "", level: "", area: "", height: "2.70", use: "", condition: "A confirmar" });
     pushLog(`Ambiente "${room.name}" registrado por ${session.role === "tablet" ? "tablet" : "celular"} (${room.level})`, "info");
   }
+  function removeRoom(id) {
+    const room = rooms.find(r => r.id === id);
+    if (!room) return;
+    updateRooms(rs => rs.filter(r => r.id !== id));
+    // A room registered by drawing its outline in Croqui (rather than typed
+    // in manually here) has a polygon linked back to it via roomId — drop
+    // that too, or it'd linger on the sketch pointing at a room that no
+    // longer exists.
+    updateLevels(ls => ls.map(l => ({ ...l, sketchElements: (l.sketchElements || []).filter(e => !(e.type === "room" && e.roomId === id)) })));
+    setActiveRoomId(null);
+    pushLog(`Ambiente "${room.name}" removido.`, "info");
+  }
   function addFloor(roomId) {
     updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, floors: [...r.floors, { id: uid(), tag: `PS-${r.floors.length + 1}`, type: FLOOR_TYPES[0], area: r.area, espessura: "0.02", condition: "A confirmar" }] } : r));
   }
@@ -3435,6 +3447,10 @@ export default function PranchetaBIM() {
                 {activeRoom.floors.map(f => <FloorRow key={f.id} el={f} onPatch={p => patchFloor(activeRoom.id, f.id, p)} onDelete={() => removeFloor(activeRoom.id, f.id)} />)}
               </div>
             </div>
+            <button onClick={() => { if (window.confirm(`Apagar o ambiente "${activeRoom.name}"?`)) removeRoom(activeRoom.id); }}
+              className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ color: C.bad, background: "rgba(193,84,63,0.12)" }}>
+              <Trash2 size={11} /> Apagar ambiente
+            </button>
           </div>
         )}
 
