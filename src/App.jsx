@@ -2934,8 +2934,6 @@ export default function PranchetaBIM() {
   const [conn, setConn] = useState({ revit: false, cad: false });
   const [syncing, setSyncing] = useState(false);
   const [log, setLog] = useState([]);
-  const [showNewRoom, setShowNewRoom] = useState(false);
-  const [newRoom, setNewRoom] = useState({ name: "", level: "", area: "", height: "2.70", use: "", condition: "A confirmar" });
   const [peers, setPeers] = useState(1);
   const [photoThumbs, setPhotoThumbs] = useState({});
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
@@ -3103,14 +3101,6 @@ export default function PranchetaBIM() {
   const activeRoom = rooms.find(r => r.id === activeRoomId) || null;
   const croquiLevel = levels.find(l => l.id === croquiLevelId) || levels[0] || null;
 
-  function addRoom() {
-    if (!newRoom.name.trim()) return;
-    const room = { id: uid(), ...newRoom, level: newRoom.level || (levels[0]?.name || ""), notes: "", photos: 0, geo: null, floors: [] };
-    updateRooms(r => [...r, room]);
-    setShowNewRoom(false);
-    setNewRoom({ name: "", level: "", area: "", height: "2.70", use: "", condition: "A confirmar" });
-    pushLog(`Ambiente "${room.name}" registrado por ${session.role === "tablet" ? "tablet" : "celular"} (${room.level})`, "info");
-  }
   function removeRoom(id) {
     const room = rooms.find(r => r.id === id);
     if (!room) return;
@@ -3365,33 +3355,14 @@ export default function PranchetaBIM() {
               </button>
             ))}
 
-            {showNewRoom ? (
-              <div className="p-3 rounded-lg space-y-2" style={{ background: C.panel, border: `1px solid ${C.gold}` }}>
-                <input placeholder="Nome do ambiente" value={newRoom.name} onChange={e => setNewRoom({ ...newRoom, name: e.target.value })}
-                  className="w-full px-2 py-2 rounded text-sm" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
-                <div className="grid grid-cols-3 gap-2">
-                  <select value={newRoom.level || ambientesLevelFilter} onChange={e => setNewRoom({ ...newRoom, level: e.target.value })}
-                    className="px-2 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                    {levels.map(l => <option key={l.id}>{l.name}</option>)}
-                  </select>
-                  <input placeholder="Área m² (opcional)" value={newRoom.area} onChange={e => setNewRoom({ ...newRoom, area: e.target.value })}
-                    className="px-2 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
-                  <input placeholder="Pé-direito" value={newRoom.height} onChange={e => setNewRoom({ ...newRoom, height: e.target.value })}
-                    className="px-2 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
-                </div>
-                <input placeholder="Uso (social, serviço, técnico…)" value={newRoom.use} onChange={e => setNewRoom({ ...newRoom, use: e.target.value })}
-                  className="w-full px-2 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
-                <div className="flex gap-2">
-                  <button onClick={addRoom} className="flex-1 py-2 rounded text-sm font-medium" style={{ background: C.gold, color: "#141311" }}>Registrar ambiente</button>
-                  <button onClick={() => setShowNewRoom(false)} className="px-3 py-2 rounded" style={{ background: C.panelAlt, color: C.mute }}><X size={16} /></button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => { setNewRoom({ ...newRoom, level: ambientesLevelFilter }); setShowNewRoom(true); }} className="w-full py-3 rounded-lg flex items-center justify-center gap-2 text-sm" style={{ border: `1px dashed ${C.line}`, color: C.mute }}>
-                <Plus size={16} /> Novo ambiente
-              </button>
+            {rooms.filter(r => r.level === ambientesLevelFilter).length === 0 && (
+              <div className="text-[11px] italic text-center py-6" style={{ color: C.mute }}>Nenhum ambiente traçado ainda neste nível.</div>
             )}
-            <p className="text-[11px] text-center pt-1" style={{ color: C.muteDim }}>Dica: desenhar o contorno na aba Croqui (ferramenta Ambiente) cria e mede o ambiente automaticamente.</p>
+            <button onClick={() => { setCroquiLevelId(levels.find(l => l.name === ambientesLevelFilter)?.id || null); setTab("croqui"); }}
+              className="w-full py-3 rounded-lg flex items-center justify-center gap-2 text-sm" style={{ border: `1px dashed ${C.line}`, color: C.mute }}>
+              <Pencil size={14} /> Ir ao Croqui pra desenhar um ambiente
+            </button>
+            <p className="text-[11px] text-center pt-1" style={{ color: C.muteDim }}>Ambientes só existem se forem desenhados na aba Croqui (ferramenta "Ambiente") — a área é medida automaticamente a partir do contorno real, sem digitar nada à mão.</p>
           </div>
         )}
 
