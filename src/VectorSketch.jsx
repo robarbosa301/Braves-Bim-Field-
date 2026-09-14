@@ -422,6 +422,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const wallsById = {};
   elements.filter(e => e.type === "wall").forEach(w => { wallsById[w.id] = w; });
   const selected = elements.find(e => e.id === selectedId) || null;
+  // Estimated on-screen box of each room's name/area label (mirrors the
+  // hitW/hitH math in the room-label render below) — used by the
+  // parallel-wall dimension labels to steer clear of it. For a rectangular
+  // room, that label sits at the centroid, which is exactly where the
+  // room's two facing-wall dimension lines cross too, so without this the
+  // room name and the "x.xx m" figure land on top of each other and both
+  // become unreadable.
+  const roomLabelBoxes = elements.filter(e => e.type === "room").map(el => {
+    const centroid = polygonCentroid(el.points);
+    const lines = wrapTextLines(el.name || "Ambiente sem nome", 14);
+    const totalLines = lines.length + 1;
+    const lx = centroid.x + (el.labelOffset?.dx ?? 0);
+    const ly = centroid.y + (el.labelOffset?.dy ?? 0);
+    const longest = Math.max(...lines.map(l => l.length), String(el.area).length + 3);
+    return { x: lx, y: ly, hw: (longest * 5.6 + 10) / 2, hh: (totalLines * 11 + 8) / 2 };
+  });
 
   const levelIdx = (allLevels || []).findIndex(l => l.id === level.id);
   const belowLevel = levelIdx > 0 ? allLevels[levelIdx - 1] : null;
@@ -1864,7 +1880,30 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const alongLo = Math.min(alongMargin - faceLen * labelT, faceLen - alongMargin - faceLen * labelT);
           const alongHi = Math.max(alongMargin - faceLen * labelT, faceLen - alongMargin - faceLen * labelT);
           const along = Math.max(alongLo, Math.min(alongHi, dimNudge.along));
-          const labelX = midX + ux * along, labelY = midY + uy * along;
+          // Auto-avoid a room's name/area label when this dimension's
+          // default position (no manual drag yet) would land on top of it —
+          // push further along the line, away from the room's centroid, up
+          // to the same clamp the manual drag itself is bound by.
+          let autoAlong = along;
+          if (dimNudge.along === 0 && roomLabelBoxes.length) {
+            // Extra px of slack on top of the estimated text box — the
+            // estimate is approximate (real font metrics, not measured),
+            // so land a bit past the computed clearance rather than right
+            // on its edge.
+            const SAFETY = 6;
+            const ourHalfW = (String(faceDistM).length + 2) * 3.2 + 6, ourHalfH = 7;
+            const overlaps = (ax, ay) => roomLabelBoxes.some(b => Math.abs(ax - b.x) < (b.hw + ourHalfW + SAFETY) && Math.abs(ay - b.y) < (b.hh + ourHalfH + SAFETY));
+            if (overlaps(midX + ux * along, midY + uy * along)) {
+              const dir = labelT < 0.5 ? -1 : 1;
+              const bound = dir < 0 ? alongLo : alongHi;
+              for (let step = 1; step <= 20; step++) {
+                const tryAlong = bound * step / 20;
+                autoAlong = tryAlong;
+                if (!overlaps(midX + ux * tryAlong, midY + uy * tryAlong)) break;
+              }
+            }
+          }
+          const labelX = midX + ux * autoAlong, labelY = midY + uy * autoAlong;
           // Rotate the label to read parallel to its own dimension line
           // (matching standard architectural dimension convention) instead
           // of always horizontal — flipped 180° whenever the raw angle
