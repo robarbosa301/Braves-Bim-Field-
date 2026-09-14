@@ -112,14 +112,18 @@ function traceEnclosedRoom(walls, clickPoint, GRID, scale) {
   // can represent a meter or more — bigger than the entire width of a
   // narrow room like a hallway or a tapering tip, so the wall-blocking
   // margin on both sides overlaps and blots out the whole interior
-  // there. Aim for a roughly constant ~8cm real-world cell instead of a
+  // there. Aim for a roughly constant ~5cm real-world cell instead of a
   // fixed drawing-unit one. A single fixed floor on how fine that's
   // allowed to get (rather than one derived from the cell-count budget
   // below) was still too coarse for a small, narrow room like this one,
   // while being needlessly fine for a huge one — so shrink CELL only as
   // far as this room's OWN bounding box can afford within the cap,
-  // which lets a small room get a much finer cell than a large one.
-  let CELL = Math.min(GRID / 2, scale ? (0.08 / scale) * GRID : GRID / 2);
+  // which lets a small room get a much finer cell than a large one. A
+  // narrow slice of a room split by a new dividing wall (the "Final"
+  // phase view re-traces one) is exactly the case a coarser cell used to
+  // shortchange the most — the fixed wall-blocking margin below eats a
+  // bigger fraction of a thin sliver than of the room it came from.
+  let CELL = Math.min(GRID / 2, scale ? (0.05 / scale) * GRID : GRID / 2);
   for (let i = 0; i < 30 && CELL < GRID / 2; i++) {
     const pad = CELL * 4;
     const cols = Math.ceil((spanX + 2 * pad) / CELL);
@@ -232,6 +236,27 @@ function traceEnclosedRoom(walls, clickPoint, GRID, scale) {
   // wall it's actually tracing — using the wall's own geometry, not the
   // raster — removes that error instead of just shrinking it further.
   return snapRoomToWallFaces(finalLoop, walls, CELL * 2.5);
+}
+// traceEnclosedRoom's flood-fill grid spans the bounding box of every wall
+// it's handed, not just whichever ones actually surround clickPoint — on a
+// level with several rooms (or one with walls scattered elsewhere), that
+// bounding box balloons well past the room actually being traced, and the
+// 40000-cell budget then forces CELL coarser everywhere, not just far away
+// from the click. Pre-filtering to walls within a generous radius of
+// clickPoint keeps the grid — and CELL — sized to the room actually being
+// traced; the full wall list is still tried as a fallback in case a
+// legitimately huge room needed the walls this trimmed away.
+function traceEnclosedRoomNear(walls, clickPoint, GRID, scale) {
+  const radiusPx = (12 / (scale || 0.5)) * GRID;
+  const near = walls.filter(w => {
+    const proj = projectPointOnSegment(clickPoint, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
+    return dist(clickPoint, proj) < radiusPx;
+  });
+  if (near.length && near.length < walls.length) {
+    const traced = traceEnclosedRoom(near, clickPoint, GRID, scale);
+    if (traced) return traced;
+  }
+  return traceEnclosedRoom(walls, clickPoint, GRID, scale);
 }
 // Replaces each edge of a raster-traced room outline with the EXACT face
 // line of whichever wall it's tracing (a line parallel to that wall's
@@ -465,7 +490,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       seeds.forEach(p => {
         if (!pointInPolygon(p, room.points)) return;
         if (found.some(f => pointInPolygon(p, f.points))) return;
-        const traced = traceEnclosedRoom(finalWalls, p, GRID, scale);
+        const traced = traceEnclosedRoomNear(finalWalls, p, GRID, scale);
         if (!traced) return;
         let area2 = 0;
         for (let i = 0; i < traced.length; i++) {
@@ -498,6 +523,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         : { id: uid(), type: "room", points: f.points, area: f.area, roomId: null, name: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
     });
   }, [phaseView, elements, scale]);
+  // "Construção Nova" shows only what's being newly built — an existing,
+  // untouched room still makes sense there (nothing about it is changing),
+  // but one a new wall actually cuts through is about to become a
+  // different room entirely once that wall goes up, so showing its old
+  // (soon to be wrong) outline and area next to the very wall that
+  // invalidates it is misleading. Simplest correct fix here: just don't
+  // show that room in this view — "Final" is what recomputes and displays
+  // its post-work shape instead.
+  const roomsForRender = phaseView === "final" ? (finalRooms || [])
+    : phaseView === "novo" ? elements.filter(e => e.type === "room" && !elements.some(w => w.type === "wall" && matchesPhaseView(w, "novo")
+        && pointInPolygon({ x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 }, e.points)))
+    : elements.filter(e => e.type === "room");
   // Estimated on-screen box of each room's name/area label (mirrors the
   // hitW/hitH math in the room-label render below) — used by the
   // parallel-wall dimension labels to steer clear of it. For a rectangular
@@ -505,7 +542,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // room's two facing-wall dimension lines cross too, so without this the
   // room name and the "x.xx m" figure land on top of each other and both
   // become unreadable.
-  const roomLabelBoxes = (phaseView === "final" ? finalRooms || [] : elements.filter(e => e.type === "room")).map(el => {
+  const roomLabelBoxes = roomsForRender.map(el => {
     const centroid = polygonCentroid(el.points);
     const lines = wrapTextLines(el.name || "Ambiente sem nome", 14);
     const totalLines = lines.length + 1;
@@ -874,7 +911,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         // vertices, not for "click somewhere inside the room") could land
         // it right on/against a wall, starting the flood fill from a
         // sliver cell instead of the room's actual open interior.
-        const traced = traceEnclosedRoom(wallSegs, rawP, GRID, scale);
+        const traced = traceEnclosedRoomNear(wallSegs, rawP, GRID, scale);
         if (!traced) {
           setAutoRoomMsg("Não achei um contorno fechado aqui — verifique se as paredes se encontram, ou desenhe os pontos manualmente.");
           return;
@@ -1726,7 +1763,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
       {hasPhaseElements && (
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Reforma:</span>
+          <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vistas:</span>
           {PHASE_VIEWS.map(({ id, label }) => (
             <button key={id} onClick={() => setPhaseView(id)} className="px-2 py-1 rounded text-[10px]"
               style={{ ...heading, fontWeight: 600, background: phaseView === id ? C.goldTint : C.panelAlt, color: phaseView === id ? C.gold : C.mute, border: `1px solid ${phaseView === id ? C.gold : C.line}` }}>
@@ -1868,7 +1905,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {showBelow && ghostLevel(belowLevel, "#8A8880")}
         {showAbove && ghostLevel(aboveLevel, "#4A4A46")}
 
-        {planMode === "piso" && (phaseView === "final" ? finalRooms : elements.filter(el => el.type === "room")).map(el => {
+        {planMode === "piso" && roomsForRender.map(el => {
           const centroid = polygonCentroid(el.points);
           const lines = wrapTextLines(el.name || "Ambiente sem nome", 14);
           const totalLines = lines.length + 1;
