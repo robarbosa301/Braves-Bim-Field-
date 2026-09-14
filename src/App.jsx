@@ -266,6 +266,15 @@ export default function PranchetaBIM() {
   const lastUpdatedAt = useRef(0);
   const fileInputRef = useRef(null);
   const photoTargetRoom = useRef(null);
+  // Cloud writes to the project doc are plain overwrites (safeSet just does
+  // a Firestore setDoc, no compare-and-swap) — firing several at once (e.g.
+  // updateLevelSketch runs on every pointer-move of a drag) lets their
+  // network requests finish out of order, so an older, smaller snapshot can
+  // land AFTER a newer one and silently wipe out walls/rooms that were just
+  // drawn. Serializing them here — never more than one in flight, always
+  // sending only the freshest payload once the previous one settles —
+  // makes that data loss impossible regardless of network timing.
+  const cloudWrite = useRef({ inFlight: false, latest: null });
 
   useEffect(() => {
     function goOnline() { setOnline(true); flushPending(); }
@@ -412,6 +421,24 @@ export default function PranchetaBIM() {
   useEffect(() => { roofsRef.current = roofs; }, [roofs]);
   useEffect(() => { logRef.current = log; }, [log]);
 
+  async function runCloudWrite() {
+    const state = cloudWrite.current;
+    const payload = state.latest;
+    if (!payload) return;
+    state.inFlight = true;
+    state.latest = null;
+    // schema_json rides along in the same synced document so the Revit
+    // add-in can fetch a project by name/code straight from Firestore —
+    // same meters-based shape as the manual "Exportar JSON" button.
+    const cloudPayload = { ...payload, schema_json: JSON.stringify(buildLevantamentoSchema({ code: session.code, buildingInfo: payload.buildingInfo, rooms: payload.rooms, levels: payload.levels, roofs: payload.roofs })) };
+    const ok = await safeSet(`bim-project:${session.code}:data`, JSON.stringify(cloudPayload), true);
+    setPending(p => (ok ? 0 : p + 1));
+    state.inFlight = false;
+    // A newer payload queued up while this one was in flight — send it now.
+    // Never runs concurrently with the write above, so completion order on
+    // the wire always matches send order.
+    if (state.latest) runCloudWrite();
+  }
   async function persist(next) {
     const updatedAt = Date.now();
     lastUpdatedAt.current = updatedAt;
@@ -419,12 +446,8 @@ export default function PranchetaBIM() {
     await idbSet(`project:${session.code}`, payload);
     upsertProjectIndex(session.code, { name: payload.buildingInfo?.name || "Sem nome", address: composeAddress(payload.buildingInfo), roomsCount: (payload.rooms || []).length, levelsCount: (payload.levels || []).length });
     if (navigator.onLine) {
-      // schema_json rides along in the same synced document so the Revit
-      // add-in can fetch a project by name/code straight from Firestore —
-      // same meters-based shape as the manual "Exportar JSON" button.
-      const cloudPayload = { ...payload, schema_json: JSON.stringify(buildLevantamentoSchema({ code: session.code, buildingInfo: payload.buildingInfo, rooms: payload.rooms, levels: payload.levels, roofs: payload.roofs })) };
-      const ok = await safeSet(`bim-project:${session.code}:data`, JSON.stringify(cloudPayload), true);
-      setPending(p => (ok ? 0 : p + 1));
+      cloudWrite.current.latest = payload;
+      if (!cloudWrite.current.inFlight) runCloudWrite();
     } else {
       setPending(p => p + 1);
     }
