@@ -407,6 +407,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [showAbove, setShowAbove] = useState(false);
   const [draggingLabel, setDraggingLabel] = useState(null);
   const [draggingDimLabel, setDraggingDimLabel] = useState(null);
+  const [draggingGapDimLabel, setDraggingGapDimLabel] = useState(null);
   const [editingDim, setEditingDim] = useState(null);
   const [editingWallLen, setEditingWallLen] = useState(null);
   const [editingLumDim, setEditingLumDim] = useState(null);
@@ -556,7 +557,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       setVb({ x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH });
       return;
     }
-    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel)) onCanvasPointerMove(e);
+    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel || draggingGapDimLabel)) onCanvasPointerMove(e);
   }
   function onTouchEndCanvas(e) { if (e.touches.length < 2) pinch.current = null; if (e.touches.length === 0) onCanvasPointerUp(); }
 
@@ -656,7 +657,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
   function handleTap(e) {
     if (e.touches && e.touches.length > 1) return;
-    if (draggingLabel || draggingDimLabel) return;
+    if (draggingLabel || draggingDimLabel || draggingGapDimLabel) return;
     e.preventDefault();
     // Must be the true unsnapped pointer position, not svgPoint()'s
     // grid-snapped one — findNearbyEndpoint below does its own
@@ -1254,6 +1255,59 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setDraggingDimLabel(null);
     isDraggingRef.current = false;
   }
+  // Same idea as readDimNudge/beginDragDimLabel above, for the gap
+  // dimensions between a wall's own corners/openings (wallDimensions)
+  // instead of between two parallel walls. Stored on the wall itself,
+  // keyed by the opening that starts the next segment (or "end" for the
+  // last gap, after every opening) since a wall can have several of
+  // these gaps.
+  function readGapDimNudge(wallId, key) {
+    const w = wallsById[wallId];
+    const raw = w && w.gapDimNudge && w.gapDimNudge[key];
+    return raw && typeof raw === "object" ? raw : { perp: 0, along: 0 };
+  }
+  function beginDragGapDimLabel(wallId, key, ux, uy, nx, ny, gapLen, startEdit, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    const startNudge = readGapDimNudge(wallId, key);
+    setDraggingGapDimLabel({ wallId, key, ux, uy, nx, ny, gapLen, startP: svgPointRaw(e), startNudge, moved: false, startEdit });
+  }
+  function onGapDimLabelDragMove(e) {
+    if (!draggingGapDimLabel) return;
+    const p = svgPointRaw(e);
+    const d = draggingGapDimLabel;
+    if (!d.moved) {
+      if (dist(p, d.startP) < 3) return;
+      pushHistory();
+      isDraggingRef.current = true;
+      setDraggingGapDimLabel(s => (s ? { ...s, moved: true } : s));
+    }
+    const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
+    const deltaPerp = dxp * d.nx + dyp * d.ny;
+    const deltaAlong = dxp * d.ux + dyp * d.uy;
+    // Perpendicular: only a little room to pull it closer to the wall than
+    // the default — the label's own glyph height plus the wall's stroke
+    // width already eat into that gap, so letting it go much closer reads
+    // as sitting on top of the wall itself — and plenty of room to push it
+    // further out (past whatever else is crowding it), without an upper
+    // bound tight enough to need per-room context the way the parallel-
+    // wall dimension's clamp does.
+    const perp = Math.max(-GRID * 0.25, Math.min(GRID * 3, d.startNudge.perp + deltaPerp));
+    // Along: stay within this gap's own span, with a small margin so the
+    // label can't slide on top of the opening or corner at either end.
+    const alongMargin = Math.min(8, d.gapLen / 2);
+    const maxAlong = Math.max(0, d.gapLen / 2 - alongMargin);
+    const along = Math.max(-maxAlong, Math.min(maxAlong, d.startNudge.along + deltaAlong));
+    commitElements(elements.map(el => el.id === d.wallId
+      ? { ...el, gapDimNudge: { ...(el.gapDimNudge || {}), [d.key]: { perp, along } } }
+      : el));
+  }
+  function onGapDimLabelDragEnd() {
+    if (draggingGapDimLabel && !draggingGapDimLabel.moved) draggingGapDimLabel.startEdit();
+    setDraggingGapDimLabel(null);
+    isDraggingRef.current = false;
+  }
   function rotateRoomLabel(el) {
     const field = planMode === "forro" ? "ceilingLabelRotation" : "labelRotation";
     const next = ((el[field] || 0) + 90) % 360;
@@ -1305,6 +1359,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function onCanvasPointerMove(e) {
     onLabelDragMove(e);
     onDimLabelDragMove(e);
+    onGapDimLabelDragMove(e);
     if (!dragSession) return;
     if (e.cancelable) e.preventDefault();
     const p = svgPointRaw(e);
@@ -1353,7 +1408,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       commitElements(elements.map(el => el.id === dragSession.id ? { ...el, x: proj.x, y: proj.y } : el));
     }
   }
-  function onCanvasPointerUp() { onLabelDragEnd(); onDimLabelDragEnd(); setDragSession(null); }
+  function onCanvasPointerUp() { onLabelDragEnd(); onDimLabelDragEnd(); onGapDimLabelDragEnd(); setDragSession(null); }
 
   // Angle (degrees) to rotate a dimension label so it runs parallel to the
   // wall it measures instead of always sitting flat/horizontal — flipped
@@ -1430,25 +1485,41 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null });
     return gaps.map((g, i) => {
       const { start: s, end: e2 } = g;
-      const p1 = { x: w.x1 + ux * s + nx * offset, y: w.y1 + uy * s + ny * offset };
-      const p2 = { x: w.x1 + ux * e2 + nx * offset, y: w.y1 + uy * e2 + ny * offset };
-      const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
+      const key = g.afterOpeningId || "end";
+      const gapLen = e2 - s;
+      // Same manual nudge idea as the parallel-wall dimensions: perp moves
+      // the whole line closer to/further from the wall, along slides the
+      // label within this gap's own span. Persisted on the wall (keyed by
+      // the gap's own opening/corner) so it survives remounting.
+      const nudge = readGapDimNudge(w.id, key);
+      const perp = Math.max(-GRID * 0.25, Math.min(GRID * 3, nudge.perp));
+      const alongMargin = Math.min(8, gapLen / 2);
+      const maxAlong = Math.max(0, gapLen / 2 - alongMargin);
+      const along = Math.max(-maxAlong, Math.min(maxAlong, nudge.along));
+      const offsetTotal = offset + perp;
+      const p1 = { x: w.x1 + ux * s + nx * offsetTotal, y: w.y1 + uy * s + ny * offsetTotal };
+      const p2 = { x: w.x1 + ux * e2 + nx * offsetTotal, y: w.y1 + uy * e2 + ny * offsetTotal };
+      const midX = (p1.x + p2.x) / 2 + ux * along, midY = (p1.y + p2.y) / 2 + uy * along;
       const lenM = (((e2 - s) / GRID) * scale).toFixed(2);
       const isEditing = editingDim && editingDim.wallId === w.id && editingDim.gapIndex === i;
       const editable = tool === "selecionar" && selectedId === w.id;
+      const startEdit = () => setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy });
+      const angleDeg = labelAngleDeg(w);
       return (
         <g key={w.id + "-dim-" + i}>
           <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#4A4A46" strokeWidth="0.75" />
           <line x1={p1.x - nx * 4} y1={p1.y - ny * 4} x2={p1.x + nx * 4} y2={p1.y + ny * 4} stroke="#4A4A46" strokeWidth="0.75" />
           <line x1={p2.x - nx * 4} y1={p2.y - ny * 4} x2={p2.x + nx * 4} y2={p2.y + ny * 4} stroke="#4A4A46" strokeWidth="0.75" />
-          {editable && (
-            <rect x={midX - 12} y={midY - 12} width="24" height="12" fill={isEditing ? "#4A4A46" : "transparent"} opacity={isEditing ? 0.3 : 1}
-              style={{ cursor: "pointer" }}
-              onClick={e => { e.stopPropagation(); setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy }); }} />
-          )}
-          <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle" transform={`rotate(${labelAngleDeg(w)} ${midX} ${midY - 3})`}
-            style={{ pointerEvents: editable ? "auto" : "none", cursor: editable ? "pointer" : undefined }}
-            onClick={editable ? (e => { e.stopPropagation(); setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy }); }) : undefined}>{lenM}</text>
+          <g transform={`rotate(${angleDeg} ${midX} ${midY - 3})`}>
+            {editable && (
+              <rect x={midX - 12} y={midY - 12} width="24" height="12" fill={isEditing ? "#4A4A46" : "transparent"} opacity={isEditing ? 0.3 : 1}
+                style={{ cursor: "move" }}
+                onMouseDown={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)}
+                onTouchStart={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)} />
+            )}
+            <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle"
+              style={{ pointerEvents: "none" }}>{lenM}</text>
+          </g>
         </g>
       );
     });
