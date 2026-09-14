@@ -50,6 +50,23 @@ function AnimatedTitle() {
   );
 }
 
+// Four small corner marks that snap into place once on arrival, unselected
+// — the same shape CornerBrackets (ElementRows.jsx) draws around whichever
+// device card IS selected, borrowed here as an intro flourish so a device
+// card reads as "measured and marked out" rather than just fading up.
+function IntroCorners({ baseDelay }) {
+  const s = { position: "absolute", width: 14, height: 14, borderColor: "rgba(255,255,255,0.4)" };
+  const corners = [
+    { top: 6, left: 6, borderTop: "2px solid", borderLeft: "2px solid", borderTopLeftRadius: 4 },
+    { top: 6, right: 6, borderTop: "2px solid", borderRight: "2px solid", borderTopRightRadius: 4 },
+    { bottom: 6, left: 6, borderBottom: "2px solid", borderLeft: "2px solid", borderBottomLeftRadius: 4 },
+    { bottom: 6, right: 6, borderBottom: "2px solid", borderRight: "2px solid", borderBottomRightRadius: 4 },
+  ];
+  return corners.map((c, i) => (
+    <div key={i} className="braves-corner" style={{ ...s, ...c, animationDelay: `${baseDelay + i * 0.04}s` }} />
+  ));
+}
+
 // The app's start screen (device role, new vs. join project) and, once
 // starting a new project, its building-info step — split out of App.jsx
 // since it only needs the onJoin callback from the parent.
@@ -183,30 +200,33 @@ export default function JoinScreen({ onJoin }) {
           </div>
         </div>
 
-        <div className="braves-anim-in flex items-center gap-3 mb-7" style={{ animationDelay: "0.1s" }}>
-          <div style={{ flex: 1, height: 1, background: C.line }} />
-          <span className="text-sm" style={{ color: C.mute }}>Prancheta BIM de campo</span>
-          <div style={{ flex: 1, height: 1, background: C.line }} />
+        <div className="flex items-center gap-3 mb-7">
+          <div className="braves-rule" style={{ flex: 1, height: 1, background: C.line, transformOrigin: "right", animationDelay: "0.1s" }} />
+          <span className="braves-wipe-in text-sm" style={{ color: C.mute, animationDelay: "0.45s" }}>Prancheta BIM de campo</span>
+          <div className="braves-rule" style={{ flex: 1, height: 1, background: C.line, transformOrigin: "left", animationDelay: "0.1s" }} />
         </div>
 
-        <div className="braves-anim-in" style={{ animationDelay: "0.18s" }}>
-          <div className="text-sm mb-3" style={{ color: C.mute }}>Este dispositivo é um</div>
+        <div>
+          <div className="braves-wipe-in text-sm mb-3" style={{ color: C.mute, animationDelay: "0.6s" }}>Este dispositivo é um</div>
           <div className="grid grid-cols-2 gap-3 mb-6">
-            {[{ id: "tablet", label: "Tablet", sub: "Para visualizar plantas", Icon: Tablet }, { id: "phone", label: "Celular", sub: "Para fotos de campo", Icon: Smartphone }].map(({ id, label, sub, Icon }) => (
-              <button key={id} onClick={() => setRole(id)} className="relative py-7 rounded-2xl flex flex-col items-center gap-2.5"
-                style={{ background: C.panel, border: `1px solid ${role === id ? "rgba(255,255,255,0.35)" : C.line}` }}>
+            {[{ id: "tablet", label: "Tablet", sub: "Para visualizar plantas", Icon: Tablet }, { id: "phone", label: "Celular", sub: "Para fotos de campo", Icon: Smartphone }].map(({ id, label, sub, Icon }, i) => (
+              <button key={id} onClick={() => setRole(id)} className="braves-fade relative py-7 rounded-2xl flex flex-col items-center gap-2.5"
+                style={{ background: C.panel, border: `1px solid ${role === id ? "rgba(255,255,255,0.35)" : C.line}`, animationDelay: `${0.55 + i * 0.06}s` }}>
                 <CornerBrackets active={role === id} />
-                <Icon size={30} color={role === id ? C.gold : C.chalk} strokeWidth={1.5} />
-                <div className="text-center">
-                  <div className="text-base font-semibold" style={{ color: C.chalk }}>{label}</div>
-                  <div className="text-[11px] mt-0.5" style={{ color: C.mute }}>{sub}</div>
+                <IntroCorners baseDelay={0.7 + i * 0.06} />
+                <div className="braves-wipe-in flex flex-col items-center gap-2.5" style={{ animationDelay: `${0.9 + i * 0.06}s` }}>
+                  <Icon size={30} color={role === id ? C.gold : C.chalk} strokeWidth={1.5} />
+                  <div className="text-center">
+                    <div className="text-base font-semibold" style={{ color: C.chalk }}>{label}</div>
+                    <div className="text-[11px] mt-0.5" style={{ color: C.mute }}>{sub}</div>
+                  </div>
                 </div>
               </button>
             ))}
           </div>
         </div>
 
-        <div className="braves-anim-in" style={{ animationDelay: "0.26s" }}>
+        <div className="braves-wipe-in" style={{ animationDelay: "1.05s" }}>
           <div className="grid grid-cols-2 gap-2.5 mb-3">
             <button onClick={() => setMode("create")} className="py-3.5 rounded-xl text-sm font-medium"
               style={{ background: mode === "create" ? C.goldTint : "transparent", color: mode === "create" ? C.gold : C.chalk, border: `1px solid ${mode === "create" ? "#FFFFFF" : C.line}` }}>Novo levantamento</button>

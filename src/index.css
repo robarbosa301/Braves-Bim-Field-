@@ -95,3 +95,51 @@ body {
   stroke-dashoffset: 1;
   animation: braves-blueprint-draw 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* The rest of the start screen picks up the same drafting-tool language
+   the blueprint/title above it use — a ruled line measuring itself out,
+   a mask wiping open left-to-right, a viewfinder's corner marks snapping
+   onto a shape — instead of the generic "each block fades up a beat after
+   the last" reveal (braves-fade-up/braves-anim-in), which reads as a
+   slide-deck template no matter what it's applied to. */
+@keyframes braves-rule-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.braves-rule {
+  transform: scaleX(0);
+  animation: braves-rule-grow 0.45s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes braves-wipe {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.braves-wipe-in {
+  clip-path: inset(0 100% 0 0);
+  animation: braves-wipe 0.45s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+/* Same corner-bracket shape the selected device card already uses
+   (CornerBrackets in ElementRows.jsx) — here played once, unselected, on
+   arrival: each mark scales in from its own corner with a small overshoot,
+   like a viewfinder locking onto the card, rather than the whole card
+   fading/sliding up as one block. */
+@keyframes braves-corner-snap {
+  from { opacity: 0; transform: scale(0.35); }
+  to { opacity: 1; transform: scale(1); }
+}
+.braves-corner {
+  opacity: 0;
+  animation: braves-corner-snap 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+/* A plain opacity fade with no vertical motion — for a shape (like a
+   device card's own outline) that should just quietly be there a beat
+   before its corner marks lock on, without the "sliding up into place"
+   read that translateY gives braves-fade-up. */
+@keyframes braves-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.braves-fade {
+  opacity: 0;
+  animation: braves-fade 0.35s ease-out forwards;
+}
