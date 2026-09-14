@@ -83,17 +83,39 @@ body {
   to { stroke-dashoffset: 0; }
 }
 @keyframes braves-blueprint-collapse {
-  0%, 62% { opacity: 1; max-height: 70px; margin-bottom: 14px; }
+  0%, 90% { opacity: 1; max-height: 70px; margin-bottom: 14px; }
   100% { opacity: 0; max-height: 0; margin-bottom: 0; }
 }
 .braves-blueprint-wrap {
   overflow: hidden;
-  animation: braves-blueprint-collapse 1.35s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  animation: braves-blueprint-collapse 1.4s cubic-bezier(0.65, 0, 0.35, 1) forwards;
 }
 .braves-blueprint-path {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
   animation: braves-blueprint-draw 0.85s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+/* A faster version of the same draw-in for the small network overlay
+   (braves-network-path/braves-node below) — it's meant to read as a quick
+   connection snapping together, not another wall being drawn. */
+.braves-network-path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: braves-blueprint-draw 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+/* A handful of points along the sketch lighting up and linking together —
+   read as the drawing being recognized/connected into a model (AI +
+   integração), layered right on top of "levantamento de obra" itself. */
+@keyframes braves-node-pop {
+  0% { opacity: 0; transform: scale(0); }
+  60% { opacity: 1; transform: scale(1.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.braves-node {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: braves-node-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 /* The rest of the start screen picks up the same drafting-tool language
@@ -142,4 +164,17 @@ body {
 .braves-fade {
   opacity: 0;
   animation: braves-fade 0.35s ease-out forwards;
+}
+/* A small sync badge popping up in the gap between the Tablet and Celular
+   cards once both have resolved — a concrete "integração" beat: this app's
+   whole point is those two devices sharing one project in real time, not
+   just an abstract flourish. */
+@keyframes braves-sync-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  55% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.braves-sync-badge {
+  opacity: 0;
+  animation: braves-sync-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Tablet, Smartphone, Building2, ArrowUpRight } from "lucide-react";
+import { Tablet, Smartphone, Building2, ArrowUpRight, RefreshCw } from "lucide-react";
 import { C, mono, heading } from "./theme.js";
 import { genCode } from "./utils.js";
 import { idbGet } from "./storage.js";
@@ -8,9 +8,15 @@ import { CornerBrackets } from "./ElementRows.jsx";
 
 // A quick, one-shot "sketch it, then it's built" flourish that plays above
 // the logo on landing: a little floor plan (walls, a door swing, a
-// dimension line) draws itself in, then collapses away right as the logo
-// rises — distinct from a plain fade-in and on-brand for a BIM field app.
+// dimension line) draws itself in like a field survey — then a handful of
+// points along it light up and link together into a small network, as if
+// the sketch just got read and connected into a model, before the whole
+// thing collapses away right as the logo rises. Stands in for "levantamento
+// de obra" (the survey itself), "inteligência artificial" (the sketch being
+// read and connected on its own) and "integração" (the resulting network)
+// in one continuous beat, on top of being distinct from a plain fade-in.
 function BlueprintIntro() {
+  const nodes = [[30, 24], [130, 24], [58, 74], [122, 46]];
   return (
     <div className="braves-blueprint-wrap flex justify-center" aria-hidden="true">
       <svg width="128" height="70" viewBox="0 0 160 88" fill="none">
@@ -26,6 +32,12 @@ function BlueprintIntro() {
         <path className="braves-blueprint-path" pathLength="1" style={{ animationDelay: "0.32s" }}
           d="M58,74 A34,34 0 0 1 92,40 M58,74 L92,40"
           stroke="#FFFFFF" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        <path className="braves-network-path" pathLength="1" style={{ animationDelay: "0.68s" }}
+          d="M30,24 L130,24 L122,46 L58,74 L30,24"
+          stroke="#FFFFFF" strokeWidth="0.9" opacity="0.55" />
+        {nodes.map(([nx, ny], i) => (
+          <circle key={i} className="braves-node" cx={nx} cy={ny} r="2.6" fill="#FFFFFF" style={{ animationDelay: `${0.56 + i * 0.05}s` }} />
+        ))}
       </svg>
     </div>
   );
@@ -208,7 +220,12 @@ export default function JoinScreen({ onJoin }) {
 
         <div>
           <div className="braves-wipe-in text-sm mb-3" style={{ color: C.mute, animationDelay: "0.6s" }}>Este dispositivo é um</div>
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="relative grid grid-cols-2 gap-3 mb-6">
+            <div className="braves-sync-badge" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", zIndex: 1, animationDelay: "1.35s" }}>
+              <div style={{ width: 22, height: 22, borderRadius: 999, background: "#141311", border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <RefreshCw size={11} color={C.chalk} />
+              </div>
+            </div>
             {[{ id: "tablet", label: "Tablet", sub: "Para visualizar plantas", Icon: Tablet }, { id: "phone", label: "Celular", sub: "Para fotos de campo", Icon: Smartphone }].map(({ id, label, sub, Icon }, i) => (
               <button key={id} onClick={() => setRole(id)} className="braves-fade relative py-7 rounded-2xl flex flex-col items-center gap-2.5"
                 style={{ background: C.panel, border: `1px solid ${role === id ? "rgba(255,255,255,0.35)" : C.line}`, animationDelay: `${0.55 + i * 0.06}s` }}>
