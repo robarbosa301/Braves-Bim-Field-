@@ -423,9 +423,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [dims, setDims] = useState({ w: 340, h: 300 });
   const [vb, setVb] = useState(null);
   // Degrees the sheet itself is spun by (around the current view's center),
-  // independent of pan/zoom — set from a two-finger twist so a big project
-  // that runs off the top-left corner can be squared back up on screen
-  // instead of only ever being readable at whatever angle it was drawn.
+  // independent of pan/zoom — set from a three-finger twist so a big
+  // project that runs off the top-left corner can be squared back up on
+  // screen instead of only ever being readable at whatever angle it was
+  // drawn.
   const [rotationDeg, setRotationDeg] = useState(0);
   const [deletedStack, setDeletedStack] = useState([]);
   const [history, setHistory] = useState([]);
@@ -446,6 +447,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [dragSession, setDragSession] = useState(null);
   const [splittingWall, setSplittingWall] = useState(null);
   const pinch = useRef(null);
+  const twist = useRef(null);
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
   const dimColor = level.dimColor || "#4A4A46";
@@ -687,13 +689,21 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       // that stale drag session can make the element jump once fingers
       // start lifting back to a single touch.
       setDragSession(null);
+      twist.current = null;
       const [a, b] = e.touches;
       pinch.current = {
         d: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY),
-        angle: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * (180 / Math.PI),
         mid: { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 },
-        vb: viewBox, rotation: rotationDeg,
+        vb: viewBox,
       };
+    } else if (e.touches.length === 3) {
+      // A third finger switches the gesture to rotate-only, kept separate
+      // from plain two-finger pan/zoom so a normal pan never picks up an
+      // accidental twist — rotating is deliberate, a third finger on top.
+      setDragSession(null);
+      pinch.current = null;
+      const [a, b] = e.touches;
+      twist.current = { angle: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * (180 / Math.PI), rotation: rotationDeg };
     }
   }
   function onTouchMoveCanvas(e) {
@@ -703,29 +713,38 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const rect = svgRef.current.getBoundingClientRect();
       const start = pinch.current;
       const d = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
-      const angle = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * (180 / Math.PI);
       const mid = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
       const startVb = start.vb;
       const factor = start.d / Math.max(1, d);
       const newW = Math.min(4000, Math.max(60, startVb.w * factor));
       const newH = newW * (startVb.h / startVb.w);
-      // One continuous two-finger gesture drives all three at once — how
-      // far apart the fingers are zooms, how far their midpoint travels
-      // pans, and the angle between them rotates the sheet — the same
-      // combined gesture people already know from map apps, so a project
-      // too big for the frame can be dragged into view and squared back up
-      // in one motion instead of three separate ones.
+      // Both driven by the same two fingers at once — how far apart they
+      // are zooms, how far their midpoint travels pans — so a project too
+      // big for the frame can be dragged into view and zoomed to fit in
+      // one motion, the same combined gesture people already know from map
+      // apps. Rotating is a separate, deliberate third-finger gesture below.
       const dxWorld = (mid.x - start.mid.x) * (startVb.w / rect.width);
       const dyWorld = (mid.y - start.mid.y) * (startVb.h / rect.height);
       const newCx = startVb.x + startVb.w / 2 - dxWorld;
       const newCy = startVb.y + startVb.h / 2 - dyWorld;
       setVb({ x: newCx - newW / 2, y: newCy - newH / 2, w: newW, h: newH });
+      return;
+    }
+    if (e.touches.length === 3 && twist.current) {
+      if (e.cancelable) e.preventDefault();
+      const [a, b] = e.touches;
+      const start = twist.current;
+      const angle = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * (180 / Math.PI);
       setRotationDeg(start.rotation + (angle - start.angle));
       return;
     }
     if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel || draggingGapDimLabel)) onCanvasPointerMove(e);
   }
-  function onTouchEndCanvas(e) { if (e.touches.length < 2) pinch.current = null; if (e.touches.length === 0) onCanvasPointerUp(); }
+  function onTouchEndCanvas(e) {
+    if (e.touches.length < 2) pinch.current = null;
+    if (e.touches.length < 3) twist.current = null;
+    if (e.touches.length === 0) onCanvasPointerUp();
+  }
 
   function nearestWall(p) {
     const walls = elements.filter(el => el.type === "wall");
@@ -1944,9 +1963,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           </pattern>
         </defs>
         {/* Everything the sheet actually contains lives inside this one
-            group so a two-finger twist (see onTouchMoveCanvas) can spin the
-            whole drawing — grid, walls, labels, all of it — together around
-            the view's center, instead of rotating the viewport itself
+            group so a three-finger twist (see onTouchMoveCanvas) can spin
+            the whole drawing — grid, walls, labels, all of it — together
+            around the view's center, instead of rotating the viewport itself
             (which SVG's own viewBox can't do). */}
         <g transform={rotationDeg ? `rotate(${rotationDeg} ${viewBox.x + viewBox.w / 2} ${viewBox.y + viewBox.h / 2})` : undefined}>
         {/* Plain white in exportMode regardless of the interactive grid toggle
