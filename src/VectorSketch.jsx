@@ -6,7 +6,7 @@ import {
 import { C, mono, heading, phaseColor, matchesPhaseView, PHASE_VIEWS } from "./theme.js";
 import { toNum, uid } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM } from "./constants.js";
-import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, wrapTextLines } from "./geometry.js";
+import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, wrapTextLines, rotatePoint } from "./geometry.js";
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
 
 // Split out of App.jsx — this is the Croqui (2D sketch) editor, the
@@ -422,6 +422,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [autoRoomMsg, setAutoRoomMsg] = useState("");
   const [dims, setDims] = useState({ w: 340, h: 300 });
   const [vb, setVb] = useState(null);
+  // Degrees the sheet itself is spun by (around the current view's center),
+  // independent of pan/zoom — set from a two-finger twist so a big project
+  // that runs off the top-left corner can be squared back up on screen
+  // instead of only ever being readable at whatever angle it was drawn.
+  const [rotationDeg, setRotationDeg] = useState(0);
   const [deletedStack, setDeletedStack] = useState([]);
   const [history, setHistory] = useState([]);
   const isDraggingRef = useRef(false);
@@ -586,16 +591,25 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
   const viewBox = vb || { x: 0, y: 0, w: dims.w, h: dims.h };
 
+  // The drawing itself is rendered inside a <g rotate(rotationDeg, ...)>
+  // pivoting on the current viewBox's center (see the <svg> below), so a
+  // raw screen tap first lands in that pre-rotation "viewBox space" and has
+  // to be rotated back by -rotationDeg to recover the element coordinates
+  // it actually corresponds to; going the other way (element -> screen)
+  // rotates forward by the same amount around the same pivot.
+  function rotationPivot() { return { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 }; }
   function toScreen(p) {
     const rect = svgRef.current.getBoundingClientRect();
-    return { x: ((p.x - viewBox.x) / viewBox.w) * rect.width, y: ((p.y - viewBox.y) / viewBox.h) * rect.height };
+    const sp = rotationDeg ? rotatePoint(p, rotationDeg, rotationPivot()) : p;
+    return { x: ((sp.x - viewBox.x) / viewBox.w) * rect.width, y: ((sp.y - viewBox.y) / viewBox.h) * rect.height };
   }
   function svgPointRaw(e) {
     const rect = svgRef.current.getBoundingClientRect();
     const p = e.touches ? e.touches[0] : e;
     const relX = (p.clientX - rect.left) / rect.width;
     const relY = (p.clientY - rect.top) / rect.height;
-    return { x: viewBox.x + relX * viewBox.w, y: viewBox.y + relY * viewBox.h };
+    const sp = { x: viewBox.x + relX * viewBox.w, y: viewBox.y + relY * viewBox.h };
+    return rotationDeg ? rotatePoint(sp, -rotationDeg, rotationPivot()) : sp;
   }
   function pxToMeters(px) { return +((px / GRID) * scale).toFixed(2); }
   // Every discrete action (add, delete, edit a length, close a room...)
@@ -648,6 +662,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function resetZoom() {
     setVb(fitViewBoxToElements(elements, dims.w, dims.h));
+    setRotationDeg(0);
   }
   function ensureVisible(x, y) {
     if (!isFinite(x) || !isFinite(y)) return;
@@ -673,20 +688,39 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       // start lifting back to a single touch.
       setDragSession(null);
       const [a, b] = e.touches;
-      pinch.current = { d: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY), vb: viewBox };
+      pinch.current = {
+        d: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY),
+        angle: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * (180 / Math.PI),
+        mid: { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 },
+        vb: viewBox, rotation: rotationDeg,
+      };
     }
   }
   function onTouchMoveCanvas(e) {
     if (e.touches.length === 2 && pinch.current) {
       if (e.cancelable) e.preventDefault();
       const [a, b] = e.touches;
+      const rect = svgRef.current.getBoundingClientRect();
+      const start = pinch.current;
       const d = Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
-      const factor = pinch.current.d / Math.max(1, d);
-      const startVb = pinch.current.vb;
+      const angle = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * (180 / Math.PI);
+      const mid = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+      const startVb = start.vb;
+      const factor = start.d / Math.max(1, d);
       const newW = Math.min(4000, Math.max(60, startVb.w * factor));
       const newH = newW * (startVb.h / startVb.w);
-      const cx = startVb.x + startVb.w / 2, cy = startVb.y + startVb.h / 2;
-      setVb({ x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH });
+      // One continuous two-finger gesture drives all three at once — how
+      // far apart the fingers are zooms, how far their midpoint travels
+      // pans, and the angle between them rotates the sheet — the same
+      // combined gesture people already know from map apps, so a project
+      // too big for the frame can be dragged into view and squared back up
+      // in one motion instead of three separate ones.
+      const dxWorld = (mid.x - start.mid.x) * (startVb.w / rect.width);
+      const dyWorld = (mid.y - start.mid.y) * (startVb.h / rect.height);
+      const newCx = startVb.x + startVb.w / 2 - dxWorld;
+      const newCy = startVb.y + startVb.h / 2 - dyWorld;
+      setVb({ x: newCx - newW / 2, y: newCy - newH / 2, w: newW, h: newH });
+      setRotationDeg(start.rotation + (angle - start.angle));
       return;
     }
     if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel || draggingGapDimLabel)) onCanvasPointerMove(e);
@@ -1821,7 +1855,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <button onClick={() => setShowGrid(g => !g)} className="p-1.5 rounded" style={{ background: showGrid ? C.goldTint : C.panelAlt, border: `1px solid ${showGrid ? C.gold : C.line}` }}><Grid3x3 size={13} color={showGrid ? C.gold : C.chalk} /></button>
           <button onClick={() => zoomButton(0.8)} className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomIn size={13} color={C.chalk} /></button>
           <button onClick={() => zoomButton(1.25)} className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomOut size={13} color={C.chalk} /></button>
-          <button onClick={resetZoom} title="Centralizar e enquadrar tudo" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Maximize2 size={13} color={C.chalk} /></button>
+          {Math.round(rotationDeg) % 360 !== 0 && (
+            <button onClick={() => setRotationDeg(0)} title="Endireitar a folha (desfazer a rotação)"
+              className="px-1.5 py-1.5 rounded text-[10px]" style={{ ...mono, background: C.goldTint, border: `1px solid ${C.gold}`, color: C.gold }}>
+              {Math.round(((rotationDeg % 360) + 360) % 360)}°
+            </button>
+          )}
+          <button onClick={resetZoom} title="Centralizar, enquadrar tudo e endireitar" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Maximize2 size={13} color={C.chalk} /></button>
         </div>
       </div>
 
@@ -1903,6 +1943,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
           </pattern>
         </defs>
+        {/* Everything the sheet actually contains lives inside this one
+            group so a two-finger twist (see onTouchMoveCanvas) can spin the
+            whole drawing — grid, walls, labels, all of it — together around
+            the view's center, instead of rotating the viewport itself
+            (which SVG's own viewBox can't do). */}
+        <g transform={rotationDeg ? `rotate(${rotationDeg} ${viewBox.x + viewBox.w / 2} ${viewBox.y + viewBox.h / 2})` : undefined}>
         {/* Plain white in exportMode regardless of the interactive grid toggle
             — the PDF is meant to read as a clean executive drawing, not a
             screenshot of the editor's own drafting aid. */}
@@ -2223,6 +2269,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {polygon.length > 0 && <polyline points={polygon.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#4A4A46" strokeWidth="1.5" strokeDasharray="4,3" />}
         {polygon.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#4A4A46" />)}
         {pending && <circle cx={pending.x} cy={pending.y} r="4.5" fill="#4A4A46" stroke="#1B1E1A" strokeWidth="1" />}
+        </g>
       </svg>
 
       {selected && (

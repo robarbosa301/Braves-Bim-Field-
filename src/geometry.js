@@ -8,6 +8,18 @@
 export const GRID = 20;
 export function snap(v) { return Math.round(v / GRID) * GRID; }
 export function dist(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+// Rotates p by degClockwise degrees around pivot, in the same y-down sense
+// as SVG's own rotate(deg, cx, cy) transform — used both to build that
+// transform's inverse (screen tap -> true element coordinates) and to
+// mirror it forward (element coordinates -> current screen position) when
+// the Croqui sheet itself has been spun with a two-finger twist.
+export function rotatePoint(p, degClockwise, pivot) {
+  if (!degClockwise) return p;
+  const rad = (degClockwise * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const dx = p.x - pivot.x, dy = p.y - pivot.y;
+  return { x: pivot.x + dx * cos - dy * sin, y: pivot.y + dx * sin + dy * cos };
+}
 export function projectPointOnSegment(p, a, b) {
   const ab = { x: b.x - a.x, y: b.y - a.y };
   const ap = { x: p.x - a.x, y: p.y - a.y };
