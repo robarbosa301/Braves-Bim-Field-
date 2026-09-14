@@ -1,7 +1,9 @@
 import { useState, useRef, useLayoutEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
+  Expand, Shrink,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView, PHASE_VIEWS } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -436,6 +438,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [selectedId, setSelectedId] = useState(null);
   const [showBelow, setShowBelow] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  // Tela cheia: the whole editor floats out of the app's normal scrolling
+  // layout into a fixed full-viewport portal so the canvas can use the
+  // entire phone screen — the toolbar rows and the selected-element panel
+  // become translucent overlays pinned to the top/bottom of the canvas
+  // (a "watermark") instead of pushing it down, and only regain full
+  // opacity where they actually sit under a finger.
+  const [fullscreen, setFullscreen] = useState(false);
   const [showAbove, setShowAbove] = useState(false);
   const [draggingLabel, setDraggingLabel] = useState(null);
   const [draggingDimLabel, setDraggingDimLabel] = useState(null);
@@ -569,6 +578,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   useLayoutEffect(() => {
     function measure() {
       if (!svgRef.current) return;
+      // Fullscreen: the svg is a position:absolute layer filling the fixed
+      // full-viewport portal, with the toolbar/panel floating on top of it
+      // rather than pushing it down — so it gets the whole window instead
+      // of whatever's left after those rows, and doesn't need to dodge the
+      // (now hidden-behind-it) app bottom nav either.
+      if (fullscreen) {
+        const w = window.innerWidth || 340, h = window.innerHeight || 600;
+        setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
+        setVb(v => v || fitViewBoxToElements(elements, w, h));
+        return;
+      }
       const w = svgRef.current.parentElement.clientWidth || 340;
       const svgTop = svgRef.current.getBoundingClientRect().top;
       const nav = document.querySelector("[data-braves-bottom-nav]");
@@ -589,7 +609,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
     };
-  }, [tool, planMode, editingDim, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel]);
+  }, [tool, planMode, editingDim, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel, fullscreen]);
 
   const viewBox = vb || { x: 0, y: 0, w: dims.w, h: dims.h };
 
@@ -1810,8 +1830,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   ];
   const TOOLS = planMode === "forro" ? FORRO_TOOLS : PISO_TOOLS;
 
-  return (
+  const content = (
     <div>
+      {/* Everything before the <svg> — the toolbar rows, phase-view row,
+          naming box, editing overlays — becomes one translucent "watermark"
+          layer pinned over the top of the canvas in fullscreen, instead of
+          pushing it down; in normal (in-flow) mode this wrapper does
+          nothing (no absolute positioning, no background). */}
+      <div className={fullscreen ? "absolute top-0 left-0 right-0 z-20 px-2 pt-2 pb-1.5" : undefined}
+        style={fullscreen ? { background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)" } : undefined}>
       <div className="flex gap-1.5 mb-2">
         <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
           style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : C.panelAlt, color: planMode === "piso" ? "#141311" : C.mute }}>Planta de Piso</button>
@@ -1883,6 +1910,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </button>
           )}
           <button onClick={resetZoom} title="Centralizar, enquadrar tudo e endireitar" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Maximize2 size={13} color={C.chalk} /></button>
+          <button onClick={() => setFullscreen(true)} title="Tela cheia" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Expand size={13} color={C.chalk} /></button>
         </div>
       </div>
 
@@ -1953,9 +1981,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
+      </div>
 
       <svg ref={svgRef} data-croqui-svg="true" width="100%" height={dims.h} viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-        className="rounded-md touch-none" style={{ background: exportMode ? "#FFFFFF" : "#DCDCD8", border: exportMode ? "none" : "1px solid #C6C6C1", display: "block", touchAction: "none" }}
+        className="rounded-md touch-none" style={{
+          background: exportMode ? "#FFFFFF" : "#DCDCD8", border: exportMode || fullscreen ? "none" : "1px solid #C6C6C1", display: "block", touchAction: "none",
+          ...(fullscreen ? { position: "absolute", inset: 0, zIndex: 0, borderRadius: 0 } : null),
+        }}
         onClick={handleTap} onWheel={onWheel}
         onTouchStart={onTouchStartCanvas} onTouchMove={onTouchMoveCanvas} onTouchEnd={onTouchEndCanvas}
         onMouseMove={onCanvasPointerMove} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}>
@@ -2299,6 +2331,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </g>
       </svg>
 
+      {/* The selected-element editor is the other watermark layer, pinned
+          to the bottom of the canvas in fullscreen (its own background
+          goes fully opaque there, since it's meant to be read/edited, not
+          just glanced at like the tool row above). */}
+      <div className={fullscreen ? "absolute bottom-0 left-0 right-0 z-20 px-2 pb-2 pt-1.5 max-h-[60vh] overflow-y-auto" : undefined}
+        style={fullscreen ? { background: "rgba(20,19,17,0.85)" } : undefined}>
       {selected && (
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
@@ -2437,6 +2475,26 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           </button>
         </div>
       </div>
+      </div>
+      {fullscreen && (
+        // Always fully opaque, never faded like the watermark rows — the
+        // one control that must stay reliably tappable no matter what's
+        // being edited, since it's the only way back to the normal layout.
+        <button onClick={() => setFullscreen(false)} title="Sair da tela cheia"
+          className="absolute top-2 right-2 z-30 p-2 rounded-lg flex items-center gap-1.5 text-[11px]"
+          style={{ ...heading, fontWeight: 600, background: "#141311", color: C.chalk, border: `1px solid ${C.line}`, boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>
+          <Shrink size={14} /> Sair da tela cheia
+        </button>
+      )}
     </div>
   );
+  if (fullscreen) {
+    return createPortal(
+      <div className="fixed inset-0 overflow-hidden" style={{ zIndex: 999, background: "#141311" }}>
+        <div className="relative w-full h-full">{content}</div>
+      </div>,
+      document.body
+    );
+  }
+  return content;
 }
