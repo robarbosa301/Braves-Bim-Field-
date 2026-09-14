@@ -1679,21 +1679,45 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (deg > 90 || deg < -90) deg += 180;
     return deg;
   }
+  // The drawing's own raw extent (walls/stairs/doors/windows/rooms),
+  // independent of whatever the camera (viewBox) currently happens to be
+  // looking at —
+  // clampOffsetToView below anchors to this instead, since a fitted-view
+  // clamp based on the live viewBox re-triggers on every pan, dragging a
+  // pushed-out label toward its anchor (and potentially on top of a
+  // neighboring tag) as the drawing is panned toward that edge, rather
+  // than only when the label would truly run past the drawing itself.
+  const contentBounds = useMemo(() => {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    elements.forEach(el => {
+      if (el.type === "wall" || el.type === "stair") {
+        minX = Math.min(minX, el.x1, el.x2); maxX = Math.max(maxX, el.x1, el.x2);
+        minY = Math.min(minY, el.y1, el.y2); maxY = Math.max(maxY, el.y1, el.y2);
+      } else if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
+        minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x);
+        minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y);
+      } else if (el.type === "room") {
+        el.points.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+      }
+    });
+    return isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+  }, [elements]);
   // Pulls a label back toward its anchor (along the same push direction,
-  // never sideways) just enough that it clears the fitted view's edge —
+  // never sideways) just enough that it clears the drawing's own edge —
   // for an outer wall, wallLabelOffset always pushes its length label
-  // AWAY from the room, which is also the direction of the sketch's own
-  // fitted boundary, so a merged "x.xx m · w×h · Nf" tag on a wall close
+  // AWAY from the room, which is also the direction of the drawing's own
+  // outer boundary, so a merged "x.xx m · w×h · Nf" tag on a wall close
   // to that boundary can end up sitting right against it. Scaling the
   // offset back (rather than moving the fit box) fixes just that label
   // without zooming the whole drawing out.
   function clampOffsetToView(baseX, baseY, offX, offY) {
-    const MARGIN = 10;
+    if (!contentBounds) return { x: baseX + offX, y: baseY + offY };
+    const MARGIN = 24;
     let k = 1;
-    if (offX > 0) k = Math.min(k, Math.max(0, (viewBox.x + viewBox.w - MARGIN - baseX) / offX));
-    else if (offX < 0) k = Math.min(k, Math.max(0, (baseX - (viewBox.x + MARGIN)) / -offX));
-    if (offY > 0) k = Math.min(k, Math.max(0, (viewBox.y + viewBox.h - MARGIN - baseY) / offY));
-    else if (offY < 0) k = Math.min(k, Math.max(0, (baseY - (viewBox.y + MARGIN)) / -offY));
+    if (offX > 0) k = Math.min(k, Math.max(0, (contentBounds.maxX + MARGIN - baseX) / offX));
+    else if (offX < 0) k = Math.min(k, Math.max(0, (baseX - (contentBounds.minX - MARGIN)) / -offX));
+    if (offY > 0) k = Math.min(k, Math.max(0, (contentBounds.maxY + MARGIN - baseY) / offY));
+    else if (offY < 0) k = Math.min(k, Math.max(0, (baseY - (contentBounds.minY - MARGIN)) / -offY));
     return { x: baseX + offX * k, y: baseY + offY * k };
   }
   // How far (and to which side) a wall's own length label sits off the
@@ -1837,8 +1861,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           layer pinned over the top of the canvas in fullscreen, instead of
           pushing it down; in normal (in-flow) mode this wrapper does
           nothing (no absolute positioning, no background). */}
-      <div className={fullscreen ? "absolute top-0 left-0 right-0 z-20 px-2 pt-2 pb-1.5" : undefined}
-        style={fullscreen ? { background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)" } : undefined}>
+      <div className={fullscreen ? "absolute top-0 left-0 right-0 z-20 pb-1.5" : undefined}
+        style={fullscreen ? {
+          background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)",
+          // A fullscreen PWA (viewport-fit=cover) draws content under the
+          // phone's own status bar/notch — without this, the top row of
+          // buttons renders half-hidden behind it and stops being tappable,
+          // since touches there go to the OS chrome instead of the page.
+          paddingTop: "max(10px, env(safe-area-inset-top))",
+          paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
+        } : undefined}>
       <div className="flex gap-1.5 mb-2">
         <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
           style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : C.panelAlt, color: planMode === "piso" ? "#141311" : C.mute }}>Planta de Piso</button>
@@ -1910,7 +1942,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </button>
           )}
           <button onClick={resetZoom} title="Centralizar, enquadrar tudo e endireitar" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Maximize2 size={13} color={C.chalk} /></button>
-          <button onClick={() => setFullscreen(true)} title="Tela cheia" className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Expand size={13} color={C.chalk} /></button>
+          <button onClick={() => setFullscreen(f => !f)} title={fullscreen ? "Sair da tela cheia" : "Tela cheia"} className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+            {fullscreen ? <Shrink size={13} color={C.chalk} /> : <Expand size={13} color={C.chalk} />}
+          </button>
         </div>
       </div>
 
@@ -2331,12 +2365,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </g>
       </svg>
 
-      {/* The selected-element editor is the other watermark layer, pinned
-          to the bottom of the canvas in fullscreen (its own background
-          goes fully opaque there, since it's meant to be read/edited, not
-          just glanced at like the tool row above). */}
-      <div className={fullscreen ? "absolute bottom-0 left-0 right-0 z-20 px-2 pb-2 pt-1.5 max-h-[60vh] overflow-y-auto" : undefined}
-        style={fullscreen ? { background: "rgba(20,19,17,0.85)" } : undefined}>
+      {/* The selected-element editor and the Recente/Desfazer/Tudo row are
+          the other watermark layer, pinned to the bottom of the canvas in
+          fullscreen — same translucent backing as the top row (not a
+          near-opaque block) so the two read as one consistent treatment;
+          the controls underneath keep their own normal (already legible)
+          styling either way. */}
+      <div className={fullscreen ? "absolute bottom-0 left-0 right-0 z-20 pt-1.5 max-h-[60vh] overflow-y-auto" : undefined}
+        style={fullscreen ? {
+          background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)",
+          paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
+          paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+        } : undefined}>
       {selected && (
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
@@ -2476,16 +2516,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       </div>
       </div>
-      {fullscreen && (
-        // Always fully opaque, never faded like the watermark rows — the
-        // one control that must stay reliably tappable no matter what's
-        // being edited, since it's the only way back to the normal layout.
-        <button onClick={() => setFullscreen(false)} title="Sair da tela cheia"
-          className="absolute top-2 right-2 z-30 p-2 rounded-lg flex items-center gap-1.5 text-[11px]"
-          style={{ ...heading, fontWeight: 600, background: "#141311", color: C.chalk, border: `1px solid ${C.line}`, boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>
-          <Shrink size={14} /> Sair da tela cheia
-        </button>
-      )}
     </div>
   );
   if (fullscreen) {
