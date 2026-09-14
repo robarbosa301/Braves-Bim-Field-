@@ -286,6 +286,7 @@ export default function PranchetaBIM() {
   const [roofs, setRoofs] = useState([]);
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [croquiLevelId, setCroquiLevelId] = useState(null);
+  const [croquiViewMode, setCroquiViewMode] = useState("2d");
   const [view3dMode, setView3dMode] = useState("casa");
   const [view3dOpen, setView3dOpen] = useState(false);
   const [phaseView3D, setPhaseView3D] = useState("tudo");
@@ -709,7 +710,7 @@ export default function PranchetaBIM() {
   async function exportPDF() {
     if (pdfExporting) return;
     setPdfExporting(true);
-    const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId;
+    const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId, prevCroquiViewMode = croquiViewMode;
     try {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -762,6 +763,7 @@ export default function PranchetaBIM() {
         const els = level.sketchElements || [];
         if (!els.some(e => e.type === "wall")) continue;
         setTab("croqui");
+        setCroquiViewMode("2d");
         setCroquiLevelId(level.id);
         await sleep(550);
         const svgEl = document.querySelector('[data-croqui-svg="true"]');
@@ -771,7 +773,7 @@ export default function PranchetaBIM() {
 
       // ---- Modelo 3D (casa toda) ----
       if (levels.some(l => (l.sketchElements || []).some(e => e.type === "wall"))) {
-        setTab("modelo"); setModeloSub("3d"); setView3dMode("casa");
+        setTab("croqui"); setCroquiViewMode("3d"); setView3dMode("casa");
         await sleep(900);
         const canvasEl = document.querySelector('[data-threed-mount="true"] canvas');
         if (canvasEl && canvasEl.width && canvasEl.height) {
@@ -785,7 +787,7 @@ export default function PranchetaBIM() {
     } catch (e) {
       pushLog("Não foi possível gerar o PDF.", "info");
     } finally {
-      setTab(prevTab); setModeloSub(prevModeloSub); setView3dMode(prevView3dMode); setCroquiLevelId(prevCroquiLevelId);
+      setTab(prevTab); setModeloSub(prevModeloSub); setView3dMode(prevView3dMode); setCroquiLevelId(prevCroquiLevelId); setCroquiViewMode(prevCroquiViewMode);
       setPdfExporting(false);
     }
   }
@@ -797,9 +799,9 @@ export default function PranchetaBIM() {
   const totalElements = allEls.length + rooms.reduce((s, r) => s + r.floors.length, 0);
 
   const TABS = [
-    { id: "ambientes", label: "Ambientes", Icon: LayoutGrid },
     { id: "croqui", label: "Croqui", Icon: Pencil },
-    { id: "modelo", label: "Modelo", Icon: Rotate3d },
+    { id: "modelo", label: "Elementos", Icon: Rotate3d },
+    { id: "ambientes", label: "Ambientes", Icon: LayoutGrid },
     { id: "sync", label: "Sincronização", Icon: RefreshCw },
   ];
 
@@ -1034,27 +1036,118 @@ export default function PranchetaBIM() {
           </div>
         )}
 
-        {tab === "croqui" && croquiLevel && (
-          <div className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium" style={{ color: C.chalk }}>Croqui do nível:</span>
-              <select value={croquiLevel.id} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
-                style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+        {tab === "croqui" && (
+          <div>
+            <div className="flex gap-1.5 mb-3">
+              <button onClick={() => setCroquiViewMode("2d")} className="flex-1 py-1.5 rounded text-[11px]"
+                style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : C.panelAlt, color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
+                Planta 2D
+              </button>
+              <button onClick={() => setCroquiViewMode("3d")} className="flex-1 py-1.5 rounded text-[11px]"
+                style={{ ...heading, fontWeight: 600, background: croquiViewMode === "3d" ? C.gold : C.panelAlt, color: croquiViewMode === "3d" ? "#141311" : C.mute }}>
+                3D
+              </button>
             </div>
-            <VectorSketch level={croquiLevel} allLevels={levels} rooms={rooms.filter(r => r.level === croquiLevel.name)}
-              onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
-              onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
-              onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)} />
+
+            {croquiViewMode === "2d" && croquiLevel && (
+              <div className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium" style={{ color: C.chalk }}>Croqui do nível:</span>
+                  <select value={croquiLevel.id} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
+                    style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                    {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+                <VectorSketch level={croquiLevel} allLevels={levels} rooms={rooms.filter(r => r.level === croquiLevel.name)}
+                  onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
+                  onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
+                  onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)} />
+              </div>
+            )}
+            {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
+
+            {croquiViewMode === "3d" && (
+              <div>
+                <div className="flex gap-1.5 mb-3 flex-wrap">
+                  <button onClick={() => setView3dMode("casa")} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
+                    style={{ background: view3dMode === "casa" ? C.goldTint : C.panelAlt, color: view3dMode === "casa" ? C.gold : C.mute, border: `1px solid ${view3dMode === "casa" ? "#FFFFFF" : C.line}` }}>
+                    <Home size={12} /> Casa toda
+                  </button>
+                  <button onClick={() => setView3dMode("ambiente")} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
+                    style={{ background: view3dMode === "ambiente" ? C.goldTint : C.panelAlt, color: view3dMode === "ambiente" ? C.gold : C.mute, border: `1px solid ${view3dMode === "ambiente" ? "#FFFFFF" : C.line}` }}>
+                    <Box size={12} /> Este ambiente
+                  </button>
+                  {view3dMode === "ambiente" && (
+                    <select value={view3dRoomId || ""} onChange={e => setView3dRoomId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
+                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                      <option value="">Selecione um ambiente</option>
+                      {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  )}
+                  <button onClick={() => setView3dOpen(o => !o)} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs ml-auto"
+                    style={{ background: view3dOpen ? C.goldTint : C.panelAlt, color: view3dOpen ? C.gold : C.mute, border: `1px solid ${view3dOpen ? "#FFFFFF" : C.line}` }}>
+                    <DoorOpen size={12} /> {view3dOpen ? "Portas/janelas abertas" : "Portas/janelas fechadas"}
+                  </button>
+                </div>
+
+                {levels.some(l => (l.sketchElements || []).some(e => (e.type === "wall" || e.type === "door" || e.type === "window") && (e.demolir || e.construir))) && (
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vistas:</span>
+                    {PHASE_VIEWS.map(({ id, label }) => (
+                      <button key={id} onClick={() => setPhaseView3D(id)} className="px-2 py-1 rounded text-[10px]"
+                        style={{ ...heading, fontWeight: 600, background: phaseView3D === id ? C.goldTint : C.panelAlt, color: phaseView3D === id ? C.gold : C.mute, border: `1px solid ${phaseView3D === id ? C.gold : C.line}` }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                  <button onClick={() => setSectionCut(s => ({ ...s, enabled: !s.enabled }))} className="flex items-center gap-1 px-2 py-1.5 rounded text-xs"
+                    style={{ background: sectionCut.enabled ? C.goldTint : "transparent", color: sectionCut.enabled ? C.gold : C.mute, border: `1px solid ${sectionCut.enabled ? "#FFFFFF" : C.line}` }}>
+                    <Scissors size={12} /> Corte de seção
+                  </button>
+                  {sectionCut.enabled && (
+                    <>
+                      <select value={sectionCut.axis} onChange={e => setSectionCut(s => ({ ...s, axis: e.target.value }))} className="text-xs px-2 py-1 rounded"
+                        style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+                        <option value="horizontal">Horizontal (planta em corte)</option>
+                        <option value="vertical-x">Vertical — eixo X</option>
+                        <option value="vertical-z">Vertical — eixo Z</option>
+                      </select>
+                      <input type="range" min={sectionCut.axis === "horizontal" ? -1 : -15} max="15" step="0.1" value={sectionCut.position}
+                        onChange={e => setSectionCut(s => ({ ...s, position: toNum(e.target.value, s.position) }))} className="flex-1 min-w-[100px]" />
+                      <span className="text-[10px]" style={{ ...mono, color: C.mute }}>{sectionCut.position.toFixed(1)} m</span>
+                    </>
+                  )}
+                </div>
+
+                {view3dMode === "casa" && (
+                  <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
+                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
+                  </Suspense>
+                )}
+                {view3dMode === "ambiente" && (() => {
+                  const room = rooms.find(r => r.id === view3dRoomId);
+                  if (!room) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Escolha um ambiente acima.</div>;
+                  const level = levels.find(l => l.name === room.level);
+                  const data = level ? levelToMetersForRoom(level, room) : null;
+                  if (!data) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Este ambiente ainda não tem um contorno desenhado. Vá ao Croqui, use a ferramenta "Ambiente" e feche o contorno vinculando a este nome.</div>;
+                  return (
+                    <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
+                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
+                    </Suspense>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
-        {tab === "croqui" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Modelo → Níveis para começar a desenhar.</div>}
 
         {tab === "modelo" && (
           <div>
             <div className="flex gap-1.5 mb-3 flex-wrap">
-              {[{ id: "elementos", label: "Elementos" }, { id: "pisos", label: "Pisos" }, { id: "coberturas", label: "Coberturas" }, { id: "niveis", label: "Níveis" }, { id: "3d", label: "3D" }].map(s => (
+              {[{ id: "elementos", label: "Elementos" }, { id: "pisos", label: "Pisos" }, { id: "coberturas", label: "Coberturas" }, { id: "niveis", label: "Níveis" }].map(s => (
                 <button key={s.id} onClick={() => setModeloSub(s.id)} className="px-2.5 py-1.5 rounded text-xs"
                   style={{ ...heading, fontWeight: 600, background: modeloSub === s.id ? C.goldTint : C.panelAlt, color: modeloSub === s.id ? C.gold : C.mute, border: `1px solid ${modeloSub === s.id ? "#FFFFFF" : C.line}` }}>
                   {s.label}
@@ -1189,81 +1282,6 @@ export default function PranchetaBIM() {
               </div>
             )}
 
-            {modeloSub === "3d" && (
-              <div>
-                <div className="flex gap-1.5 mb-3 flex-wrap">
-                  <button onClick={() => setView3dMode("casa")} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
-                    style={{ background: view3dMode === "casa" ? C.goldTint : C.panelAlt, color: view3dMode === "casa" ? C.gold : C.mute, border: `1px solid ${view3dMode === "casa" ? "#FFFFFF" : C.line}` }}>
-                    <Home size={12} /> Casa toda
-                  </button>
-                  <button onClick={() => setView3dMode("ambiente")} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
-                    style={{ background: view3dMode === "ambiente" ? C.goldTint : C.panelAlt, color: view3dMode === "ambiente" ? C.gold : C.mute, border: `1px solid ${view3dMode === "ambiente" ? "#FFFFFF" : C.line}` }}>
-                    <Box size={12} /> Este ambiente
-                  </button>
-                  {view3dMode === "ambiente" && (
-                    <select value={view3dRoomId || ""} onChange={e => setView3dRoomId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
-                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                      <option value="">Selecione um ambiente</option>
-                      {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  )}
-                  <button onClick={() => setView3dOpen(o => !o)} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs ml-auto"
-                    style={{ background: view3dOpen ? C.goldTint : C.panelAlt, color: view3dOpen ? C.gold : C.mute, border: `1px solid ${view3dOpen ? "#FFFFFF" : C.line}` }}>
-                    <DoorOpen size={12} /> {view3dOpen ? "Portas/janelas abertas" : "Portas/janelas fechadas"}
-                  </button>
-                </div>
-
-                {levels.some(l => (l.sketchElements || []).some(e => (e.type === "wall" || e.type === "door" || e.type === "window") && (e.demolir || e.construir))) && (
-                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                    <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vistas:</span>
-                    {PHASE_VIEWS.map(({ id, label }) => (
-                      <button key={id} onClick={() => setPhaseView3D(id)} className="px-2 py-1 rounded text-[10px]"
-                        style={{ ...heading, fontWeight: 600, background: phaseView3D === id ? C.goldTint : C.panelAlt, color: phaseView3D === id ? C.gold : C.mute, border: `1px solid ${phaseView3D === id ? C.gold : C.line}` }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
-                  <button onClick={() => setSectionCut(s => ({ ...s, enabled: !s.enabled }))} className="flex items-center gap-1 px-2 py-1.5 rounded text-xs"
-                    style={{ background: sectionCut.enabled ? C.goldTint : "transparent", color: sectionCut.enabled ? C.gold : C.mute, border: `1px solid ${sectionCut.enabled ? "#FFFFFF" : C.line}` }}>
-                    <Scissors size={12} /> Corte de seção
-                  </button>
-                  {sectionCut.enabled && (
-                    <>
-                      <select value={sectionCut.axis} onChange={e => setSectionCut(s => ({ ...s, axis: e.target.value }))} className="text-xs px-2 py-1 rounded"
-                        style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
-                        <option value="horizontal">Horizontal (planta em corte)</option>
-                        <option value="vertical-x">Vertical — eixo X</option>
-                        <option value="vertical-z">Vertical — eixo Z</option>
-                      </select>
-                      <input type="range" min={sectionCut.axis === "horizontal" ? -1 : -15} max="15" step="0.1" value={sectionCut.position}
-                        onChange={e => setSectionCut(s => ({ ...s, position: toNum(e.target.value, s.position) }))} className="flex-1 min-w-[100px]" />
-                      <span className="text-[10px]" style={{ ...mono, color: C.mute }}>{sectionCut.position.toFixed(1)} m</span>
-                    </>
-                  )}
-                </div>
-
-                {view3dMode === "casa" && (
-                  <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
-                  </Suspense>
-                )}
-                {view3dMode === "ambiente" && (() => {
-                  const room = rooms.find(r => r.id === view3dRoomId);
-                  if (!room) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Escolha um ambiente acima.</div>;
-                  const level = levels.find(l => l.name === room.level);
-                  const data = level ? levelToMetersForRoom(level, room) : null;
-                  if (!data) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Este ambiente ainda não tem um contorno desenhado. Vá ao Croqui, use a ferramenta "Ambiente" e feche o contorno vinculando a este nome.</div>;
-                  return (
-                    <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
-                    </Suspense>
-                  );
-                })()}
-              </div>
-            )}
           </div>
         )}
 

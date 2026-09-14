@@ -49,6 +49,6 @@ export const PHASE_VIEWS = [
   { id: "tudo", label: "Reforma" },
   { id: "existente", label: "Existente" },
   { id: "demolicao", label: "Demolição" },
-  { id: "novo", label: "Construção Nova" },
+  { id: "novo", label: "Nova" },
   { id: "final", label: "Final" },
 ];
