@@ -467,11 +467,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // that actually survive into that view instead of trusting the stored
   // polygon, the same flood-fill the "Ambiente" auto-trace tool itself
   // uses (traceEnclosedRoom), just seeded from each existing room instead
-  // of a single tap. Memoized: it's a real flood fill (up to 40000 cells
-  // each), not something to redo on every unrelated render while this
-  // view is open.
+  // of a single tap. "Construção Nova" reuses the very same recompute
+  // (below) filtered down to just the pieces that didn't keep an
+  // original room's identity — the two rooms a new wall carves out of one
+  // bigger room are exactly as "new" as the wall itself, even though part
+  // of their own boundary is old walls being kept. Memoized: it's a real
+  // flood fill (up to 40000 cells each), not something to redo on every
+  // unrelated render while either view is open.
   const finalRooms = useMemo(() => {
-    if (phaseView !== "final") return null;
+    if (phaseView !== "final" && phaseView !== "novo") return null;
     const storedRooms = elements.filter(e => e.type === "room");
     if (!storedRooms.length) return [];
     const finalWalls = elements.filter(e => e.type === "wall" && matchesPhaseView(e, "final")).map(w => ({
@@ -520,20 +524,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const keepsIdentity = original && Math.abs(f.area - toNum(original.area, 0)) < Math.max(0.05, toNum(original.area, 0) * 0.03);
       return keepsIdentity
         ? { ...original, points: f.points, area: f.area }
-        : { id: uid(), type: "room", points: f.points, area: f.area, roomId: null, name: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
+        : { id: uid(), type: "room", points: f.points, area: f.area, roomId: null, name: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir", isSplitNew: true };
     });
   }, [phaseView, elements, scale]);
   // "Construção Nova" shows only what's being newly built — an existing,
-  // untouched room still makes sense there (nothing about it is changing),
-  // but one a new wall actually cuts through is about to become a
-  // different room entirely once that wall goes up, so showing its old
-  // (soon to be wrong) outline and area next to the very wall that
-  // invalidates it is misleading. Simplest correct fix here: just don't
-  // show that room in this view — "Final" is what recomputes and displays
-  // its post-work shape instead.
+  // untouched room still makes sense in "Final" (nothing about it is
+  // changing) but not here, while a piece a new wall actually carved out
+  // of a bigger room (isSplitNew, from finalRooms above) belongs in both:
+  // it's a genuinely new space. "Existente"/"Demolição"/"Completo" still
+  // show the room as originally traced — the bigger, not-yet-split room
+  // is exactly what "Demolição" should show, since that configuration is
+  // what's going away.
   const roomsForRender = phaseView === "final" ? (finalRooms || [])
-    : phaseView === "novo" ? elements.filter(e => e.type === "room" && !elements.some(w => w.type === "wall" && matchesPhaseView(w, "novo")
-        && pointInPolygon({ x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 }, e.points)))
+    : phaseView === "novo" ? (finalRooms || []).filter(r => r.isSplitNew)
     : elements.filter(e => e.type === "room");
   // Estimated on-screen box of each room's name/area label (mirrors the
   // hitW/hitH math in the room-label render below) — used by the
