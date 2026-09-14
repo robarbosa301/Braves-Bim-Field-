@@ -9,7 +9,7 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
   return (
           <div>
             <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-              <div className="text-[11px] mb-2" style={{ color: C.mute }}>CARIMBO DO PROJETO (capa do PDF)</div>
+              <div className="text-[11px] mb-2" style={{ color: C.mute }}>CARIMBO DO PROJETO (aparece em todas as folhas do PDF)</div>
               <div className="space-y-2">
                 <input placeholder="Projetista / responsável técnico" value={buildingInfo?.projetista || ""}
                   onChange={e => onUpdateBuildingInfo({ projetista: e.target.value })}

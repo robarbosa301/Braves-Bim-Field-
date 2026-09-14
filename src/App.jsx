@@ -759,65 +759,44 @@ export default function PranchetaBIM() {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "mm", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
-      const margin = 15;
-      const addImagePage = (title, shot) => {
-        doc.addPage();
+      // frameMargin: inset of the outer sheet border, the way a printed
+      // "prancha" is framed. margin: inset of actual content from the page
+      // edge (bigger, so content never crowds the frame line). The carimbo
+      // sits flush in the frame's bottom-right corner on every sheet, so
+      // contentBottom carves out room for it — every sheet's drawable area
+      // stops above the carimbo strip, not just to its left, which keeps
+      // the layout simple and reliable across very different page types
+      // (a text page, a floor plan image, a 3D screenshot).
+      const frameMargin = 10, margin = 18;
+      const carimboW = 95, carimboH = 38;
+      const frameRight = pageW - frameMargin, frameBottom = pageH - frameMargin;
+      const carimboX = frameRight - carimboW, carimboY = frameBottom - carimboH;
+      const contentBottom = carimboY - 4;
+
+      // Content is generated first, page by page, without the frame/carimbo
+      // (so a page number and total can't be known yet mid-generation);
+      // sheetMeta records each page's title as it's created, and a final
+      // pass stamps the frame + carimbo (with the now-known "N/total") onto
+      // every page in one go.
+      const sheetMeta = [];
+      const beginSheet = title => { if (sheetMeta.length > 0) doc.addPage(); sheetMeta.push({ title }); };
+
+      const addImageSheet = (title, shot) => {
+        beginSheet(title);
         doc.setFontSize(13); doc.setTextColor(20);
         doc.text(title, margin, margin);
         doc.setDrawColor(215); doc.setLineWidth(0.3);
         doc.line(margin, margin + 3, pageW - margin, margin + 3);
-        const availW = pageW - margin * 2, availH = pageH - margin * 2 - 10;
+        const availW = pageW - margin * 2, availH = contentBottom - (margin + 8);
         const ratio = Math.min(availW / shot.width, availH / shot.height);
         const w = shot.width * ratio, h = shot.height * ratio;
         doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
-        // A light sheet border around the whole drawing area — the "prancha"
-        // frame technical drawings are expected to have, cheap to draw and
-        // reads a lot more like a deliverable than a bare screenshot.
-        doc.setDrawColor(225); doc.rect(margin, margin + 8, availW, availH);
       };
 
-      // ---- Página 1: capa / prancha com carimbo ----
-      let cy = margin;
-      if (buildingInfo?.logoDataUrl && buildingInfo.logoW && buildingInfo.logoH) {
-        const aspect = buildingInfo.logoW / buildingInfo.logoH;
-        let lw = 34, lh = lw / aspect;
-        if (lh > 20) { lh = 20; lw = lh * aspect; }
-        try { doc.addImage(buildingInfo.logoDataUrl, "PNG", margin, cy, lw, lh); } catch (e) {}
-      }
-      doc.setFontSize(9); doc.setTextColor(130);
-      doc.text("LEVANTAMENTO BIM DE CAMPO", pageW - margin, cy + 4, { align: "right" });
-      cy += 34;
-      doc.setFontSize(22); doc.setTextColor(20);
-      doc.text(buildingInfo?.name || "Levantamento BIM", margin, cy); cy += 9;
-      doc.setFontSize(11); doc.setTextColor(90);
-      doc.text(composeAddress(buildingInfo) || "Endereço não informado", margin, cy); cy += 6;
-      doc.text(`${buildingInfo?.type || "-"} · ${levels.length} nível(is) · gerado em ${new Date().toLocaleDateString("pt-BR")}`, margin, cy); cy += 10;
-      doc.setDrawColor(210); doc.setLineWidth(0.3); doc.line(margin, cy, pageW - margin, cy);
-
-      // Carimbo: a bordered title block at the foot of the cover sheet, the
-      // way a technical drawing set identifies the project, its responsible
-      // designer and issuing company on every sheet — here on the one cover
-      // sheet, since a field-survey PDF doesn't repeat it prancha by prancha.
-      const stampH = 40;
-      const stampY = pageH - margin - stampH;
-      const colW = (pageW - margin * 2) / 2;
-      doc.setDrawColor(40); doc.setLineWidth(0.4);
-      doc.rect(margin, stampY, pageW - margin * 2, stampH);
-      doc.line(margin + colW, stampY, margin + colW, stampY + stampH);
-      const leftX = margin + 4, rightX = margin + colW + 4;
-      const stampRow = (ly, leftLabel, leftVal, rightLabel, rightVal) => {
-        doc.setFontSize(7.5); doc.setTextColor(140);
-        doc.text(leftLabel, leftX, ly); doc.text(rightLabel, rightX, ly);
-        doc.setFontSize(10); doc.setTextColor(25);
-        doc.text(leftVal || "-", leftX, ly + 5); doc.text(rightVal || "-", rightX, ly + 5);
-      };
-      stampRow(stampY + 7, "PROJETO", buildingInfo?.name, "RESPONSÁVEL TÉCNICO", buildingInfo?.projetista);
-      stampRow(stampY + 19, "CÓDIGO DO PROJETO", session?.code, "REGISTRO (CREA/CAU)", buildingInfo?.projetistaRegistro);
-      stampRow(stampY + 31, "DATA", new Date().toLocaleDateString("pt-BR"), "EMPRESA", buildingInfo?.empresa);
-
-      // ---- Página 2: dados do levantamento ----
-      doc.addPage();
+      // ---- Página 1: dados do levantamento ----
+      beginSheet("Dados do levantamento");
       let y = margin;
+      doc.setFontSize(18); doc.setTextColor(20); doc.text(buildingInfo?.name || "Levantamento BIM", margin, y); y += 9;
       doc.setFontSize(10); doc.setTextColor(90);
       doc.text(`Código do projeto: ${session?.code || "-"}`, margin, y); y += 6;
       doc.text(`Endereço: ${composeAddress(buildingInfo) || "não informado"}`, margin, y); y += 6;
@@ -828,13 +807,13 @@ export default function PranchetaBIM() {
       doc.setFontSize(9); doc.setTextColor(60);
       if (!rooms.length) { doc.text("Nenhum ambiente lançado ainda.", margin, y); y += 6; }
       rooms.forEach(r => {
-        if (y > pageH - margin) { doc.addPage(); y = margin; }
+        if (y > contentBottom) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
         doc.text(`${r.name} — ${r.level} — ${r.area ? `${r.area} m²` : "área a definir"} — ${r.use || "sem uso definido"}`, margin, y);
         y += 5.5;
       });
 
       y += 4;
-      if (y > pageH - margin - 20) { doc.addPage(); y = margin; }
+      if (y > contentBottom - 20) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
       doc.setTextColor(20); doc.setFontSize(13); doc.text("Resumo por nível", margin, y); y += 7;
       doc.setFontSize(9); doc.setTextColor(60);
       levels.forEach(l => {
@@ -842,7 +821,7 @@ export default function PranchetaBIM() {
         const walls = els.filter(e => e.type === "wall").length;
         const doorsCount = els.filter(e => e.type === "door").length;
         const windowsCount = els.filter(e => e.type === "window").length;
-        if (y > pageH - margin) { doc.addPage(); y = margin; }
+        if (y > contentBottom) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
         doc.text(`${l.name} — cota ${toNum(l.elevation, 0)} m — ${walls} parede(s), ${doorsCount} porta(s), ${windowsCount} janela(s)`, margin, y);
         y += 5.5;
       });
@@ -857,7 +836,7 @@ export default function PranchetaBIM() {
         await sleep(550);
         const svgEl = document.querySelector('[data-croqui-svg="true"]');
         const shot = svgEl ? await svgToPngDataUrl(svgEl) : null;
-        if (shot) addImagePage(`Planta baixa — ${level.name}`, shot);
+        if (shot) addImageSheet(`Planta baixa — ${level.name}`, shot);
       }
 
       // ---- Modelo 3D (casa toda) ----
@@ -866,18 +845,73 @@ export default function PranchetaBIM() {
         await sleep(900);
         const canvasEl = document.querySelector('[data-threed-mount="true"] canvas');
         if (canvasEl && canvasEl.width && canvasEl.height) {
-          addImagePage("Modelo 3D", { dataUrl: canvasEl.toDataURL("image/png"), width: canvasEl.width, height: canvasEl.height });
+          addImageSheet("Modelo 3D", { dataUrl: canvasEl.toDataURL("image/png"), width: canvasEl.width, height: canvasEl.height });
         }
       }
 
-      // ---- Rodapé em todas as páginas: código do projeto + numeração ----
-      const totalPages = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8); doc.setTextColor(150);
-        doc.text(`${session?.code || ""} · ${buildingInfo?.name || ""}`, margin, pageH - 8);
-        doc.text(`${i}/${totalPages}`, pageW - margin, pageH - 8, { align: "right" });
-      }
+      // ---- Moldura + carimbo em todas as folhas ----
+      const total = sheetMeta.length;
+      const projetista = buildingInfo?.projetista
+        ? buildingInfo.projetista + (buildingInfo?.projetistaRegistro ? ` · ${buildingInfo.projetistaRegistro}` : "")
+        : "";
+      // The carimbo's cells are narrow and fixed-height — jsPDF's maxWidth
+      // wraps overflowing text onto a second line instead of clipping it,
+      // which then prints straight through the cell's bottom edge. Truncate
+      // to one line (at the current font size) instead of letting it wrap.
+      const oneLine = (text, maxW) => {
+        if (!text) return text;
+        if (doc.getTextWidth(text) <= maxW) return text;
+        let t = text;
+        while (t.length > 1 && doc.getTextWidth(t + "…") > maxW) t = t.slice(0, -1);
+        return t + "…";
+      };
+      sheetMeta.forEach((meta, i) => {
+        const num = i + 1;
+        doc.setPage(num);
+        doc.setDrawColor(60); doc.setLineWidth(0.5);
+        doc.rect(frameMargin, frameMargin, pageW - frameMargin * 2, pageH - frameMargin * 2);
+
+        doc.setFillColor(255, 255, 255);
+        doc.rect(carimboX, carimboY, carimboW, carimboH, "F");
+        doc.setDrawColor(40); doc.setLineWidth(0.4);
+        doc.rect(carimboX, carimboY, carimboW, carimboH);
+        const rowLogo = 12, rowTitle = 8, rowProj = 9, rowResp = carimboH - rowLogo - rowTitle - rowProj;
+        const halfW = carimboW / 2;
+        let ry = carimboY;
+        doc.line(carimboX, ry + rowLogo, carimboX + carimboW, ry + rowLogo);
+        if (buildingInfo?.logoDataUrl && buildingInfo.logoW && buildingInfo.logoH) {
+          const aspect = buildingInfo.logoW / buildingInfo.logoH;
+          let lh = rowLogo - 3, lw = lh * aspect;
+          if (lw > 26) { lw = 26; lh = lw / aspect; }
+          try { doc.addImage(buildingInfo.logoDataUrl, "PNG", carimboX + 2, ry + (rowLogo - lh) / 2, lw, lh); } catch (e) {}
+        }
+        doc.setFontSize(9.5); doc.setTextColor(20);
+        doc.text(oneLine(buildingInfo?.empresa || "BRAVES BIM FIELD", carimboW - 32), carimboX + 30, ry + rowLogo / 2 + 2.8);
+        ry += rowLogo;
+
+        doc.line(carimboX, ry + rowTitle, carimboX + carimboW, ry + rowTitle);
+        doc.setFontSize(8); doc.setTextColor(20);
+        doc.text(oneLine(meta.title, carimboW - 4), carimboX + 2, ry + rowTitle / 2 + 2.4);
+        ry += rowTitle;
+
+        doc.line(carimboX, ry + rowProj, carimboX + carimboW, ry + rowProj);
+        doc.line(carimboX + halfW, ry, carimboX + halfW, ry + rowProj);
+        doc.setFontSize(6.5); doc.setTextColor(130);
+        doc.text("PROJETO", carimboX + 2, ry + 3.3);
+        doc.text("CÓDIGO", carimboX + halfW + 2, ry + 3.3);
+        doc.setFontSize(7.5); doc.setTextColor(20);
+        doc.text(oneLine(buildingInfo?.name || "-", halfW - 4), carimboX + 2, ry + 7.5);
+        doc.text(oneLine(session?.code || "-", halfW - 4), carimboX + halfW + 2, ry + 7.5);
+        ry += rowProj;
+
+        doc.line(carimboX + halfW, ry, carimboX + halfW, ry + rowResp);
+        doc.setFontSize(6.5); doc.setTextColor(130);
+        doc.text("RESPONSÁVEL TÉCNICO", carimboX + 2, ry + 3.3);
+        doc.text("DATA · PRANCHA", carimboX + halfW + 2, ry + 3.3);
+        doc.setFontSize(7.5); doc.setTextColor(20);
+        doc.text(oneLine(projetista || "não informado", halfW - 4), carimboX + 2, ry + 7.5);
+        doc.text(oneLine(`${new Date().toLocaleDateString("pt-BR")} · ${num}/${total}`, halfW - 4), carimboX + halfW + 2, ry + 7.5);
+      });
 
       const safeName = (buildingInfo?.name || "levantamento_bim").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_");
       doc.save(`${safeName}.pdf`);
