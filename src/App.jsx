@@ -104,6 +104,40 @@ export function composeAddress(b) {
   const line2 = [b.neighborhood, b.city, b.state].filter(Boolean).join(", ");
   return [line1, line2].filter(Boolean).join(" — ");
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Rasterizes a live Croqui <svg> for the PDF export below — jsPDF can only
+// embed raster images (PNG/JPEG), not SVG markup directly. Drawing an
+// <img> of the serialized SVG onto a plain <canvas> is the standard way to
+// get from one to the other in a browser without a server round-trip; the
+// white fillRect first matters because the SVG's own background only
+// covers its own viewBox; the canvas outside a non-1:1 aspect ratio
+// wouldn't otherwise be initialized to anything but transparent black.
+function svgToPngDataUrl(svgEl, scale = 2) {
+  return new Promise(resolve => {
+    try {
+      const rect = svgEl.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width)), height = Math.max(1, Math.round(rect.height));
+      const clone = svgEl.cloneNode(true);
+      clone.setAttribute("width", width);
+      clone.setAttribute("height", height);
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const svgString = new XMLSerializer().serializeToString(clone);
+      const svg64 = btoa(unescape(encodeURIComponent(svgString)));
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = width * scale; canvas.height = height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve({ dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height });
+      };
+      img.onerror = () => resolve(null);
+      img.src = "data:image/svg+xml;base64," + svg64;
+    } catch (e) { resolve(null); }
+  });
+}
 async function upsertProjectIndex(code, meta) {
   const list = (await idbGet("projects-index")) || [];
   const next = [{ code, ...meta, updatedAt: Date.now() }, ...list.filter(p => p.code !== code)];
@@ -259,6 +293,7 @@ export default function PranchetaBIM() {
   const [view3dRoomId, setView3dRoomId] = useState(null);
   const [conn, setConn] = useState({ revit: false, cad: false });
   const [syncing, setSyncing] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
   const [log, setLog] = useState([]);
   const [peers, setPeers] = useState(1);
   const [photoThumbs, setPhotoThumbs] = useState({});
@@ -663,6 +698,96 @@ export default function PranchetaBIM() {
     rooms.forEach(r => r.floors.forEach(f => rows.push([r.name, f.tag, "Piso", f.type, `${f.area} m²`, f.condition, "", ""])));
     download("levantamento_elementos.csv", rows.map(r => r.join(";")).join("\n"), "text/csv");
     pushLog("Arquivo levantamento_elementos.csv exportado.", "info");
+  }
+  // Drives the actual Croqui/3D UI through each level and the whole-
+  // building 3D view to grab real screenshots, instead of re-implementing
+  // their rendering a second time just for print — briefly visible tab
+  // switching is the cost of reusing the exact same view the user already
+  // trusts, rather than a second drawing routine that could drift out of
+  // sync with it. Always restores whichever tab/level/3D mode the user was
+  // actually on, success or failure.
+  async function exportPDF() {
+    if (pdfExporting) return;
+    setPdfExporting(true);
+    const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId;
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const addImagePage = (title, shot) => {
+        doc.addPage();
+        doc.setFontSize(13); doc.setTextColor(20);
+        doc.text(title, margin, margin);
+        const availW = pageW - margin * 2, availH = pageH - margin * 2 - 10;
+        const ratio = Math.min(availW / shot.width, availH / shot.height);
+        const w = shot.width * ratio, h = shot.height * ratio;
+        doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
+      };
+
+      // ---- Página 1: dados do levantamento ----
+      let y = margin;
+      doc.setFontSize(18); doc.setTextColor(20); doc.text(buildingInfo?.name || "Levantamento BIM", margin, y); y += 9;
+      doc.setFontSize(10); doc.setTextColor(90);
+      doc.text(`Código do projeto: ${session?.code || "-"}`, margin, y); y += 6;
+      doc.text(`Endereço: ${composeAddress(buildingInfo) || "não informado"}`, margin, y); y += 6;
+      doc.text(`Tipo: ${buildingInfo?.type || "-"}  ·  Níveis: ${levels.length}`, margin, y); y += 6;
+      doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, margin, y); y += 10;
+
+      doc.setTextColor(20); doc.setFontSize(13); doc.text("Ambientes", margin, y); y += 7;
+      doc.setFontSize(9); doc.setTextColor(60);
+      if (!rooms.length) { doc.text("Nenhum ambiente lançado ainda.", margin, y); y += 6; }
+      rooms.forEach(r => {
+        if (y > pageH - margin) { doc.addPage(); y = margin; }
+        doc.text(`${r.name} — ${r.level} — ${r.area ? `${r.area} m²` : "área a definir"} — ${r.use || "sem uso definido"}`, margin, y);
+        y += 5.5;
+      });
+
+      y += 4;
+      if (y > pageH - margin - 20) { doc.addPage(); y = margin; }
+      doc.setTextColor(20); doc.setFontSize(13); doc.text("Resumo por nível", margin, y); y += 7;
+      doc.setFontSize(9); doc.setTextColor(60);
+      levels.forEach(l => {
+        const els = l.sketchElements || [];
+        const walls = els.filter(e => e.type === "wall").length;
+        const doorsCount = els.filter(e => e.type === "door").length;
+        const windowsCount = els.filter(e => e.type === "window").length;
+        if (y > pageH - margin) { doc.addPage(); y = margin; }
+        doc.text(`${l.name} — cota ${toNum(l.elevation, 0)} m — ${walls} parede(s), ${doorsCount} porta(s), ${windowsCount} janela(s)`, margin, y);
+        y += 5.5;
+      });
+
+      // ---- Plantas baixas: uma página por nível que já tem algo desenhado ----
+      for (const level of levels) {
+        const els = level.sketchElements || [];
+        if (!els.some(e => e.type === "wall")) continue;
+        setTab("croqui");
+        setCroquiLevelId(level.id);
+        await sleep(550);
+        const svgEl = document.querySelector('[data-croqui-svg="true"]');
+        const shot = svgEl ? await svgToPngDataUrl(svgEl) : null;
+        if (shot) addImagePage(`Planta baixa — ${level.name}`, shot);
+      }
+
+      // ---- Modelo 3D (casa toda) ----
+      if (levels.some(l => (l.sketchElements || []).some(e => e.type === "wall"))) {
+        setTab("modelo"); setModeloSub("3d"); setView3dMode("casa");
+        await sleep(900);
+        const canvasEl = document.querySelector('[data-threed-mount="true"] canvas');
+        if (canvasEl && canvasEl.width && canvasEl.height) {
+          addImagePage("Modelo 3D", { dataUrl: canvasEl.toDataURL("image/png"), width: canvasEl.width, height: canvasEl.height });
+        }
+      }
+
+      const safeName = (buildingInfo?.name || "levantamento_bim").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_");
+      doc.save(`${safeName}.pdf`);
+      pushLog("PDF do levantamento exportado.", "info");
+    } catch (e) {
+      pushLog("Não foi possível gerar o PDF.", "info");
+    } finally {
+      setTab(prevTab); setModeloSub(prevModeloSub); setView3dMode(prevView3dMode); setCroquiLevelId(prevCroquiLevelId);
+      setPdfExporting(false);
+    }
   }
 
   if (!session) return <JoinScreen onJoin={joinProject} />;
@@ -1122,7 +1247,7 @@ export default function PranchetaBIM() {
 
                 {view3dMode === "casa" && (
                   <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
+                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
                   </Suspense>
                 )}
                 {view3dMode === "ambiente" && (() => {
@@ -1143,7 +1268,7 @@ export default function PranchetaBIM() {
         )}
 
         {tab === "sync" && (
-          <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} log={log} />
+          <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} exportPDF={exportPDF} pdfExporting={pdfExporting} log={log} />
         )}
       </div>
 

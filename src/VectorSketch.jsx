@@ -1893,7 +1893,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       )}
 
-      <svg ref={svgRef} width="100%" height={dims.h} viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+      <svg ref={svgRef} data-croqui-svg="true" width="100%" height={dims.h} viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
         className="rounded-md touch-none" style={{ background: "#DCDCD8", border: "1px solid #C6C6C1", display: "block", touchAction: "none" }}
         onClick={handleTap} onWheel={onWheel}
         onTouchStart={onTouchStartCanvas} onTouchMove={onTouchMoveCanvas} onTouchEnd={onTouchEndCanvas}

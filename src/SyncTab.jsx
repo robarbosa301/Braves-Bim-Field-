@@ -1,13 +1,13 @@
-import { RefreshCw, FileJson, FileText, CheckCircle2 } from "lucide-react";
+import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2 } from "lucide-react";
 import { C, mono } from "./theme.js";
 
-// The Sincronização tab: manual sync trigger, JSON/CSV export, and the
+// The Sincronização tab: manual sync trigger, JSON/CSV/PDF export, and the
 // sync log — split out of App.jsx since it only needs these few pieces
 // of state/callbacks from the parent.
-export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, log }) {
+export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, exportPDF, pdfExporting, log }) {
   return (
           <div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="grid grid-cols-2 gap-2 mb-2">
               <button onClick={runSync} disabled={syncing}
                 className="py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
                 style={{ background: syncing ? C.panelAlt : C.gold, color: "#141311", opacity: syncing ? 0.7 : 1 }}>
@@ -22,6 +22,12 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, log }
                 </button>
               </div>
             </div>
+            <button onClick={exportPDF} disabled={pdfExporting}
+              className="w-full py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3"
+              style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}`, opacity: pdfExporting ? 0.7 : 1 }}>
+              <FileDown size={15} color={C.gold} className={pdfExporting ? "animate-pulse" : ""} />
+              {pdfExporting ? "Gerando PDF (planta + 3D)…" : "Exportar PDF (planta + 3D + dados)"}
+            </button>
             <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
               <div className="text-[11px] mb-2" style={{ color: C.mute }}>REGISTRO DE SINCRONIZAÇÃO</div>
               <div className="space-y-1.5 max-h-72 overflow-y-auto">

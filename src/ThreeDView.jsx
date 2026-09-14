@@ -80,7 +80,7 @@ function wallFaceMaterial(finish, color, segLen, segH) {
 }
 
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
-export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut, phaseView = "tudo" }) {
+export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
   const mountRef = useRef(null);
   const [ok, setOk] = useState(true);
   const [empty, setEmpty] = useState(false);
@@ -104,7 +104,12 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
     const cleanupFns = [];
     try {
       const width = mount.clientWidth || 320, height = 340;
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      // preserveDrawingBuffer: without it, the browser is free to clear the
+      // WebGL drawing buffer right after compositing each frame — reading
+      // it back later via canvas.toDataURL() (the PDF export's 3D
+      // snapshot) then comes back blank, even though the canvas visibly
+      // shows the scene on screen the whole time.
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.localClippingEnabled = true;
@@ -437,7 +442,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
   if (emptyPhase) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Nada marcado para essa vista ainda.</div>;
   return (
     <div>
-      <div ref={mountRef} style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880" }} />
+      <div ref={mountRef} data-threed-mount={exportMarker ? "true" : undefined} style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880" }} />
       <p className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>
     </div>
   );
