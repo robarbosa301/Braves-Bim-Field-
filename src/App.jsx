@@ -527,6 +527,18 @@ export default function PranchetaBIM() {
   }
 
   function updateLevelSketch(levelId, newElements, newScale) {
+    // A room in the "Ambientes" tab only exists because some polygon in the
+    // Croqui is linked to it via roomId — deleting that polygon there (one
+    // at a time, or via "Tudo"/undo wiping the whole level) used to leave
+    // the Ambientes entry behind as a ghost with no drawing backing it.
+    // Diffing the roomIds present before and after every sketch change
+    // catches every deletion path in one place instead of patching each
+    // one in VectorSketch individually.
+    const level = levels.find(l => l.id === levelId);
+    const oldRoomIds = new Set((level?.sketchElements || []).filter(e => e.type === "room" && e.roomId).map(e => e.roomId));
+    const newRoomIds = new Set(newElements.filter(e => e.type === "room" && e.roomId).map(e => e.roomId));
+    const removedRoomIds = [...oldRoomIds].filter(id => !newRoomIds.has(id));
+    if (removedRoomIds.length) updateRooms(rs => rs.filter(r => !removedRoomIds.includes(r.id)));
     updateLevels(ls => ls.map(l => l.id === levelId ? { ...l, sketchElements: newElements, sketchScale: newScale ?? l.sketchScale } : l));
   }
   function updateLevelMeta(levelId, patch) {
@@ -538,7 +550,12 @@ export default function PranchetaBIM() {
     const poly = (level.sketchElements || []).find(e => e.id === elementId);
     if (!poly) return;
     if (!trimmed) {
+      // Clearing the name unlinks the polygon from its room — with nothing
+      // left pointing at it, keep the Ambientes list from carrying it as an
+      // orphan entry too.
+      const oldRoomId = poly.roomId;
       updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.map(e => e.id === elementId ? { ...e, name: undefined, roomId: null } : e) }));
+      if (oldRoomId) updateRooms(rs => rs.filter(r => r.id !== oldRoomId));
       return;
     }
     const existing = rooms.find(r => r.level === level.name && r.name.toLowerCase() === trimmed.toLowerCase() && r.id !== poly.roomId);
