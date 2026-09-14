@@ -196,12 +196,14 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           // (and same colors), two views.
           const demolirMat = () => new THREE.MeshStandardMaterial({ color: 0xC1543F, roughness: 0.6, transparent: true, opacity: 0.5 });
           const construirMat = () => new THREE.MeshStandardMaterial({ color: 0x6B9C5A, roughness: 0.6, transparent: true, opacity: 0.5 });
-          // "Final" is the finished result — kept and new should look
-          // identical there, same as the Croqui's own "Final" view, so it
-          // never applies this red/green flagging (everything demolir-
-          // marked is already excluded from levelWalls for this view).
-          const wDemolir = w.demolir && phaseView !== "final";
-          const wConstruir = w.construir && phaseView !== "final";
+          // "Final" (kept and new should look identical, same as the
+          // Croqui's own "Final" view) and "Existente" (what's standing
+          // today, drawn plainly — a wall due to come down still belongs
+          // here, just not singled out) both skip this red/green flagging.
+          // Everything demolir-marked is already excluded from levelWalls
+          // for "Final".
+          const wDemolir = w.demolir && phaseView !== "final" && phaseView !== "existente";
+          const wConstruir = w.construir && phaseView !== "final" && phaseView !== "existente";
           const matNeutral = wDemolir ? demolirMat() : wConstruir ? construirMat() : new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.9 });
           segs.forEach(seg => {
             const segLen = seg.end - seg.start, segH = seg.yTop - seg.yBottom;
@@ -235,8 +237,8 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
             const gap = Math.min(0.03, panelWidth * 0.08);
             const isSliding = /correr/i.test(o.doorType || o.windowType || "");
             const isDoorKind = o.kind === "door";
-            const oDemolir = o.demolir && phaseView !== "final";
-            const oConstruir = o.construir && phaseView !== "final";
+            const oDemolir = o.demolir && phaseView !== "final" && phaseView !== "existente";
+            const oConstruir = o.construir && phaseView !== "final" && phaseView !== "existente";
             const color = oDemolir ? 0xC1543F : oConstruir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
             const matOpts = (oDemolir || oConstruir)
               ? { roughness: 0.6, transparent: true, opacity: 0.5 }

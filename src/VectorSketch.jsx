@@ -472,13 +472,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // to switch between; a plain new-build project never sees it.
   const hasPhaseElements = elements.some(e => (e.type === "wall" || e.type === "door" || e.type === "window" || e.type === "stair") && (e.demolir || e.construir));
   const phaseVisible = el => phaseView === "tudo" || matchesPhaseView(el, phaseView);
-  // The "Final" view is the finished result — what's kept and what's new
-  // should look identical there (nothing left to tell apart once the work
-  // is done), so it never applies the demolir/construir color coding the
-  // other views use to flag what's changing. Everything demolir-marked is
-  // already hidden from this view by phaseVisible above, so the only color
-  // this actually needs to suppress is construir's green highlight.
-  const phaseStyleColor = el => (phaseView === "final" ? null : phaseColor(el));
+  // "Final" (what's kept and what's new should look identical, nothing
+  // left to tell apart once the work is done) and "Existente" (what's
+  // standing today, drawn plainly — a wall due to come down still belongs
+  // here, just not singled out; that's the Demolição view's job) both skip
+  // the demolir/construir color coding the other views use to flag what's
+  // changing. Everything demolir-marked is already hidden from "Final" by
+  // phaseVisible above, so the only color it actually needs to suppress is
+  // construir's green highlight.
+  const phaseStyleColor = el => (phaseView === "final" || phaseView === "existente" ? null : phaseColor(el));
   // In "Final", a room's actual shape can differ from what was traced —
   // a new dividing wall splits it, a torn-down one merges it with a
   // neighbor — so this recomputes every room's footprint from the walls
@@ -2066,6 +2068,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <pattern id={`grid-${level.id}`} width={GRID} height={GRID} patternUnits="userSpaceOnUse">
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
           </pattern>
+          {/* Diagonal hachura for a room's own floor fill in the Demolição/
+              Nova views — the same red/green a demolir/construir wall
+              already gets, so the whole affected room reads as clearly
+              "going away" or "brand new" as the wall marking it does,
+              instead of sitting there in its usual neutral gray. */}
+          <pattern id={`hatch-demolir-${level.id}`} width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="7" stroke={C.bad} strokeWidth="2" opacity="0.55" />
+          </pattern>
+          <pattern id={`hatch-construir-${level.id}`} width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="7" stroke={C.good} strokeWidth="2" opacity="0.55" />
+          </pattern>
         </defs>
         {/* Everything the sheet actually contains lives inside this one
             group so a three-finger twist (see onTouchMoveCanvas) can spin
@@ -2093,9 +2106,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const isSel = selectedId === el.id;
           const longest = Math.max(...lines.map(l => l.length), String(el.area).length + 3);
           const hitW = longest * 5.6 + 10, hitH = totalLines * lineHeight + 8;
+          // Demolição/Nova show every room already scoped to that phase
+          // (roomsForRender), so tinting the fill and outline to match the
+          // wall's own red/green needs no extra per-room check here.
+          const roomHatch = phaseView === "demolicao" ? `url(#hatch-demolir-${level.id})`
+            : phaseView === "novo" ? `url(#hatch-construir-${level.id})` : null;
+          const roomOutline = phaseView === "demolicao" ? C.bad : phaseView === "novo" ? C.good : "#4A4A46";
           return (
             <g key={el.id}>
-              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill="rgba(0,0,0,0.06)" stroke={isSel ? "#726F68" : "#4A4A46"} strokeWidth={isSel ? 2.5 : 1.5} />
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={roomHatch || "rgba(0,0,0,0.06)"} stroke={isSel ? "#726F68" : roomOutline} strokeWidth={isSel ? 2.5 : 1.5} />
               {/* "Final" recomputes rooms fresh on every render (see
                   finalRooms above) — its shapes are a read-only projection,
                   not something stored to drag/rename; a click here just
