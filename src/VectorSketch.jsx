@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useMemo } from "react";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
@@ -429,6 +429,75 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // to switch between; a plain new-build project never sees it.
   const hasPhaseElements = elements.some(e => (e.type === "wall" || e.type === "door" || e.type === "window" || e.type === "stair") && (e.demolir || e.construir));
   const phaseVisible = el => phaseView === "tudo" || matchesPhaseView(el, phaseView);
+  // The "Final" view is the finished result — what's kept and what's new
+  // should look identical there (nothing left to tell apart once the work
+  // is done), so it never applies the demolir/construir color coding the
+  // other views use to flag what's changing. Everything demolir-marked is
+  // already hidden from this view by phaseVisible above, so the only color
+  // this actually needs to suppress is construir's green highlight.
+  const phaseStyleColor = el => (phaseView === "final" ? null : phaseColor(el));
+  // In "Final", a room's actual shape can differ from what was traced —
+  // a new dividing wall splits it, a torn-down one merges it with a
+  // neighbor — so this recomputes every room's footprint from the walls
+  // that actually survive into that view instead of trusting the stored
+  // polygon, the same flood-fill the "Ambiente" auto-trace tool itself
+  // uses (traceEnclosedRoom), just seeded from each existing room instead
+  // of a single tap. Memoized: it's a real flood fill (up to 40000 cells
+  // each), not something to redo on every unrelated render while this
+  // view is open.
+  const finalRooms = useMemo(() => {
+    if (phaseView !== "final") return null;
+    const storedRooms = elements.filter(e => e.type === "room");
+    if (!storedRooms.length) return [];
+    const finalWalls = elements.filter(e => e.type === "wall" && matchesPhaseView(e, "final")).map(w => ({
+      x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
+      halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
+    }));
+    const found = []; // { points, area, sourceRoomIds: Set }
+    storedRooms.forEach(room => {
+      const centroid = polygonCentroid(room.points);
+      // A probe at the centroid alone misses an L-shaped (or otherwise
+      // non-convex) room whose centroid falls outside its own polygon, or
+      // lands exactly on a wall that now splits it — the midpoint toward
+      // each vertex is still inside the original room and gives every
+      // resulting piece its own seed even then.
+      const seeds = [centroid, ...room.points.map(pt => ({ x: (centroid.x + pt.x) / 2, y: (centroid.y + pt.y) / 2 }))];
+      seeds.forEach(p => {
+        if (!pointInPolygon(p, room.points)) return;
+        if (found.some(f => pointInPolygon(p, f.points))) return;
+        const traced = traceEnclosedRoom(finalWalls, p, GRID, scale);
+        if (!traced) return;
+        let area2 = 0;
+        for (let i = 0; i < traced.length; i++) {
+          const a = traced[i], b = traced[(i + 1) % traced.length];
+          area2 += a.x * b.y - b.x * a.y;
+        }
+        area2 = Math.abs(area2 / 2);
+        const areaM2 = +((area2 / (GRID * GRID)) * scale * scale).toFixed(2);
+        found.push({ points: traced, area: areaM2, sourceRoomIds: new Set([room.id]) });
+      });
+    });
+    // A region more than one original room's centroid lands inside (two
+    // rooms merged once the wall between them is gone) picks up every
+    // one of those ids instead of being traced — and shown — twice.
+    storedRooms.forEach(room => {
+      const centroid = polygonCentroid(room.points);
+      const region = found.find(f => pointInPolygon(centroid, f.points));
+      if (region) region.sourceRoomIds.add(room.id);
+    });
+    return found.map(f => {
+      const singleId = f.sourceRoomIds.size === 1 ? [...f.sourceRoomIds][0] : null;
+      const original = singleId ? storedRooms.find(r => r.id === singleId) : null;
+      // Keep the original room's name/id only when this region's area
+      // still closely matches it — a real split or merge falls back to
+      // unnamed, same as a freshly traced room, rather than keeping a
+      // name that no longer describes the actual space.
+      const keepsIdentity = original && Math.abs(f.area - toNum(original.area, 0)) < Math.max(0.05, toNum(original.area, 0) * 0.03);
+      return keepsIdentity
+        ? { ...original, points: f.points, area: f.area }
+        : { id: uid(), type: "room", points: f.points, area: f.area, roomId: null, name: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
+    });
+  }, [phaseView, elements, scale]);
   // Estimated on-screen box of each room's name/area label (mirrors the
   // hitW/hitH math in the room-label render below) — used by the
   // parallel-wall dimension labels to steer clear of it. For a rectangular
@@ -436,7 +505,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // room's two facing-wall dimension lines cross too, so without this the
   // room name and the "x.xx m" figure land on top of each other and both
   // become unreadable.
-  const roomLabelBoxes = elements.filter(e => e.type === "room").map(el => {
+  const roomLabelBoxes = (phaseView === "final" ? finalRooms || [] : elements.filter(e => e.type === "room")).map(el => {
     const centroid = polygonCentroid(el.points);
     const lines = wrapTextLines(el.name || "Ambiente sem nome", 14);
     const totalLines = lines.length + 1;
@@ -639,6 +708,28 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     });
     return best;
   }
+  // Like findNearbyEndpoint, but for meeting another wall mid-span (a
+  // T-junction) instead of only at its two corners — a new dividing wall
+  // almost never gets tapped exactly onto the target wall's line, and
+  // without this it fell back to the plain grid snap, which only lines up
+  // by coincidence: a wall whose own position came from a typed length or
+  // a free drag (both happen elsewhere in this file) isn't necessarily on
+  // a grid line at all, so the gap or overshoot this was leaving behind
+  // was persistent, not just an unlucky tap. Same screen-pixel tolerance
+  // and null-when-nothing-close contract as findNearbyEndpoint.
+  function findNearbyWallPoint(p, excludeWallId) {
+    const screenPxTolerance = 14;
+    const TOL = screenPxTolerance * (viewBox.w / dims.w);
+    let best = null, bestD = TOL;
+    elements.forEach(e => {
+      if (e.type !== "wall") return;
+      if (e.id === excludeWallId) return;
+      const proj = projectPointOnSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
+      const d = dist(p, proj);
+      if (d < bestD) { bestD = d; best = proj; }
+    });
+    return best;
+  }
   // Snaps freePt's angle relative to fixedPt to the nearest 45° step
   // whenever it's already close — the same "ortho" nudge any CAD sketch
   // tool needs, since a freehand drag on a touchscreen essentially never
@@ -696,11 +787,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     let p = rawP;
     if (tool === "parede" || tool === "escada" || tool === "ambiente") {
       const endpointHit = findNearbyEndpoint(rawP, null);
-      p = endpointHit || { x: snap(rawP.x), y: snap(rawP.y) };
+      const wallLineHit = !endpointHit && (tool === "parede" || tool === "escada") ? findNearbyWallPoint(rawP, null) : null;
+      p = endpointHit || wallLineHit || { x: snap(rawP.x), y: snap(rawP.y) };
       // A freehand second tap almost never lands on an exact 0/45/90°
       // angle from the first point — nudge it there when it's already
       // close, so walls stay orthogonal instead of drifting off-angle.
-      if (!endpointHit && pending && (tool === "parede" || tool === "escada")) p = angleSnap(pending, p);
+      // Skipped once a T-junction snap already placed the point exactly
+      // on the target wall's own line — angle-snapping it from there
+      // could pull it right back off that wall.
+      if (!endpointHit && !wallLineHit && pending && (tool === "parede" || tool === "escada")) p = angleSnap(pending, p);
     }
 
     if (tool === "selecionar") { const hit = findAt(p); setSelectedId(hit ? hit.id : null); return; }
@@ -1431,8 +1526,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       // point straight back and make it impossible to ever straighten.
       const linkedIds = new Set(linked.map(l => l.id));
       const hit = w && findNearbyEndpoint(p, dragSession.id, linkedIds);
-      let sp = hit || { x: snap(p.x), y: snap(p.y) };
-      if (!hit && w) {
+      const wallLineHit = !hit && w && findNearbyWallPoint(p, dragSession.id);
+      let sp = hit || wallLineHit || { x: snap(p.x), y: snap(p.y) };
+      if (!hit && !wallLineHit && w) {
         const fixedPt = dragSession.which === "start" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
         sp = angleSnap(fixedPt, sp);
       }
@@ -1630,7 +1726,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
       {hasPhaseElements && (
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vista:</span>
+          <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Reforma:</span>
           {PHASE_VIEWS.map(({ id, label }) => (
             <button key={id} onClick={() => setPhaseView(id)} className="px-2 py-1 rounded text-[10px]"
               style={{ ...heading, fontWeight: 600, background: phaseView === id ? C.goldTint : C.panelAlt, color: phaseView === id ? C.gold : C.mute, border: `1px solid ${phaseView === id ? C.gold : C.line}` }}>
@@ -1772,7 +1868,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {showBelow && ghostLevel(belowLevel, "#8A8880")}
         {showAbove && ghostLevel(aboveLevel, "#4A4A46")}
 
-        {planMode === "piso" && elements.filter(el => el.type === "room").map(el => {
+        {planMode === "piso" && (phaseView === "final" ? finalRooms : elements.filter(el => el.type === "room")).map(el => {
           const centroid = polygonCentroid(el.points);
           const lines = wrapTextLines(el.name || "Ambiente sem nome", 14);
           const totalLines = lines.length + 1;
@@ -1787,7 +1883,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           return (
             <g key={el.id}>
               <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill="rgba(0,0,0,0.06)" stroke={isSel ? "#726F68" : "#4A4A46"} strokeWidth={isSel ? 2.5 : 1.5} />
-              <g style={{ cursor: "move" }} onMouseDown={e => startLabelDrag(el, e)} onTouchStart={e => startLabelDrag(el, e)} transform={rot ? `rotate(${rot} ${lx} ${ly})` : undefined}>
+              {/* "Final" recomputes rooms fresh on every render (see
+                  finalRooms above) — its shapes are a read-only projection,
+                  not something stored to drag/rename; a click here just
+                  wouldn't go anywhere. */}
+              <g style={{ cursor: phaseView === "final" ? "default" : "move" }}
+                onMouseDown={phaseView === "final" ? undefined : (e => startLabelDrag(el, e))}
+                onTouchStart={phaseView === "final" ? undefined : (e => startLabelDrag(el, e))}
+                transform={rot ? `rotate(${rot} ${lx} ${ly})` : undefined}>
                 <rect x={lx - hitW / 2} y={ly - hitH / 2} width={hitW} height={hitH} fill="rgba(255,255,255,0.001)" />
                 {lines.map((ln, i) => <text key={i} x={lx} y={topY + i * lineHeight} fontSize="10" fontWeight="600" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>{ln}</text>)}
                 <text x={lx} y={topY + lines.length * lineHeight} fontSize="9" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>{el.area} m²</text>
@@ -1820,8 +1923,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={selectedId === el.id ? "#726F68" : phaseColor(el) || "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={phaseColor(el) ? "7,5" : undefined}
+              stroke={selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
@@ -1849,7 +1952,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               const off = wallLabelOffset(el, nearCenter ? 18 : 0);
               const { x: lx, y: ly } = clampOffsetToView(midX, midY, off.x, off.y);
               return (
-                <text x={lx} y={ly} fontSize="10" fill={phaseColor(el) || "#6b6660"} textAnchor="middle"
+                <text x={lx} y={ly} fontSize="10" fill={phaseStyleColor(el) || "#6b6660"} textAnchor="middle"
                   transform={`rotate(${angleDeg} ${lx} ${ly})`}
                   style={{ pointerEvents: canEdit ? "auto" : "none", cursor: canEdit ? "pointer" : undefined }}
                   onClick={canEdit ? (e => { e.stopPropagation(); setEditingWallLen({ wallId: el.id, value: el.length }); }) : undefined}>
@@ -2032,9 +2135,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <rect x={el.x - widthPx / 2 - 4} y={el.y - 14} width={widthPx + 8} height={28} fill="rgba(0,0,0,0.001)"
                 style={{ cursor: tool === "selecionar" ? "grab" : "default" }} onMouseDown={e => beginDragOpening(el, e)} onTouchStart={e => beginDragOpening(el, e)} />
               <rect x={el.x - widthPx / 2} y={el.y - 3.5} width={widthPx} height={7}
-                fill={el.demolir ? "rgba(193,84,63,0.35)" : el.construir ? "rgba(107,156,90,0.35)" : (isDoor ? "#4A4A46" : "#B9B6AE")}
-                stroke={isSel ? "#726F68" : phaseColor(el) || "#1B1E1A"} strokeWidth={isSel ? 2.5 : 1}
-                strokeDasharray={phaseColor(el) ? "3,2" : undefined}
+                fill={phaseView !== "final" && el.demolir ? "rgba(193,84,63,0.35)" : phaseView !== "final" && el.construir ? "rgba(107,156,90,0.35)" : (isDoor ? "#4A4A46" : "#B9B6AE")}
+                stroke={isSel ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"} strokeWidth={isSel ? 2.5 : 1}
+                strokeDasharray={phaseStyleColor(el) ? "3,2" : undefined}
                 opacity={isDoor ? 1 : 0.85}
                 style={{ pointerEvents: "none" }} />
               {Array.from({ length: panels - 1 }).map((_, i) => (
@@ -2042,7 +2145,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 14})`}>{el.width}×{el.height} · {panels}f</text>
+              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseStyleColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 14})`}>{el.width}×{el.height} · {panels}f</text>
             </g>
           );
         })}

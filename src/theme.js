@@ -32,7 +32,7 @@ export function phaseColor(el) {
   return null;
 }
 // Whether an element belongs on screen in one of the Croqui's four
-// "Vistas" (reforma project views) — each shows only the elements that
+// "Reforma" (renovation project) views — each shows only the elements that
 // actually exist at that stage of the work: what's there today (kept AND
 // about to be torn down), what's being torn down, what's brand new, and
 // what the finished result looks like. "tudo" (the default, no filter) is
@@ -46,9 +46,9 @@ export function matchesPhaseView(el, view) {
   return true;
 }
 export const PHASE_VIEWS = [
-  { id: "tudo", label: "Tudo" },
-  { id: "existente", label: "Construção Existente" },
+  { id: "tudo", label: "Completo" },
+  { id: "existente", label: "Existente" },
   { id: "demolicao", label: "Demolição" },
   { id: "novo", label: "Construção Nova" },
-  { id: "final", label: "Projeto Final" },
+  { id: "final", label: "Final" },
 ];
