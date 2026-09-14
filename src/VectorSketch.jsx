@@ -1016,7 +1016,26 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         return { ...e, x: nx, y: ny };
       }));
       if (lastXY) ensureVisible(lastXY.x, lastXY.y);
+    } else if (opens.length) {
+      // Trailing gap, from the last opening to the wall's far end — grow
+      // or shrink it by moving that last opening away from/toward the
+      // end, mirroring the leading-gap case above, instead of resizing
+      // the wall itself (which would change the room's overall size just
+      // to nudge one door's position).
+      const last = opens[opens.length - 1];
+      const prevEnd = opens.length > 1 ? opens[opens.length - 2].pos + opens[opens.length - 2].halfW : startInset;
+      const minPos = prevEnd + last.halfW + 2;
+      const maxPos = (len - endInset) - last.halfW - 2;
+      const newPos = Math.max(minPos, Math.min(maxPos, last.pos - rawDelta));
+      const posDelta = newPos - last.pos;
+      if (Math.abs(posDelta) >= 0.01) {
+        const nx = last.x + ux * posDelta, ny = last.y + uy * posDelta;
+        commitElements(elements.map(e => e.id === last.id ? { ...e, x: nx, y: ny } : e));
+        ensureVisible(nx, ny);
+      }
     } else {
+      // No openings at all on this wall — nothing to move, so this "gap"
+      // is just the wall's own usable length; fall back to resizing it.
       const minLen = cursor + endInset + 2;
       const newLen = Math.max(minLen, len + rawDelta);
       const newX2 = w.x1 + ux * newLen, newY2 = w.y1 + uy * newLen;
@@ -1435,6 +1454,23 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (deg > 90 || deg < -90) deg += 180;
     return deg;
   }
+  // Pulls a label back toward its anchor (along the same push direction,
+  // never sideways) just enough that it clears the fitted view's edge —
+  // for an outer wall, wallLabelOffset always pushes its length label
+  // AWAY from the room, which is also the direction of the sketch's own
+  // fitted boundary, so a merged "x.xx m · w×h · Nf" tag on a wall close
+  // to that boundary can end up sitting right against it. Scaling the
+  // offset back (rather than moving the fit box) fixes just that label
+  // without zooming the whole drawing out.
+  function clampOffsetToView(baseX, baseY, offX, offY) {
+    const MARGIN = 10;
+    let k = 1;
+    if (offX > 0) k = Math.min(k, Math.max(0, (viewBox.x + viewBox.w - MARGIN - baseX) / offX));
+    else if (offX < 0) k = Math.min(k, Math.max(0, (baseX - (viewBox.x + MARGIN)) / -offX));
+    if (offY > 0) k = Math.min(k, Math.max(0, (viewBox.y + viewBox.h - MARGIN - baseY) / offY));
+    else if (offY < 0) k = Math.min(k, Math.max(0, (baseY - (viewBox.y + MARGIN)) / -offY));
+    return { x: baseX + offX * k, y: baseY + offY * k };
+  }
   // How far (and to which side) a wall's own length label sits off the
   // wall line — pushed away from the rough centroid of all the walls
   // being sketched, so a label on any side of a shape (top, bottom, left,
@@ -1789,7 +1825,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 .filter(x => Math.abs(x.p - wlen * 0.5) < 45)
                 .sort((a, b) => Math.abs(a.p - wlen * 0.5) - Math.abs(b.p - wlen * 0.5))[0];
               const off = wallLabelOffset(el, 0);
-              const lx = midX + off.x, ly = midY + off.y;
+              const { x: lx, y: ly } = clampOffsetToView(midX, midY, off.x, off.y);
               const mergedTag = nearCenter
                 ? ` · ${nearCenter.o.width}×${nearCenter.o.height} · ${Math.max(1, Math.round(toNum(nearCenter.o.panels, nearCenter.o.type === "door" ? 1 : 2)))}f`
                 : "";
