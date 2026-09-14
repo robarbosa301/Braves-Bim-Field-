@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink,
+  Expand, Shrink, Box,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView, PHASE_VIEWS } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -412,7 +412,7 @@ function trimWallsToCorner(a, b) {
   };
 }
 
-export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false }) {
+export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD }) {
   const svgRef = useRef(null);
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
@@ -1945,6 +1945,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <button onClick={() => setFullscreen(f => !f)} title={fullscreen ? "Sair da tela cheia" : "Tela cheia"} className="p-1.5 rounded" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
             {fullscreen ? <Shrink size={13} color={C.chalk} /> : <Expand size={13} color={C.chalk} />}
           </button>
+          {/* Only in fullscreen: a straight shortcut into the 3D view,
+              since the normal "Planta 2D / 3D" toggle lives in App.jsx,
+              above this whole panel — out of sight once this is floating
+              in its own full-viewport portal. Jumping to 3D still leaves
+              tela cheia (the 3D view doesn't have its own fullscreen mode
+              yet), landing back on that same normal toggle to return. */}
+          {fullscreen && onOpenThreeD && (
+            <button onClick={() => { setFullscreen(false); onOpenThreeD(); }} title="Ver em 3D"
+              className="px-2 py-1.5 rounded flex items-center gap-1 text-[10px]" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+              <Box size={13} color={C.chalk} /> 3D
+            </button>
+          )}
         </div>
       </div>
 
