@@ -31,6 +31,25 @@ function BlueprintIntro() {
   );
 }
 
+// "BRAVES BIM FIELD", revealed one letter at a time (fade + rise, staggered
+// a beat apart via each span's own animationDelay) right as the logo
+// finishes rising — quicker and less dated than a typewriter effect with a
+// blinking cursor. aria-hidden on the letters plus an aria-label on the
+// wrapper keeps a screen reader from spelling the title out character by
+// character.
+const TITLE = "BRAVES BIM FIELD";
+function AnimatedTitle() {
+  return (
+    <span aria-label={TITLE}>
+      {TITLE.split("").map((ch, i) => (
+        <span key={i} className="braves-letter" aria-hidden="true" style={{ animationDelay: `${0.95 + i * 0.018}s` }}>
+          {ch === " " ? " " : ch}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 // The app's start screen (device role, new vs. join project) and, once
 // starting a new project, its building-info step — split out of App.jsx
 // since it only needs the onJoin callback from the parent.
@@ -158,10 +177,7 @@ export default function JoinScreen({ onJoin }) {
           <img src={SYMBOL_LOGO} alt="Braves BIM Field" className="braves-logo-build" style={{ height: 132, width: "auto" }} />
           <div className="text-center">
             <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>
-              <span className="braves-text-write-wrap">
-                <span className="braves-text-write">BRAVES BIM FIELD</span>
-                <span className="braves-text-cursor" />
-              </span>
+              <AnimatedTitle />
             </div>
             <div className="text-[11px] mt-1.5" style={{ color: C.mute, letterSpacing: "0.18em" }}>PROJETOS E CONSTRUÇÕES EFICIENTES</div>
           </div>
