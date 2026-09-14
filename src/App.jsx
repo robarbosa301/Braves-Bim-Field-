@@ -162,6 +162,34 @@ function resizeLogoFile(file, maxW = 360) {
     reader.readAsDataURL(file);
   });
 }
+// Geocodes the project's address (free, keyless — Nominatim/OpenStreetMap)
+// and, if the user has pasted a Geoapify key, fetches a small static map
+// centered on it for the PDF's "planta de situação". Fails silently (a
+// missing/invalid key or address, a network hiccup) — this is a nice-to-have
+// on the PDF, never worth blocking the export the user actually asked for.
+const SITE_MAP_W = 520, SITE_MAP_H = 360;
+async function fetchSiteMapDataUrl(address, apiKey) {
+  if (!address || !apiKey) return null;
+  try {
+    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`);
+    if (!geoRes.ok) return null;
+    const geoData = await geoRes.json();
+    const hit = geoData && geoData[0];
+    if (!hit) return null;
+    const { lat, lon } = hit;
+    const mapUrl = `https://maps.geoapify.com/v1/staticmap?style=osm-carto&width=${SITE_MAP_W}&height=${SITE_MAP_H}&center=lonlat:${lon},${lat}&zoom=17&marker=lonlat:${lon},${lat};color:%23c1543f;size:large&apiKey=${encodeURIComponent(apiKey)}`;
+    const imgRes = await fetch(mapUrl);
+    if (!imgRes.ok) return null;
+    const blob = await imgRes.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("falha ao ler mapa"));
+      reader.readAsDataURL(blob);
+    });
+    return { dataUrl, width: SITE_MAP_W, height: SITE_MAP_H };
+  } catch (e) { return null; }
+}
 async function upsertProjectIndex(code, meta) {
   const list = (await idbGet("projects-index")) || [];
   const next = [{ code, ...meta, updatedAt: Date.now() }, ...list.filter(p => p.code !== code)];
@@ -757,6 +785,7 @@ export default function PranchetaBIM() {
     setPdfExporting(true);
     const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId, prevCroquiViewMode = croquiViewMode;
     try {
+      const siteMap = await fetchSiteMapDataUrl(composeAddress(buildingInfo), buildingInfo?.siteMapApiKey);
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: pdfOrientation === "paisagem" ? "landscape" : "portrait" });
       const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
@@ -948,6 +977,20 @@ export default function PranchetaBIM() {
       doc.text(`Endereço: ${composeAddress(buildingInfo) || "não informado"}`, margin, y); y += 6;
       doc.text(`Tipo: ${buildingInfo?.type || "-"}  ·  Níveis: ${levels.length}`, margin, y); y += 6;
       doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, margin, y); y += 10;
+
+      // ---- Planta de situação (mapa do endereço, se houver chave configurada) ----
+      if (siteMap) {
+        if (y > contentBottom - 62) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+        doc.setFontSize(11); doc.setTextColor(20);
+        doc.text("Planta de situação", margin, y); y += 5;
+        const mapW = 85, mapH = mapW * (siteMap.height / siteMap.width);
+        doc.addImage(siteMap.dataUrl, "PNG", margin, y, mapW, mapH);
+        doc.setDrawColor(210); doc.setLineWidth(0.3); doc.rect(margin, y, mapW, mapH);
+        y += mapH + 3.5;
+        doc.setFontSize(6); doc.setTextColor(150);
+        doc.text("Mapa: © OpenStreetMap contributors · geoapify.com", margin, y);
+        y += 8;
+      }
 
       doc.setTextColor(20); doc.setFontSize(13); doc.text("Resumo por nível", margin, y); y += 7;
       doc.setFontSize(9); doc.setTextColor(60);
