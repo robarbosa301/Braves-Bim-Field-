@@ -275,33 +275,7 @@ export default function PranchetaBIM() {
     return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
   }, [session]);
 
-  useEffect(() => {
-    (async () => {
-      const savedLocal = await idbGet("last-session");
-      const saved = savedLocal || (await safeGet("last-session", false));
-      if (saved) {
-        try {
-          const s = typeof saved === "string" ? JSON.parse(saved) : saved;
-          // A reconexão automática ao último projeto costuma terminar quase
-          // instantaneamente, fazendo a tela de início (JoinScreen) piscar
-          // e sumir antes de dar tempo de vê-la. joinProject recebe um
-          // tempo mínimo aqui, aplicado só antes do setSession que troca
-          // de tela (não no início da função) — assim ele corre em
-          // paralelo com o carregamento de verdade, sem atrasar o caso de
-          // uma rede lenta (aí quem manda é o carregamento, não esse
-          // mínimo).
-          await joinProject(s.code, s.role, null, s.deviceId, 1200);
-        }
-        catch (e) { /* ignore */ }
-      }
-    })();
-  }, []);
-
-  async function joinProject(code, role, buildingInfo, existingDeviceId, minSplashMs = 0) {
-    // Criada aqui (não esperada ainda) para correr em paralelo com todo o
-    // carregamento abaixo — só é aguardada logo antes do setSession que
-    // troca a JoinScreen pela tela principal.
-    const minSplashPromise = minSplashMs ? new Promise(resolve => setTimeout(resolve, minSplashMs)) : null;
+  async function joinProject(code, role, buildingInfo, existingDeviceId) {
     const deviceId = existingDeviceId || (await idbGet("device-id")) || (await safeGet("device-id", false)) || uid();
     await idbSet("device-id", deviceId);
     await idbSet("last-session", { code, role, deviceId });
@@ -343,7 +317,6 @@ export default function PranchetaBIM() {
       await safeSet(`bim-project:${code}:data`, JSON.stringify(initial), true);
       await upsertProjectIndex(code, { name: initial.buildingInfo.name, address: composeAddress(initial.buildingInfo), roomsCount: 0, levelsCount: lv.length });
     }
-    if (minSplashPromise) await minSplashPromise;
     setSession({ code, role, deviceId });
     setTab(buildingInfo ? "croqui" : "ambientes");
   }
