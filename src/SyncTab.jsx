@@ -1,11 +1,11 @@
-import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2, ImagePlus, X } from "lucide-react";
+import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2, ImagePlus, X, RectangleVertical, RectangleHorizontal } from "lucide-react";
 import { C, mono } from "./theme.js";
 
 // The Sincronização tab: manual sync trigger, JSON/CSV/PDF export, the
 // carimbo (title block) identification fields used on the PDF's cover
 // sheet, and the sync log — split out of App.jsx since it only needs these
 // few pieces of state/callbacks from the parent.
-export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, exportPDF, pdfExporting, log, buildingInfo, onUpdateBuildingInfo, onLogoFileChange }) {
+export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, exportPDF, pdfExporting, log, buildingInfo, onUpdateBuildingInfo, onLogoFileChange, pdfOrientation, onSetPdfOrientation }) {
   return (
           <div>
             <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
@@ -52,6 +52,16 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
                   <FileText size={15} color={C.gold} /> CSV
                 </button>
               </div>
+            </div>
+            <div className="flex gap-1.5 mb-2">
+              <button onClick={() => onSetPdfOrientation("retrato")} className="flex-1 py-1.5 rounded text-[11px] flex items-center justify-center gap-1.5"
+                style={{ background: pdfOrientation !== "paisagem" ? C.goldTint : C.panelAlt, color: pdfOrientation !== "paisagem" ? C.gold : C.mute, border: `1px solid ${pdfOrientation !== "paisagem" ? C.gold : C.line}` }}>
+                <RectangleVertical size={13} /> Retrato
+              </button>
+              <button onClick={() => onSetPdfOrientation("paisagem")} className="flex-1 py-1.5 rounded text-[11px] flex items-center justify-center gap-1.5"
+                style={{ background: pdfOrientation === "paisagem" ? C.goldTint : C.panelAlt, color: pdfOrientation === "paisagem" ? C.gold : C.mute, border: `1px solid ${pdfOrientation === "paisagem" ? C.gold : C.line}` }}>
+                <RectangleHorizontal size={13} /> Paisagem
+              </button>
             </div>
             <button onClick={exportPDF} disabled={pdfExporting}
               className="w-full py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3"

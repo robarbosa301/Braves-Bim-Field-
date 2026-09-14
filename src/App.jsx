@@ -319,6 +319,7 @@ export default function PranchetaBIM() {
   const [conn, setConn] = useState({ revit: false, cad: false });
   const [syncing, setSyncing] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
+  const [pdfOrientation, setPdfOrientation] = useState("retrato");
   const [log, setLog] = useState([]);
   const [peers, setPeers] = useState(1);
   const [photoThumbs, setPhotoThumbs] = useState({});
@@ -757,7 +758,7 @@ export default function PranchetaBIM() {
     const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId, prevCroquiViewMode = croquiViewMode;
     try {
       const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: pdfOrientation === "paisagem" ? "landscape" : "portrait" });
       const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
       // frameMargin: inset of the outer sheet border, the way a printed
       // "prancha" is framed. margin: inset of actual content from the page
@@ -792,6 +793,76 @@ export default function PranchetaBIM() {
         const w = shot.width * ratio, h = shot.height * ratio;
         doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
       };
+      // The carimbo's cells (and now the tables' columns) are narrow and
+      // fixed-width — jsPDF's maxWidth wraps overflowing text onto a second
+      // line instead of clipping it, which then prints straight through the
+      // cell's bottom edge or the next column. Truncate to one line (at the
+      // current font size) instead of letting it wrap.
+      const oneLine = (text, maxW) => {
+        if (!text) return text;
+        if (doc.getTextWidth(text) <= maxW) return text;
+        let t = text;
+        while (t.length > 1 && doc.getTextWidth(t + "…") > maxW) t = t.slice(0, -1);
+        return t + "…";
+      };
+      // A small hand-rolled table renderer (jsPDF has no table primitive of
+      // its own) — columns are {label, w (mm), align}. Spills onto a
+      // continuation sheet, header row repeated, whenever a row wouldn't
+      // fit above the carimbo; sums a numeric column into a printed total
+      // when totalCol/totalLabel are given (areas, counts).
+      const addTableSheet = (title, columns, rows, opts = {}) => {
+        beginSheet(title);
+        const colX = []; { let x = margin; columns.forEach(c => { colX.push(x); x += c.w; }); }
+        let y = margin;
+        const drawHeading = t => {
+          doc.setFontSize(13); doc.setTextColor(20);
+          doc.text(t, margin, y);
+          doc.setDrawColor(215); doc.setLineWidth(0.3);
+          doc.line(margin, y + 3, pageW - margin, y + 3);
+          y += 14;
+        };
+        const drawHeader = () => {
+          doc.setFontSize(7.5); doc.setTextColor(120);
+          columns.forEach((c, i) => {
+            if (c.align === "right") doc.text(c.label, colX[i] + c.w - 2, y, { align: "right" });
+            else doc.text(c.label, colX[i], y);
+          });
+          doc.setDrawColor(190); doc.setLineWidth(0.25);
+          doc.line(margin, y + 2, pageW - margin, y + 2);
+          y += 7;
+        };
+        drawHeading(title);
+        drawHeader();
+        if (!rows.length) {
+          doc.setFontSize(9); doc.setTextColor(120);
+          doc.text("Nenhum registro lançado ainda.", margin, y);
+          return;
+        }
+        doc.setFontSize(8.5);
+        rows.forEach(row => {
+          if (y > contentBottom) {
+            beginSheet(`${title} (cont.)`);
+            y = margin;
+            drawHeading(`${title} (continuação)`);
+            drawHeader();
+            doc.setFontSize(8.5);
+          }
+          columns.forEach((c, i) => {
+            doc.setTextColor(40);
+            const text = oneLine(String(row[i] ?? "-"), c.w - 3);
+            if (c.align === "right") doc.text(text, colX[i] + c.w - 2, y, { align: "right" });
+            else doc.text(text, colX[i], y);
+          });
+          y += 5.5;
+        });
+        if (opts.totalLabel) {
+          y += 2;
+          if (y > contentBottom) { beginSheet(`${title} (cont.)`); y = margin; drawHeading(`${title} (continuação)`); }
+          doc.setDrawColor(190); doc.line(margin, y - 3.5, pageW - margin, y - 3.5);
+          doc.setFontSize(9); doc.setTextColor(20);
+          doc.text(opts.totalLabel, margin, y);
+        }
+      };
 
       // ---- Página 1: dados do levantamento ----
       beginSheet("Dados do levantamento");
@@ -803,17 +874,6 @@ export default function PranchetaBIM() {
       doc.text(`Tipo: ${buildingInfo?.type || "-"}  ·  Níveis: ${levels.length}`, margin, y); y += 6;
       doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, margin, y); y += 10;
 
-      doc.setTextColor(20); doc.setFontSize(13); doc.text("Ambientes", margin, y); y += 7;
-      doc.setFontSize(9); doc.setTextColor(60);
-      if (!rooms.length) { doc.text("Nenhum ambiente lançado ainda.", margin, y); y += 6; }
-      rooms.forEach(r => {
-        if (y > contentBottom) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
-        doc.text(`${r.name} — ${r.level} — ${r.area ? `${r.area} m²` : "área a definir"} — ${r.use || "sem uso definido"}`, margin, y);
-        y += 5.5;
-      });
-
-      y += 4;
-      if (y > contentBottom - 20) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
       doc.setTextColor(20); doc.setFontSize(13); doc.text("Resumo por nível", margin, y); y += 7;
       doc.setFontSize(9); doc.setTextColor(60);
       levels.forEach(l => {
@@ -825,6 +885,38 @@ export default function PranchetaBIM() {
         doc.text(`${l.name} — cota ${toNum(l.elevation, 0)} m — ${walls} parede(s), ${doorsCount} porta(s), ${windowsCount} janela(s)`, margin, y);
         y += 5.5;
       });
+
+      // ---- Quadros de áreas e esquadrias ----
+      const tableW = pageW - margin * 2;
+      const roomsAreaTotal = rooms.reduce((s, r) => s + toNum(r.area, 0), 0);
+      addTableSheet("Quadro de áreas — Ambientes",
+        [{ label: "AMBIENTE", w: tableW * 0.30 }, { label: "NÍVEL", w: tableW * 0.18 },
+         { label: "ÁREA (M²)", w: tableW * 0.15, align: "right" }, { label: "USO", w: tableW * 0.37 }],
+        rooms.map(r => [r.name || "Ambiente sem nome", r.level || "-", r.area ? String(r.area) : "a definir", r.use || "sem uso definido"]),
+        { totalLabel: `Área total de ambientes: ${roomsAreaTotal.toFixed(2)} m²` });
+
+      const allWalls = levels.flatMap(l => (l.sketchElements || []).filter(e => e.type === "wall").map(w => ({ ...w, levelName: l.name })));
+      const wallsAreaTotal = allWalls.reduce((s, w) => s + toNum(w.length, 0) * toNum(w.height, 0), 0);
+      addTableSheet("Quadro de áreas — Paredes",
+        [{ label: "TAG", w: tableW * 0.10 }, { label: "NÍVEL", w: tableW * 0.16 }, { label: "TIPO", w: tableW * 0.22 },
+         { label: "COMPR. (M)", w: tableW * 0.15, align: "right" }, { label: "ALT. (M)", w: tableW * 0.13, align: "right" },
+         { label: "ÁREA (M²)", w: tableW * 0.14, align: "right" }, { label: "CONDIÇÃO", w: tableW * 0.10 }],
+        allWalls.map(w => [w.tag || "-", w.levelName, w.wallType || "-", w.length ?? "-", w.height ?? "-", (toNum(w.length, 0) * toNum(w.height, 0)).toFixed(2), w.condition || "-"]),
+        { totalLabel: `Área total de paredes: ${wallsAreaTotal.toFixed(2)} m²` });
+
+      const allDoors = levels.flatMap(l => (l.sketchElements || []).filter(e => e.type === "door").map(d => ({ ...d, levelName: l.name })));
+      addTableSheet("Quadro de esquadrias — Portas",
+        [{ label: "TAG", w: tableW * 0.10 }, { label: "NÍVEL", w: tableW * 0.16 }, { label: "MATERIAL/TIPO", w: tableW * 0.30 },
+         { label: "DIMENSÕES", w: tableW * 0.24 }, { label: "CONDIÇÃO", w: tableW * 0.20 }],
+        allDoors.map(d => [d.tag || "-", d.levelName, d.doorType || "-", `${d.width ?? "-"}×${d.height ?? "-"} m`, d.condition || "-"]),
+        { totalLabel: `Total: ${allDoors.length} porta(s)` });
+
+      const allWindows = levels.flatMap(l => (l.sketchElements || []).filter(e => e.type === "window").map(win => ({ ...win, levelName: l.name })));
+      addTableSheet("Quadro de esquadrias — Janelas",
+        [{ label: "TAG", w: tableW * 0.10 }, { label: "NÍVEL", w: tableW * 0.16 }, { label: "MATERIAL/TIPO", w: tableW * 0.28 },
+         { label: "DIMENSÕES", w: tableW * 0.26 }, { label: "CONDIÇÃO", w: tableW * 0.20 }],
+        allWindows.map(win => [win.tag || "-", win.levelName, win.windowType || "-", `${win.width ?? "-"}×${win.height ?? "-"} m (peit. ${win.peitoril ?? "-"} m)`, win.condition || "-"]),
+        { totalLabel: `Total: ${allWindows.length} janela(s)` });
 
       // ---- Plantas baixas: uma página por nível que já tem algo desenhado ----
       for (const level of levels) {
@@ -854,17 +946,6 @@ export default function PranchetaBIM() {
       const projetista = buildingInfo?.projetista
         ? buildingInfo.projetista + (buildingInfo?.projetistaRegistro ? ` · ${buildingInfo.projetistaRegistro}` : "")
         : "";
-      // The carimbo's cells are narrow and fixed-height — jsPDF's maxWidth
-      // wraps overflowing text onto a second line instead of clipping it,
-      // which then prints straight through the cell's bottom edge. Truncate
-      // to one line (at the current font size) instead of letting it wrap.
-      const oneLine = (text, maxW) => {
-        if (!text) return text;
-        if (doc.getTextWidth(text) <= maxW) return text;
-        let t = text;
-        while (t.length > 1 && doc.getTextWidth(t + "…") > maxW) t = t.slice(0, -1);
-        return t + "…";
-      };
       sheetMeta.forEach((meta, i) => {
         const num = i + 1;
         doc.setPage(num);
@@ -1420,7 +1501,8 @@ export default function PranchetaBIM() {
 
         {tab === "sync" && (
           <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} exportPDF={exportPDF} pdfExporting={pdfExporting} log={log}
-            buildingInfo={buildingInfo} onUpdateBuildingInfo={updateBuildingInfo} onLogoFileChange={onLogoFileChange} />
+            buildingInfo={buildingInfo} onUpdateBuildingInfo={updateBuildingInfo} onLogoFileChange={onLogoFileChange}
+            pdfOrientation={pdfOrientation} onSetPdfOrientation={setPdfOrientation} />
         )}
       </div>
 

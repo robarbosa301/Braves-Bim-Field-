@@ -1033,13 +1033,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (!hit) return;
       const type = tool === "porta" ? "door" : "window";
       const count = elements.filter(x => x.type === type).length;
-      const tagPrefix = tool === "porta" ? "PT" : "JN";
+      // P1, P2… for doors and J1, J2… for windows — the same short,
+      // no-hyphen convention field surveys use on a door/window schedule.
+      const tagPrefix = tool === "porta" ? "P" : "J";
       // Same reasoning as a new wall above: placed while viewing "Construção
       // Nova", a door/window is new construction by definition.
       const isNew = phaseView === "novo";
       const el = tool === "porta"
-        ? { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 0.8, height: 2.10, doorType: DOOR_TYPES[0], panels: 1, condition: "A confirmar", demolir: false, construir: isNew }
-        : { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 1.2, height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2, condition: "A confirmar", demolir: false, construir: isNew };
+        ? { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}${count + 1}`, width: 0.8, height: 2.10, doorType: DOOR_TYPES[0], panels: 1, condition: "A confirmar", demolir: false, construir: isNew }
+        : { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}${count + 1}`, width: 1.2, height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2, condition: "A confirmar", demolir: false, construir: isNew };
       commitElements([...elements, el]);
       setSelectedId(el.id);
     }
@@ -2232,7 +2234,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         ))}
         {planMode === "piso" && elements.filter(el => (el.type === "door" || el.type === "window") && phaseVisible(el)).map(el => {
           const w = wallsById[el.wallId];
-          const angleDeg = w ? (Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180 / Math.PI) : 0;
+          // Same normalized angle the wall length labels use (labelAngleDeg
+          // flips a right-to-left wall's raw angle by 180° so its text never
+          // renders upside down) — the door/window leaf itself is symmetric
+          // under that flip, so reusing it here costs nothing and lets the
+          // tag below inherit the group's rotation instead of fighting it
+          // back to horizontal.
+          const angleDeg = w ? labelAngleDeg(w) : 0;
           const widthPx = Math.max(6, (toNum(el.width, 0.8) / scale) * GRID);
           const isDoor = el.type === "door";
           const isSel = selectedId === el.id;
@@ -2253,7 +2261,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseStyleColor(el) || "#6b6660"} textAnchor="middle" transform={`rotate(${-angleDeg} ${el.x} ${el.y - 14})`}>{el.width}×{el.height} · {panels}f</text>
+              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseStyleColor(el) || "#6b6660"} textAnchor="middle">{el.tag ? `${el.tag} · ` : ""}{el.width}×{el.height} · {panels}f</text>
             </g>
           );
         })}
