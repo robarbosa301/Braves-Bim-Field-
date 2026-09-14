@@ -138,6 +138,30 @@ function svgToPngDataUrl(svgEl, scale = 2) {
     } catch (e) { resolve(null); }
   });
 }
+// Downscales an uploaded company-logo image before it's stored in
+// buildingInfo — it rides along on every cloud sync of the project from
+// then on, so keeping it small (a logo only ever prints a few cm wide on
+// the PDF's carimbo) matters a lot more than for a one-off screenshot.
+function resizeLogoFile(file, maxW = 360) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = Math.min(1, maxW / img.width);
+        const w = Math.max(1, Math.round(img.width * ratio)), h = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve({ dataUrl: canvas.toDataURL("image/png"), w, h });
+      };
+      img.onerror = () => reject(new Error("logo inválida"));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("falha ao ler arquivo"));
+    reader.readAsDataURL(file);
+  });
+}
 async function upsertProjectIndex(code, meta) {
   const list = (await idbGet("projects-index")) || [];
   const next = [{ code, ...meta, updatedAt: Date.now() }, ...list.filter(p => p.code !== code)];
@@ -521,6 +545,26 @@ export default function PranchetaBIM() {
       return next;
     });
   }
+  // Carimbo fields (projetista/empresa/logo) live on buildingInfo itself —
+  // it already rides the same cloud sync as everything else, so whichever
+  // device fills it in, the other one (and the PDF export, wherever it
+  // runs) sees it too, without a separate device-local settings store.
+  function updateBuildingInfo(patch) {
+    setBuildingInfo(bi => {
+      const next = { ...(bi || {}), ...patch };
+      persist({ rooms: roomsRef.current, log: logRef.current, levels: levelsRef.current, roofs: roofsRef.current, buildingInfo: next });
+      return next;
+    });
+  }
+  async function onLogoFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const { dataUrl, w, h } = await resizeLogoFile(file);
+      updateBuildingInfo({ logoDataUrl: dataUrl, logoW: w, logoH: h });
+    } catch (err) { pushLog("Não foi possível carregar a logo.", "info"); }
+  }
 
   const activeRoom = rooms.find(r => r.id === activeRoomId) || null;
   const croquiLevel = levels.find(l => l.id === croquiLevelId) || levels[0] || null;
@@ -720,15 +764,60 @@ export default function PranchetaBIM() {
         doc.addPage();
         doc.setFontSize(13); doc.setTextColor(20);
         doc.text(title, margin, margin);
+        doc.setDrawColor(215); doc.setLineWidth(0.3);
+        doc.line(margin, margin + 3, pageW - margin, margin + 3);
         const availW = pageW - margin * 2, availH = pageH - margin * 2 - 10;
         const ratio = Math.min(availW / shot.width, availH / shot.height);
         const w = shot.width * ratio, h = shot.height * ratio;
         doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
+        // A light sheet border around the whole drawing area — the "prancha"
+        // frame technical drawings are expected to have, cheap to draw and
+        // reads a lot more like a deliverable than a bare screenshot.
+        doc.setDrawColor(225); doc.rect(margin, margin + 8, availW, availH);
       };
 
-      // ---- Página 1: dados do levantamento ----
+      // ---- Página 1: capa / prancha com carimbo ----
+      let cy = margin;
+      if (buildingInfo?.logoDataUrl && buildingInfo.logoW && buildingInfo.logoH) {
+        const aspect = buildingInfo.logoW / buildingInfo.logoH;
+        let lw = 34, lh = lw / aspect;
+        if (lh > 20) { lh = 20; lw = lh * aspect; }
+        try { doc.addImage(buildingInfo.logoDataUrl, "PNG", margin, cy, lw, lh); } catch (e) {}
+      }
+      doc.setFontSize(9); doc.setTextColor(130);
+      doc.text("LEVANTAMENTO BIM DE CAMPO", pageW - margin, cy + 4, { align: "right" });
+      cy += 34;
+      doc.setFontSize(22); doc.setTextColor(20);
+      doc.text(buildingInfo?.name || "Levantamento BIM", margin, cy); cy += 9;
+      doc.setFontSize(11); doc.setTextColor(90);
+      doc.text(composeAddress(buildingInfo) || "Endereço não informado", margin, cy); cy += 6;
+      doc.text(`${buildingInfo?.type || "-"} · ${levels.length} nível(is) · gerado em ${new Date().toLocaleDateString("pt-BR")}`, margin, cy); cy += 10;
+      doc.setDrawColor(210); doc.setLineWidth(0.3); doc.line(margin, cy, pageW - margin, cy);
+
+      // Carimbo: a bordered title block at the foot of the cover sheet, the
+      // way a technical drawing set identifies the project, its responsible
+      // designer and issuing company on every sheet — here on the one cover
+      // sheet, since a field-survey PDF doesn't repeat it prancha by prancha.
+      const stampH = 40;
+      const stampY = pageH - margin - stampH;
+      const colW = (pageW - margin * 2) / 2;
+      doc.setDrawColor(40); doc.setLineWidth(0.4);
+      doc.rect(margin, stampY, pageW - margin * 2, stampH);
+      doc.line(margin + colW, stampY, margin + colW, stampY + stampH);
+      const leftX = margin + 4, rightX = margin + colW + 4;
+      const stampRow = (ly, leftLabel, leftVal, rightLabel, rightVal) => {
+        doc.setFontSize(7.5); doc.setTextColor(140);
+        doc.text(leftLabel, leftX, ly); doc.text(rightLabel, rightX, ly);
+        doc.setFontSize(10); doc.setTextColor(25);
+        doc.text(leftVal || "-", leftX, ly + 5); doc.text(rightVal || "-", rightX, ly + 5);
+      };
+      stampRow(stampY + 7, "PROJETO", buildingInfo?.name, "RESPONSÁVEL TÉCNICO", buildingInfo?.projetista);
+      stampRow(stampY + 19, "CÓDIGO DO PROJETO", session?.code, "REGISTRO (CREA/CAU)", buildingInfo?.projetistaRegistro);
+      stampRow(stampY + 31, "DATA", new Date().toLocaleDateString("pt-BR"), "EMPRESA", buildingInfo?.empresa);
+
+      // ---- Página 2: dados do levantamento ----
+      doc.addPage();
       let y = margin;
-      doc.setFontSize(18); doc.setTextColor(20); doc.text(buildingInfo?.name || "Levantamento BIM", margin, y); y += 9;
       doc.setFontSize(10); doc.setTextColor(90);
       doc.text(`Código do projeto: ${session?.code || "-"}`, margin, y); y += 6;
       doc.text(`Endereço: ${composeAddress(buildingInfo) || "não informado"}`, margin, y); y += 6;
@@ -779,6 +868,15 @@ export default function PranchetaBIM() {
         if (canvasEl && canvasEl.width && canvasEl.height) {
           addImagePage("Modelo 3D", { dataUrl: canvasEl.toDataURL("image/png"), width: canvasEl.width, height: canvasEl.height });
         }
+      }
+
+      // ---- Rodapé em todas as páginas: código do projeto + numeração ----
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8); doc.setTextColor(150);
+        doc.text(`${session?.code || ""} · ${buildingInfo?.name || ""}`, margin, pageH - 8);
+        doc.text(`${i}/${totalPages}`, pageW - margin, pageH - 8, { align: "right" });
       }
 
       const safeName = (buildingInfo?.name || "levantamento_bim").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_");
@@ -1061,7 +1159,8 @@ export default function PranchetaBIM() {
                 <VectorSketch level={croquiLevel} allLevels={levels} rooms={rooms.filter(r => r.level === croquiLevel.name)}
                   onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
                   onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
-                  onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)} />
+                  onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)}
+                  exportMode={pdfExporting} />
               </div>
             )}
             {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
@@ -1286,7 +1385,8 @@ export default function PranchetaBIM() {
         )}
 
         {tab === "sync" && (
-          <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} exportPDF={exportPDF} pdfExporting={pdfExporting} log={log} />
+          <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} exportPDF={exportPDF} pdfExporting={pdfExporting} log={log}
+            buildingInfo={buildingInfo} onUpdateBuildingInfo={updateBuildingInfo} onLogoFileChange={onLogoFileChange} />
         )}
       </div>
 

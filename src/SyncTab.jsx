@@ -1,12 +1,43 @@
-import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2 } from "lucide-react";
+import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2, ImagePlus, X } from "lucide-react";
 import { C, mono } from "./theme.js";
 
-// The Sincronização tab: manual sync trigger, JSON/CSV/PDF export, and the
-// sync log — split out of App.jsx since it only needs these few pieces
-// of state/callbacks from the parent.
-export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, exportPDF, pdfExporting, log }) {
+// The Sincronização tab: manual sync trigger, JSON/CSV/PDF export, the
+// carimbo (title block) identification fields used on the PDF's cover
+// sheet, and the sync log — split out of App.jsx since it only needs these
+// few pieces of state/callbacks from the parent.
+export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, exportPDF, pdfExporting, log, buildingInfo, onUpdateBuildingInfo, onLogoFileChange }) {
   return (
           <div>
+            <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <div className="text-[11px] mb-2" style={{ color: C.mute }}>CARIMBO DO PROJETO (capa do PDF)</div>
+              <div className="space-y-2">
+                <input placeholder="Projetista / responsável técnico" value={buildingInfo?.projetista || ""}
+                  onChange={e => onUpdateBuildingInfo({ projetista: e.target.value })}
+                  className="w-full px-3 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="Registro (CREA/CAU)" value={buildingInfo?.projetistaRegistro || ""}
+                    onChange={e => onUpdateBuildingInfo({ projetistaRegistro: e.target.value })}
+                    className="px-3 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+                  <input placeholder="Empresa" value={buildingInfo?.empresa || ""}
+                    onChange={e => onUpdateBuildingInfo({ empresa: e.target.value })}
+                    className="px-3 py-2 rounded text-xs" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 px-3 py-2 rounded text-xs cursor-pointer shrink-0" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                    <ImagePlus size={13} color={C.gold} /> {buildingInfo?.logoDataUrl ? "Trocar logo" : "Adicionar logo"}
+                    <input type="file" accept="image/*" onChange={onLogoFileChange} className="hidden" />
+                  </label>
+                  {buildingInfo?.logoDataUrl && (
+                    <>
+                      <img src={buildingInfo.logoDataUrl} alt="Logo da empresa" style={{ height: 28, width: "auto", maxWidth: 90, borderRadius: 4, background: "#fff", padding: 2, objectFit: "contain" }} />
+                      <button onClick={() => onUpdateBuildingInfo({ logoDataUrl: null, logoW: null, logoH: null })} className="p-1 rounded shrink-0" style={{ color: C.muteDim }}>
+                        <X size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2 mb-2">
               <button onClick={runSync} disabled={syncing}
                 className="py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2"

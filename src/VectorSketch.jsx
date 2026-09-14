@@ -410,7 +410,7 @@ function trimWallsToCorner(a, b) {
   };
 }
 
-export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel }) {
+export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false }) {
   const svgRef = useRef(null);
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
@@ -1894,7 +1894,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       )}
 
       <svg ref={svgRef} data-croqui-svg="true" width="100%" height={dims.h} viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-        className="rounded-md touch-none" style={{ background: "#DCDCD8", border: "1px solid #C6C6C1", display: "block", touchAction: "none" }}
+        className="rounded-md touch-none" style={{ background: exportMode ? "#FFFFFF" : "#DCDCD8", border: exportMode ? "none" : "1px solid #C6C6C1", display: "block", touchAction: "none" }}
         onClick={handleTap} onWheel={onWheel}
         onTouchStart={onTouchStartCanvas} onTouchMove={onTouchMoveCanvas} onTouchEnd={onTouchEndCanvas}
         onMouseMove={onCanvasPointerMove} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}>
@@ -1903,7 +1903,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
           </pattern>
         </defs>
-        <rect x={viewBox.x - viewBox.w} y={viewBox.y - viewBox.h} width={viewBox.w * 3} height={viewBox.h * 3} fill={showGrid ? `url(#grid-${level.id})` : "#DCDCD8"} />
+        {/* Plain white in exportMode regardless of the interactive grid toggle
+            — the PDF is meant to read as a clean executive drawing, not a
+            screenshot of the editor's own drafting aid. */}
+        <rect x={viewBox.x - viewBox.w} y={viewBox.y - viewBox.h} width={viewBox.w * 3} height={viewBox.h * 3} fill={exportMode ? "#FFFFFF" : (showGrid ? `url(#grid-${level.id})` : "#DCDCD8")} />
 
         {showBelow && ghostLevel(belowLevel, "#8A8880")}
         {showAbove && ghostLevel(aboveLevel, "#4A4A46")}
