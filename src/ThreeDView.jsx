@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import * as THREE from "three";
-import { C } from "./theme.js";
+import { C, matchesPhaseView } from "./theme.js";
 import { toNum } from "./utils.js";
+import { pointInPolygon } from "./geometry.js";
 
 // Split out of App.jsx and lazy-loaded (see the React.lazy import there) so
 // three.js — a large dependency only ever needed once someone opens the 3D
@@ -79,17 +80,25 @@ function wallFaceMaterial(finish, color, segLen, segH) {
 }
 
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
-export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut }) {
+export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut, phaseView = "tudo" }) {
   const mountRef = useRef(null);
   const [ok, setOk] = useState(true);
   const [empty, setEmpty] = useState(false);
+  const [emptyPhase, setEmptyPhase] = useState(false);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
     const totalWalls = buildingLevels.reduce((s, l) => s + l.walls.length, 0);
-    if (totalWalls === 0) { setEmpty(true); return; }
-    setEmpty(false);
+    if (totalWalls === 0) { setEmpty(true); setEmptyPhase(false); return; }
+    // Distinguished from the "nothing drawn at all" case above — a phase
+    // view can legitimately have nothing to show (e.g. "Demolição" on a
+    // level where nothing's marked for demolition), which needs a
+    // different message than "go draw something in the Croqui".
+    const visibleWalls = phaseView === "tudo" ? totalWalls
+      : buildingLevels.reduce((s, l) => s + l.walls.filter(w => matchesPhaseView(w, phaseView)).length, 0);
+    if (visibleWalls === 0) { setEmptyPhase(true); setEmpty(false); return; }
+    setEmpty(false); setEmptyPhase(false);
 
     let renderer, raf, disposed = false;
     const cleanupFns = [];
@@ -120,11 +129,25 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
 
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, maxY = 1;
 
+      // Same "Vistas" a reforma project switches between in the Croqui —
+      // "tudo" shows everything as-is; the other four each hide whichever
+      // walls/openings don't actually exist at that stage of the work. A
+      // room's floor/ceiling plane doesn't carry its own demolir/construir
+      // flag, so it's handled separately below per level, mirroring the
+      // Croqui's simpler (non-split) treatment for "novo": a room a new
+      // wall cuts through just doesn't get a floor/ceiling plane there,
+      // since the plane can't be recomputed into two here without redoing
+      // VectorSketch's flood-fill trace.
+      const phaseVisible = el => phaseView === "tudo" || matchesPhaseView(el, phaseView);
+
       buildingLevels.forEach(lvl => {
         const elev = lvl.elevation;
-        const levelWallHeight = lvl.walls.length ? Math.max(...lvl.walls.map(w => w.height || 2.8)) : 2.8;
+        const levelWalls = lvl.walls.filter(phaseVisible);
+        const levelDoors = lvl.doors.filter(phaseVisible);
+        const levelWindows = lvl.windows.filter(phaseVisible);
+        const levelWallHeight = levelWalls.length ? Math.max(...levelWalls.map(w => w.height || 2.8)) : 2.8;
 
-        lvl.walls.forEach(w => {
+        levelWalls.forEach(w => {
           const dx = w.x2 - w.x1, dz = w.y2 - w.y1;
           const len = Math.max(0.05, Math.hypot(dx, dz));
           const angle = Math.atan2(dz, dx);
@@ -137,8 +160,8 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           // the hole (that used to make windows vanish and doors clip through
           // solid wall when toggled open).
           const openings = [
-            ...lvl.doors.filter(d => d.wallId === w.id).map(d => ({ kind: "door", ...d })),
-            ...lvl.windows.filter(win => win.wallId === w.id).map(win => ({ kind: "window", ...win })),
+            ...levelDoors.filter(d => d.wallId === w.id).map(d => ({ kind: "door", ...d })),
+            ...levelWindows.filter(win => win.wallId === w.id).map(win => ({ kind: "window", ...win })),
           ].map(o => {
             const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uz;
             const halfW = Math.max(0.15, o.width / 2);
@@ -168,14 +191,20 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           // (and same colors), two views.
           const demolirMat = () => new THREE.MeshStandardMaterial({ color: 0xC1543F, roughness: 0.6, transparent: true, opacity: 0.5 });
           const construirMat = () => new THREE.MeshStandardMaterial({ color: 0x6B9C5A, roughness: 0.6, transparent: true, opacity: 0.5 });
-          const matNeutral = w.demolir ? demolirMat() : w.construir ? construirMat() : new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.9 });
+          // "Final" is the finished result — kept and new should look
+          // identical there, same as the Croqui's own "Final" view, so it
+          // never applies this red/green flagging (everything demolir-
+          // marked is already excluded from levelWalls for this view).
+          const wDemolir = w.demolir && phaseView !== "final";
+          const wConstruir = w.construir && phaseView !== "final";
+          const matNeutral = wDemolir ? demolirMat() : wConstruir ? construirMat() : new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.9 });
           segs.forEach(seg => {
             const segLen = seg.end - seg.start, segH = seg.yTop - seg.yBottom;
             if (segLen <= 0.02 || segH <= 0.02) return;
             let matA, matB;
-            if (w.demolir) {
+            if (wDemolir) {
               matA = demolirMat(); matB = demolirMat();
-            } else if (w.construir) {
+            } else if (wConstruir) {
               matA = construirMat(); matB = construirMat();
             } else {
               matA = wallFaceMaterial(w.finishA, w.paintColorA, segLen, segH);
@@ -201,8 +230,10 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
             const gap = Math.min(0.03, panelWidth * 0.08);
             const isSliding = /correr/i.test(o.doorType || o.windowType || "");
             const isDoorKind = o.kind === "door";
-            const color = o.demolir ? 0xC1543F : o.construir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
-            const matOpts = (o.demolir || o.construir)
+            const oDemolir = o.demolir && phaseView !== "final";
+            const oConstruir = o.construir && phaseView !== "final";
+            const color = oDemolir ? 0xC1543F : oConstruir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
+            const matOpts = (oDemolir || oConstruir)
               ? { roughness: 0.6, transparent: true, opacity: 0.5 }
               : isDoorKind
                 ? { roughness: 0.5 }
@@ -246,6 +277,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
 
         (lvl.rooms || []).forEach(r => {
           if (r.points.length < 3) return;
+          // "Construção Nova" only ever shows the walls that are actually
+          // new (levelWalls is already filtered down to those for this
+          // view) — a room one of them cuts through doesn't get a floor/
+          // ceiling plane here, since there's no cheap way to split it into
+          // the two resulting rooms in 3D the way the Croqui's flood-fill
+          // trace does for its own "Final"/"Construção Nova" views.
+          if (phaseView === "novo" && levelWalls.some(w => pointInPolygon({ x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 }, r.points))) return;
           const shape = new THREE.Shape(r.points.map(p => new THREE.Vector2(p.x, -p.y)));
           // Only render a floor/ceiling plane once that finish was actually
           // chosen in Croqui — "A definir" (the default before anyone picks
@@ -316,7 +354,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           scene.add(mesh);
         });
 
-        if (lvl.walls.length) {
+        if (levelWalls.length) {
           const w = Math.max(2, (maxX - minX) + 1), d = Math.max(2, (maxZ - minZ) + 1);
           const floor = new THREE.Mesh(
             new THREE.PlaneGeometry(w, d),
@@ -392,10 +430,11 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
       }
     };
-  }, [buildingLevels, openState, sectionCut]);
+  }, [buildingLevels, openState, sectionCut, phaseView]);
 
   if (!ok) return <div className="text-xs p-4 text-center" style={{ color: C.mute }}>A visualização 3D não pôde ser iniciada neste navegador.</div>;
   if (empty) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Ainda não há paredes desenhadas para mostrar em 3D. Desenhe no Croqui primeiro.</div>;
+  if (emptyPhase) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Nada marcado para essa vista ainda.</div>;
   return (
     <div>
       <div ref={mountRef} style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880" }} />

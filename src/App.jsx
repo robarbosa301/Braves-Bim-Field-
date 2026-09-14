@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
-import { C, mono, heading, conditionColor } from "./theme.js";
+import { C, mono, heading, conditionColor, PHASE_VIEWS } from "./theme.js";
 import { toNum, uid } from "./utils.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import JoinScreen from "./JoinScreen.jsx";
@@ -254,6 +254,7 @@ export default function PranchetaBIM() {
   const [croquiLevelId, setCroquiLevelId] = useState(null);
   const [view3dMode, setView3dMode] = useState("casa");
   const [view3dOpen, setView3dOpen] = useState(false);
+  const [phaseView3D, setPhaseView3D] = useState("tudo");
   const [sectionCut, setSectionCut] = useState({ enabled: false, axis: "horizontal", position: 1.2 });
   const [view3dRoomId, setView3dRoomId] = useState(null);
   const [conn, setConn] = useState({ revit: false, cad: false });
@@ -1087,6 +1088,18 @@ export default function PranchetaBIM() {
                   </button>
                 </div>
 
+                {levels.some(l => (l.sketchElements || []).some(e => (e.type === "wall" || e.type === "door" || e.type === "window") && (e.demolir || e.construir))) && (
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vistas:</span>
+                    {PHASE_VIEWS.map(({ id, label }) => (
+                      <button key={id} onClick={() => setPhaseView3D(id)} className="px-2 py-1 rounded text-[10px]"
+                        style={{ ...heading, fontWeight: 600, background: phaseView3D === id ? C.goldTint : C.panelAlt, color: phaseView3D === id ? C.gold : C.mute, border: `1px solid ${phaseView3D === id ? C.gold : C.line}` }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
                   <button onClick={() => setSectionCut(s => ({ ...s, enabled: !s.enabled }))} className="flex items-center gap-1 px-2 py-1.5 rounded text-xs"
                     style={{ background: sectionCut.enabled ? C.goldTint : "transparent", color: sectionCut.enabled ? C.gold : C.mute, border: `1px solid ${sectionCut.enabled ? "#FFFFFF" : C.line}` }}>
@@ -1109,7 +1122,7 @@ export default function PranchetaBIM() {
 
                 {view3dMode === "casa" && (
                   <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} />
+                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
                   </Suspense>
                 )}
                 {view3dMode === "ambiente" && (() => {
@@ -1120,7 +1133,7 @@ export default function PranchetaBIM() {
                   if (!data) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Este ambiente ainda não tem um contorno desenhado. Vá ao Croqui, use a ferramenta "Ambiente" e feche o contorno vinculando a este nome.</div>;
                   return (
                     <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} />
+                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
                     </Suspense>
                   );
                 })()}
