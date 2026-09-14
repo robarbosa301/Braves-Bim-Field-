@@ -53,6 +53,12 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
                 </button>
               </div>
             </div>
+            <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <div className="text-[11px] mb-2" style={{ color: C.mute }}>OBSERVAÇÕES GERAIS (uma por linha, numeradas nos dados do levantamento)</div>
+              <textarea rows={4} placeholder={"Ex.: Será instalado hidrômetro conforme padrão da concessionária\nCotas prevalecem sobre a escala\nAntes de iniciar a obra, verificar medidas in loco"}
+                value={buildingInfo?.observacoes || ""} onChange={e => onUpdateBuildingInfo({ observacoes: e.target.value })}
+                className="w-full px-3 py-2 rounded text-xs resize-y" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+            </div>
             <div className="flex gap-1.5 mb-2">
               <button onClick={() => onSetPdfOrientation("retrato")} className="flex-1 py-1.5 rounded text-[11px] flex items-center justify-center gap-1.5"
                 style={{ background: pdfOrientation !== "paisagem" ? C.goldTint : C.panelAlt, color: pdfOrientation !== "paisagem" ? C.gold : C.mute, border: `1px solid ${pdfOrientation !== "paisagem" ? C.gold : C.line}` }}>

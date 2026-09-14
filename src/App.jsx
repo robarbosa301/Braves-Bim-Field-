@@ -793,6 +793,25 @@ export default function PranchetaBIM() {
         const w = shot.width * ratio, h = shot.height * ratio;
         doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
       };
+      // A simple compass rose (rosa dos ventos) in a floor plan's top-right
+      // corner — the app has no surveyed site orientation on file, so it
+      // always points "up" as north, the usual default for an as-built
+      // field sketch without a measured heading.
+      const drawCompassRose = (cx, cy, r) => {
+        doc.setDrawColor(70); doc.setLineWidth(0.3);
+        doc.circle(cx, cy, r);
+        doc.setLineWidth(0.2);
+        doc.line(cx, cy - r, cx, cy + r);
+        doc.line(cx - r, cy, cx + r, cy);
+        doc.setFillColor(30, 30, 30);
+        doc.triangle(cx, cy - r - 0.6, cx - 1.3, cy - r + 2.6, cx + 1.3, cy - r + 2.6, "F");
+        doc.setFontSize(6); doc.setTextColor(30);
+        doc.text("N", cx, cy - r - 1.6, { align: "center" });
+        doc.setFontSize(5); doc.setTextColor(120);
+        doc.text("S", cx, cy + r + 3, { align: "center" });
+        doc.text("L", cx + r + 3, cy + 1.3, { align: "center" });
+        doc.text("O", cx - r - 3, cy + 1.3, { align: "center" });
+      };
       // A floor plan carries its own compact door/window schedule right on
       // the same sheet, the way a real drawing set does — the P1/J1 tags on
       // the plan are only useful next to a table that decodes them into
@@ -805,6 +824,7 @@ export default function PranchetaBIM() {
         doc.text(title, margin, margin);
         doc.setDrawColor(215); doc.setLineWidth(0.3);
         doc.line(margin, margin + 3, pageW - margin, margin + 3);
+        drawCompassRose(pageW - margin - 8, margin - 1, 5);
 
         const hasSchedule = doors.length > 0 || windows.length > 0;
         const rowH = 4.4;
@@ -812,7 +832,7 @@ export default function PranchetaBIM() {
         const winBlockRows = windows.length ? 2 + windows.length : 0;
         const scheduleH = hasSchedule ? Math.min(74, 5 + (doorBlockRows + winBlockRows) * rowH) : 0;
 
-        const imgTop = margin + 8;
+        const imgTop = margin + 11;
         const availW = pageW - margin * 2;
         const availH = contentBottom - imgTop - (hasSchedule ? scheduleH + 5 : 0);
         const ratio = Math.min(availW / shot.width, availH / shot.height);
@@ -940,6 +960,24 @@ export default function PranchetaBIM() {
         doc.text(`${l.name} — cota ${toNum(l.elevation, 0)} m — ${walls} parede(s), ${doorsCount} porta(s), ${windowsCount} janela(s)`, margin, y);
         y += 5.5;
       });
+
+      // ---- Observações gerais (texto livre do carimbo, uma linha = uma nota numerada) ----
+      const observacoes = (buildingInfo?.observacoes || "").split("\n").map(s => s.trim()).filter(Boolean);
+      if (observacoes.length) {
+        y += 4;
+        if (y > contentBottom - 14) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+        doc.setTextColor(20); doc.setFontSize(13); doc.text("Observações", margin, y); y += 7;
+        doc.setFontSize(9); doc.setTextColor(60);
+        observacoes.forEach((obs, i) => {
+          const num = String(i + 1).padStart(2, "0");
+          const lines = doc.splitTextToSize(`${num}. ${obs}`, pageW - margin * 2);
+          lines.forEach(line => {
+            if (y > contentBottom) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+            doc.text(line, margin, y);
+            y += 5;
+          });
+        });
+      }
 
       // ---- Quadros de áreas e esquadrias ----
       const tableW = pageW - margin * 2;
