@@ -414,6 +414,8 @@ function trimWallsToCorner(a, b) {
 
 export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD }) {
   const svgRef = useRef(null);
+  const toolbarRef = useRef(null);
+  const belowCanvasRef = useRef(null);
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
   const [phaseView, setPhaseView] = useState("tudo");
@@ -593,21 +595,44 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const svgTop = svgRef.current.getBoundingClientRect().top;
       const nav = document.querySelector("[data-braves-bottom-nav]");
       const bottomEdge = nav ? nav.getBoundingClientRect().top : (window.innerHeight || 700);
-      // Space that always follows the canvas (the Recente/Desfazer/Tudo row) —
-      // reserved so it's never pushed past the visible viewport, which used
-      // to trap it behind the canvas's own touch-none drawing surface.
-      const BELOW_CANVAS_RESERVED = 64;
-      const h = Math.max(220, bottomEdge - svgTop - BELOW_CANVAS_RESERVED);
+      // Space that always follows the canvas — the Recente/Desfazer/Tudo
+      // row, plus (when something's selected) its whole detail-editor
+      // panel above that row. A fixed guess here either wastes space when
+      // nothing's selected and that panel is absent, or gets outgrown the
+      // moment it appears (a wall's own editor, with its buttons for
+      // merging/trimming/splitting, runs well past a flat guess) and
+      // shoves this reserved area — and the canvas "filling the rest" —
+      // straight past the bottom nav. Measuring the block's real rendered
+      // height instead adapts to whichever is actually on screen.
+      const belowH = belowCanvasRef.current ? belowCanvasRef.current.getBoundingClientRect().height : 64;
+      const h = Math.max(220, bottomEdge - svgTop - belowH - 8);
       setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
       setVb(v => v || fitViewBoxToElements(elements, w, h));
     }
     const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
     window.addEventListener("orientationchange", measure);
+    // The dependency list above only covers toolbar rows that come and go
+    // with local UI state — it can't know about ones that show up once
+    // cloud data finishes loading (the "Vistas" row needs a demolir/
+    // construir element to exist, "ver 1º Pavimento" needs a level above/
+    // below), which shifts the toolbar's real height without touching any
+    // of those dependencies, silently freezing the canvas at a shorter,
+    // stale size — the wasted band of empty space between it and the
+    // bottom nav that never gets reclaimed. Watching the toolbar block
+    // itself catches that (and anything else) directly, instead of trying
+    // to enumerate every possible cause.
+    let ro;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => measure());
+      if (toolbarRef.current) ro.observe(toolbarRef.current);
+      if (belowCanvasRef.current) ro.observe(belowCanvasRef.current);
+    }
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
+      if (ro) ro.disconnect();
     };
   }, [tool, planMode, editingDim, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel, fullscreen]);
 
@@ -1861,7 +1886,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           layer pinned over the top of the canvas in fullscreen, instead of
           pushing it down; in normal (in-flow) mode this wrapper does
           nothing (no absolute positioning, no background). */}
-      <div className={fullscreen ? "absolute top-0 left-0 right-0 z-20 pb-1.5" : undefined}
+      <div ref={toolbarRef} className={fullscreen ? "absolute top-0 left-0 right-0 z-20 pb-1.5" : undefined}
         style={fullscreen ? {
           background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)",
           // A fullscreen PWA (viewport-fit=cover) draws content under the
@@ -2383,7 +2408,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           near-opaque block) so the two read as one consistent treatment;
           the controls underneath keep their own normal (already legible)
           styling either way. */}
-      <div className={fullscreen ? "absolute bottom-0 left-0 right-0 z-20 pt-1.5 max-h-[60vh] overflow-y-auto" : undefined}
+      <div ref={belowCanvasRef} className={fullscreen ? "absolute bottom-0 left-0 right-0 z-20 pt-1.5 max-h-[60vh] overflow-y-auto" : undefined}
         style={fullscreen ? {
           background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)",
           paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
