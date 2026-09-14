@@ -3,7 +3,7 @@ import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
 } from "lucide-react";
-import { C, mono, heading, phaseColor } from "./theme.js";
+import { C, mono, heading, phaseColor, matchesPhaseView, PHASE_VIEWS } from "./theme.js";
 import { toNum, uid } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM } from "./constants.js";
 import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, wrapTextLines } from "./geometry.js";
@@ -389,6 +389,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const svgRef = useRef(null);
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
+  const [phaseView, setPhaseView] = useState("tudo");
   const [pending, setPending] = useState(null);
   const [polygon, setPolygon] = useState([]);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
@@ -422,6 +423,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const wallsById = {};
   elements.filter(e => e.type === "wall").forEach(w => { wallsById[w.id] = w; });
   const selected = elements.find(e => e.id === selectedId) || null;
+  // Whether this level has any wall/opening actually marked for demolition
+  // or new construction — the "Vistas" phase selector below only makes
+  // sense (and only shows up) once a reforma project actually has phases
+  // to switch between; a plain new-build project never sees it.
+  const hasPhaseElements = elements.some(e => (e.type === "wall" || e.type === "door" || e.type === "window" || e.type === "stair") && (e.demolir || e.construir));
+  const phaseVisible = el => phaseView === "tudo" || matchesPhaseView(el, phaseView);
   // Estimated on-screen box of each room's name/area label (mirrors the
   // hitW/hitH math in the room-label render below) — used by the
   // parallel-wall dimension labels to steer clear of it. For a rectangular
@@ -718,7 +725,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (p.x === pending.x && p.y === pending.y) { setPending(null); return; }
       const length = pxToMeters(dist(pending, p));
       const wallCount = elements.filter(x => x.type === "wall").length;
-      const el = { id: uid(), type: "wall", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar", demolir: false, construir: false };
+      // Drawn while looking at the "Construção Nova" view, a wall is
+      // obviously meant to be part of that new construction — tag it as
+      // such automatically, or it'd vanish the instant it's drawn (this
+      // view only shows elements already marked construir).
+      const el = { id: uid(), type: "wall", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar", demolir: false, construir: phaseView === "novo" };
       commitElements([...elements, el]);
       // Chain mode: keep drawing from this wall's endpoint instead of
       // requiring a fresh start tap for every segment. Tap the same point
@@ -835,9 +846,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const type = tool === "porta" ? "door" : "window";
       const count = elements.filter(x => x.type === type).length;
       const tagPrefix = tool === "porta" ? "PT" : "JN";
+      // Same reasoning as a new wall above: placed while viewing "Construção
+      // Nova", a door/window is new construction by definition.
+      const isNew = phaseView === "novo";
       const el = tool === "porta"
-        ? { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 0.8, height: 2.10, doorType: DOOR_TYPES[0], panels: 1, condition: "A confirmar", demolir: false, construir: false }
-        : { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 1.2, height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2, condition: "A confirmar", demolir: false, construir: false };
+        ? { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 0.8, height: 2.10, doorType: DOOR_TYPES[0], panels: 1, condition: "A confirmar", demolir: false, construir: isNew }
+        : { id: uid(), type, x: hit.proj.x, y: hit.proj.y, wallId: hit.wall.id, tag: `${tagPrefix}-${count + 1}`, width: 1.2, height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2, condition: "A confirmar", demolir: false, construir: isNew };
       commitElements([...elements, el]);
       setSelectedId(el.id);
     }
@@ -1513,7 +1527,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     return other ? (wallThicknessM(other.wallType) / 2 / scale) * GRID : 0;
   }
   function wallDimensions(w) {
-    const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id);
+    const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id && phaseVisible(e));
     if (!opens.length) return null;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy) || 1;
@@ -1613,6 +1627,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
           style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : C.panelAlt, color: planMode === "forro" ? "#141311" : C.mute }}>Planta de Forro</button>
       </div>
+
+      {hasPhaseElements && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vista:</span>
+          {PHASE_VIEWS.map(({ id, label }) => (
+            <button key={id} onClick={() => setPhaseView(id)} className="px-2 py-1 rounded text-[10px]"
+              style={{ ...heading, fontWeight: 600, background: phaseView === id ? C.goldTint : C.panelAlt, color: phaseView === id ? C.gold : C.mute, border: `1px solid ${phaseView === id ? C.gold : C.line}` }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-1.5 mb-1">
         {TOOLS.map(({ id, label, Icon }) => {
@@ -1791,7 +1817,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </g>
           );
         })}
-        {elements.filter(el => el.type === "wall").map(el => (
+        {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
               stroke={selectedId === el.id ? "#726F68" : phaseColor(el) || "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
@@ -1818,7 +1844,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               // under-triggers depending on the wall's length.
               const wdx = el.x2 - el.x1, wdy = el.y2 - el.y1, wlen = Math.hypot(wdx, wdy) || 1;
               const nearCenter = elements
-                .some(o => (o.type === "door" || o.type === "window") && o.wallId === el.id
+                .some(o => (o.type === "door" || o.type === "window") && o.wallId === el.id && phaseVisible(o)
                   && Math.abs(((o.x - el.x1) * wdx + (o.y - el.y1) * wdy) / wlen - wlen * 0.5) < 45);
               const off = wallLabelOffset(el, nearCenter ? 18 : 0);
               const { x: lx, y: ly } = clampOffsetToView(midX, midY, off.x, off.y);
@@ -1858,7 +1884,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <circle key={pt.id} cx={pt.x} cy={pt.y} r="4" fill="none" stroke="#2E6FED" strokeWidth="1.5" opacity="0.8" pointerEvents="none" />
           ));
         })()}
-        {planMode === "piso" && nearestParallelWallDims(elements.filter(el => el.type === "wall")).map(d => {
+        {planMode === "piso" && nearestParallelWallDims(elements.filter(el => el.type === "wall" && phaseVisible(el))).map(d => {
           const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
           const ux = dx / len, uy = dy / len;
           const nx = -uy, ny = ux;
@@ -1980,7 +2006,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </g>
           );
         })}
-        {planMode === "piso" && elements.filter(el => el.type === "stair").map(el => (
+        {planMode === "piso" && elements.filter(el => el.type === "stair" && phaseVisible(el)).map(el => (
           <g key={el.id}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={selectedId === el.id ? "#726F68" : "#6B6862"} strokeWidth="10" strokeLinecap="round" opacity="0.7"
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
@@ -1993,7 +2019,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <text x={(el.x1 + el.x2) / 2} y={(el.y1 + el.y2) / 2 - 10} fontSize="9" fill="#4A4A46" textAnchor="middle">{el.tag}</text>
           </g>
         ))}
-        {planMode === "piso" && elements.filter(el => el.type === "door" || el.type === "window").map(el => {
+        {planMode === "piso" && elements.filter(el => (el.type === "door" || el.type === "window") && phaseVisible(el)).map(el => {
           const w = wallsById[el.wallId];
           const angleDeg = w ? (Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180 / Math.PI) : 0;
           const widthPx = Math.max(6, (toNum(el.width, 0.8) / scale) * GRID);

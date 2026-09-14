@@ -6,6 +6,31 @@ import { idbGet } from "./storage.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import { CornerBrackets } from "./ElementRows.jsx";
 
+// A quick, one-shot "sketch it, then it's built" flourish that plays above
+// the logo on landing: a little floor plan (walls, a door swing, a
+// dimension line) draws itself in, then collapses away right as the logo
+// rises — distinct from a plain fade-in and on-brand for a BIM field app.
+function BlueprintIntro() {
+  return (
+    <div className="braves-blueprint-wrap flex justify-center" aria-hidden="true">
+      <svg width="128" height="70" viewBox="0 0 160 88" fill="none">
+        <path className="braves-blueprint-path" pathLength="1" style={{ animationDelay: "0s" }}
+          d="M30,24 L130,24 L130,74 L92,74 M58,74 L30,74 L30,24"
+          stroke={C.chalk} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
+        <path className="braves-blueprint-path" pathLength="1" style={{ animationDelay: "0.12s" }}
+          d="M30,10 L130,10 M30,5 L30,15 M130,5 L130,15"
+          stroke={C.mute} strokeWidth="1.2" />
+        <path className="braves-blueprint-path" pathLength="1" style={{ animationDelay: "0.4s" }}
+          d="M130,40 L122,40 L122,52 L130,52"
+          stroke={C.mute} strokeWidth="1.4" />
+        <path className="braves-blueprint-path" pathLength="1" style={{ animationDelay: "0.32s" }}
+          d="M58,74 A34,34 0 0 1 92,40 M58,74 L92,40"
+          stroke="#FFFFFF" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
 // The app's start screen (device role, new vs. join project) and, once
 // starting a new project, its building-info step — split out of App.jsx
 // since it only needs the onJoin callback from the parent.
@@ -129,6 +154,7 @@ export default function JoinScreen({ onJoin }) {
       <Watermark />
       <div className="relative w-full max-w-sm mt-16">
         <div className="braves-anim-in flex flex-col items-center gap-4 mb-7" style={{ animationDelay: "0s" }}>
+          <BlueprintIntro />
           <img src={SYMBOL_LOGO} alt="Braves BIM Field" className="braves-logo-build" style={{ height: 132, width: "auto" }} />
           <div className="text-center">
             <div style={{ ...heading, color: C.chalk, fontSize: "26px", letterSpacing: "0.01em", fontWeight: 800 }}>

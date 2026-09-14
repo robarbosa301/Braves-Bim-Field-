@@ -31,3 +31,24 @@ export function phaseColor(el) {
   if (el.construir) return C.good;
   return null;
 }
+// Whether an element belongs on screen in one of the Croqui's four
+// "Vistas" (reforma project views) — each shows only the elements that
+// actually exist at that stage of the work: what's there today (kept AND
+// about to be torn down), what's being torn down, what's brand new, and
+// what the finished result looks like. "tudo" (the default, no filter) is
+// deliberately not handled here — callers show everything before ever
+// consulting this.
+export function matchesPhaseView(el, view) {
+  if (view === "existente") return !el.construir;
+  if (view === "demolicao") return !!el.demolir;
+  if (view === "novo") return !!el.construir;
+  if (view === "final") return !el.demolir;
+  return true;
+}
+export const PHASE_VIEWS = [
+  { id: "tudo", label: "Tudo" },
+  { id: "existente", label: "Construção Existente" },
+  { id: "demolicao", label: "Demolição" },
+  { id: "novo", label: "Construção Nova" },
+  { id: "final", label: "Projeto Final" },
+];
