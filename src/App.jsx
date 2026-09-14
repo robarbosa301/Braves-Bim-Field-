@@ -840,7 +840,7 @@ export default function PranchetaBIM() {
               <StatRow label="Área" value={activeRoom.area ? `${activeRoom.area} m²` : "ainda não definida"} />
               <StatRow label="Área de parede" value={activeRoomWallFaces.length ? `${activeRoomWallAreaTotal.toFixed(2)} m²` : "sem parede vinculada"} />
               <StatRow label="Piso" value={activeRoomPolygon?.floorFinish || "A definir"} />
-              <StatRow label="Forro" value={activeRoomPolygon?.ceilingFinish || "A definir"} />
+              <StatRow label="Forro" value={`${activeRoomPolygon?.ceilingFinish || "A definir"}${activeRoom.area ? ` · ${activeRoom.area} m²` : ""}`} />
               <StatRow label="Uso" value={activeRoom.use || "—"} />
               <StatRow label="Condição geral" value={activeRoom.condition} />
               {activeRoom.geo && <StatRow label="GPS" value={`${activeRoom.geo.lat}, ${activeRoom.geo.lon}`} />}
