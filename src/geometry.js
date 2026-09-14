@@ -50,7 +50,25 @@ export function fitViewBoxToElements(elements, w, h) {
   });
   if (!isFinite(minX)) return { x: 0, y: 0, w, h };
   const aspect = w / h;
-  const contentW = Math.max(30, maxX - minX), contentH = Math.max(30, maxY - minY);
+  // A door/window sitting near a wall's midpoint pushes that wall's own
+  // length label out further (see wallLabelOffset's "extra" in
+  // VectorSketch) so it clears the opening's own tag instead of landing
+  // on top of it. Reserve a little extra room around the whole drawing
+  // only when that situation actually exists, so the pushed-out label
+  // has somewhere to go instead of this fit's own edge immediately
+  // clamping it back down to where it started — every other layout
+  // (the common case) keeps the exact same framing as before.
+  const walls = elements.filter(e => e.type === "wall" || e.type === "stair");
+  const hasCenteredOpening = elements.some(o => {
+    if (o.type !== "door" && o.type !== "window") return false;
+    const wl = walls.find(ww => ww.id === o.wallId);
+    if (!wl) return false;
+    const wdx = wl.x2 - wl.x1, wdy = wl.y2 - wl.y1, wlen = Math.hypot(wdx, wdy) || 1;
+    const p = ((o.x - wl.x1) * wdx + (o.y - wl.y1) * wdy) / wlen;
+    return Math.abs(p - wlen * 0.5) < 45;
+  });
+  const pad = hasCenteredOpening ? 26 : 0;
+  const contentW = Math.max(30, maxX - minX) + pad, contentH = Math.max(30, maxY - minY) + pad;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   let newW = contentW * 1.3, newH = newW / aspect;
   if (newH < contentH * 1.3) { newH = contentH * 1.3; newW = newH * aspect; }
