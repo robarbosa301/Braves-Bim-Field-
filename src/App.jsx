@@ -793,6 +793,61 @@ export default function PranchetaBIM() {
         const w = shot.width * ratio, h = shot.height * ratio;
         doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
       };
+      // A floor plan carries its own compact door/window schedule right on
+      // the same sheet, the way a real drawing set does — the P1/J1 tags on
+      // the plan are only useful next to a table that decodes them into
+      // real dimensions and material, not off on a separate page. Sized to
+      // the level's actual door/window count (capped) so a level with just
+      // one or two openings doesn't lose drawing space it doesn't need.
+      const addFloorPlanSheet = (title, shot, doors, windows) => {
+        beginSheet(title);
+        doc.setFontSize(13); doc.setTextColor(20);
+        doc.text(title, margin, margin);
+        doc.setDrawColor(215); doc.setLineWidth(0.3);
+        doc.line(margin, margin + 3, pageW - margin, margin + 3);
+
+        const hasSchedule = doors.length > 0 || windows.length > 0;
+        const rowH = 4.4;
+        const doorBlockRows = doors.length ? 2 + doors.length : 0;
+        const winBlockRows = windows.length ? 2 + windows.length : 0;
+        const scheduleH = hasSchedule ? Math.min(74, 5 + (doorBlockRows + winBlockRows) * rowH) : 0;
+
+        const imgTop = margin + 8;
+        const availW = pageW - margin * 2;
+        const availH = contentBottom - imgTop - (hasSchedule ? scheduleH + 5 : 0);
+        const ratio = Math.min(availW / shot.width, availH / shot.height);
+        const w = shot.width * ratio, h = shot.height * ratio;
+        doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, imgTop, w, h);
+        if (!hasSchedule) return;
+
+        let ty = contentBottom - scheduleH;
+        doc.setDrawColor(210); doc.setLineWidth(0.25);
+        doc.line(margin, ty - 3, pageW - margin, ty - 3);
+        doc.setFontSize(8.5); doc.setTextColor(20);
+        doc.text("Tabela de esquadrias", margin, ty); ty += 4.5;
+
+        const colX = [margin, margin + 14, margin + 46, pageW - margin - 46];
+        const colEnd = pageW - margin;
+        const drawSub = (label, items, dimText, typeOf) => {
+          if (!items.length) return;
+          doc.setFontSize(6.8); doc.setTextColor(110);
+          doc.text(label, margin, ty); ty += 3.6;
+          doc.setFontSize(6.3); doc.setTextColor(140);
+          doc.text("CÓD", colX[0], ty); doc.text("DIMENSÕES", colX[1], ty);
+          doc.text("MATERIAL/TIPO", colX[2], ty); doc.text("CONDIÇÃO", colX[3], ty);
+          ty += 1; doc.setDrawColor(220); doc.line(margin, ty, colEnd, ty); ty += 3;
+          items.forEach(it => {
+            doc.setFontSize(7); doc.setTextColor(40);
+            doc.text(it.tag || "-", colX[0], ty);
+            doc.text(oneLine(dimText(it), colX[2] - colX[1] - 3), colX[1], ty);
+            doc.text(oneLine(typeOf(it) || "-", colX[3] - colX[2] - 3), colX[2], ty);
+            doc.text(oneLine(it.condition || "-", colEnd - colX[3]), colX[3], ty);
+            ty += rowH;
+          });
+        };
+        drawSub("PORTAS", doors, d => `${d.width ?? "-"}×${d.height ?? "-"} m`, d => d.doorType);
+        drawSub("JANELAS", windows, wdw => `${wdw.width ?? "-"}×${wdw.height ?? "-"} m (peit. ${wdw.peitoril ?? "-"})`, wdw => wdw.windowType);
+      };
       // The carimbo's cells (and now the tables' columns) are narrow and
       // fixed-width — jsPDF's maxWidth wraps overflowing text onto a second
       // line instead of clipping it, which then prints straight through the
@@ -904,19 +959,10 @@ export default function PranchetaBIM() {
         allWalls.map(w => [w.tag || "-", w.levelName, w.wallType || "-", w.length ?? "-", w.height ?? "-", (toNum(w.length, 0) * toNum(w.height, 0)).toFixed(2), w.condition || "-"]),
         { totalLabel: `Área total de paredes: ${wallsAreaTotal.toFixed(2)} m²` });
 
-      const allDoors = levels.flatMap(l => (l.sketchElements || []).filter(e => e.type === "door").map(d => ({ ...d, levelName: l.name })));
-      addTableSheet("Quadro de esquadrias — Portas",
-        [{ label: "TAG", w: tableW * 0.10 }, { label: "NÍVEL", w: tableW * 0.16 }, { label: "MATERIAL/TIPO", w: tableW * 0.30 },
-         { label: "DIMENSÕES", w: tableW * 0.24 }, { label: "CONDIÇÃO", w: tableW * 0.20 }],
-        allDoors.map(d => [d.tag || "-", d.levelName, d.doorType || "-", `${d.width ?? "-"}×${d.height ?? "-"} m`, d.condition || "-"]),
-        { totalLabel: `Total: ${allDoors.length} porta(s)` });
-
-      const allWindows = levels.flatMap(l => (l.sketchElements || []).filter(e => e.type === "window").map(win => ({ ...win, levelName: l.name })));
-      addTableSheet("Quadro de esquadrias — Janelas",
-        [{ label: "TAG", w: tableW * 0.10 }, { label: "NÍVEL", w: tableW * 0.16 }, { label: "MATERIAL/TIPO", w: tableW * 0.28 },
-         { label: "DIMENSÕES", w: tableW * 0.26 }, { label: "CONDIÇÃO", w: tableW * 0.20 }],
-        allWindows.map(win => [win.tag || "-", win.levelName, win.windowType || "-", `${win.width ?? "-"}×${win.height ?? "-"} m (peit. ${win.peitoril ?? "-"} m)`, win.condition || "-"]),
-        { totalLabel: `Total: ${allWindows.length} janela(s)` });
+      // Portas/janelas ficam na própria prancha da planta (addFloorPlanSheet
+      // abaixo) — o tag P1/J1 no desenho só faz sentido ao lado da tabela
+      // que decodifica em dimensão/material, então não repetimos como
+      // pranchas de quadro separadas.
 
       // ---- Plantas baixas: uma página por nível que já tem algo desenhado ----
       for (const level of levels) {
@@ -928,7 +974,11 @@ export default function PranchetaBIM() {
         await sleep(550);
         const svgEl = document.querySelector('[data-croqui-svg="true"]');
         const shot = svgEl ? await svgToPngDataUrl(svgEl) : null;
-        if (shot) addImageSheet(`Planta baixa — ${level.name}`, shot);
+        if (shot) {
+          const doors = els.filter(e => e.type === "door");
+          const windows = els.filter(e => e.type === "window");
+          addFloorPlanSheet(`Planta baixa — ${level.name}`, shot, doors, windows);
+        }
       }
 
       // ---- Modelo 3D (casa toda) ----
