@@ -618,6 +618,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
     window.addEventListener("orientationchange", measure);
+    // Mobile Safari settling its address bar after load changes the real
+    // visible height without always firing a plain window "resize" — the
+    // same gap-below-the-app case App.jsx's own useRealViewportHeight
+    // guards against, just for this canvas's internal measurement instead
+    // of the app root. visualViewport catches it reliably where "resize"
+    // doesn't.
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", measure);
     // The dependency list above only covers toolbar rows that come and go
     // with local UI state — it can't know about ones that show up once
     // cloud data finishes loading (the "Vistas" row needs a demolir/
@@ -638,6 +645,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", measure);
       if (ro) ro.disconnect();
     };
   }, [tool, planMode, editingDim, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel, fullscreen]);
@@ -1902,21 +1910,30 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           paddingTop: "max(10px, env(safe-area-inset-top))",
           paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
         } : undefined}>
-      <div className="flex gap-1.5 mb-2">
-        <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
-          style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : C.panelAlt, color: planMode === "piso" ? "#141311" : C.mute }}>Planta de Piso</button>
-        <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
-          style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : C.panelAlt, color: planMode === "forro" ? "#141311" : C.mute }}>Planta de Forro</button>
-      </div>
-
-      {hasPhaseElements && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <button onClick={() => setPhaseMenuOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+      {/* Piso/Forro as a compact pill pair (instead of two 50%-width
+          buttons) frees the rest of this row for the Vistas selector, so
+          both fit on one line — one less full-width row pushing the canvas
+          down, on top of Vistas already being collapsed behind its own
+          button. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+        <div className="flex gap-1 rounded p-0.5 shrink-0" style={{ background: C.panelAlt }}>
+          <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="px-2.5 py-1 rounded text-[11px]"
+            style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : "transparent", color: planMode === "piso" ? "#141311" : C.mute }}>Piso</button>
+          <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="px-2.5 py-1 rounded text-[11px]"
+            style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : "transparent", color: planMode === "forro" ? "#141311" : C.mute }}>Forro</button>
+        </div>
+        {hasPhaseElements && (
+          <button onClick={() => setPhaseMenuOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] ml-auto"
             style={{ ...heading, fontWeight: 600, background: phaseMenuOpen ? C.goldTint : C.panelAlt, color: phaseMenuOpen ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen ? C.gold : C.line}` }}>
             <Layers size={12} /> Vistas: {PHASE_VIEWS.find(v => v.id === phaseView)?.label}
             <ChevronDown size={12} style={{ transform: phaseMenuOpen ? "rotate(180deg)" : undefined }} />
           </button>
-          {phaseMenuOpen && PHASE_VIEWS.map(({ id, label }) => (
+        )}
+      </div>
+
+      {hasPhaseElements && phaseMenuOpen && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {PHASE_VIEWS.map(({ id, label }) => (
             <button key={id} onClick={() => { setPhaseView(id); setPhaseMenuOpen(false); }} className="px-2 py-1 rounded text-[10px]"
               style={{ ...heading, fontWeight: 600, background: phaseView === id ? C.goldTint : C.panelAlt, color: phaseView === id ? C.gold : C.mute, border: `1px solid ${phaseView === id ? C.gold : C.line}` }}>
               {label}

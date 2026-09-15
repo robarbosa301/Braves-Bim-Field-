@@ -1410,34 +1410,44 @@ export default function PranchetaBIM() {
 
         {tab === "croqui" && (
           <div>
-            <div className="flex gap-1.5 mb-3">
-              <button onClick={() => setCroquiViewMode("2d")} className="flex-1 py-1.5 rounded text-[11px]"
-                style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : C.panelAlt, color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
-                Planta 2D
-              </button>
-              <button onClick={() => setCroquiViewMode("3d")} className="flex-1 py-1.5 rounded text-[11px]"
-                style={{ ...heading, fontWeight: 600, background: croquiViewMode === "3d" ? C.gold : C.panelAlt, color: croquiViewMode === "3d" ? "#141311" : C.mute }}>
-                3D
-              </button>
-            </div>
-
-            {croquiViewMode === "2d" && croquiLevel && (
-              <div className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium" style={{ color: C.chalk }}>Croqui do nível:</span>
-                  <select value={croquiLevel.id} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
-                    style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                    {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+            {/* The croqui (2D sketch) is the app's main tool, so its own
+                canvas gets first claim on vertical space — this row folds
+                what used to be two full-width rows (a "Planta 2D/3D" toggle
+                above the card, plus a "Croqui do nível" line inside it) into
+                one, so VectorSketch's own auto-sizing (which fills whatever
+                is left down to the bottom nav) has more room to give the
+                canvas. */}
+            <div className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <div className="flex items-center gap-1.5 mb-2">
+                {croquiViewMode === "2d" ? (
+                  levels.length > 0 ? (
+                    <select value={croquiLevel?.id || ""} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1.5 rounded flex-1 min-w-0"
+                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                      {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  ) : <span className="text-xs flex-1" style={{ color: C.mute }}>Nenhum nível criado</span>
+                ) : <span className="text-xs font-medium flex-1" style={{ color: C.chalk }}>Modelo 3D</span>}
+                <div className="flex gap-1 shrink-0 rounded p-0.5" style={{ background: C.panelAlt }}>
+                  <button onClick={() => setCroquiViewMode("2d")} className="px-2.5 py-1 rounded text-[11px]"
+                    style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : "transparent", color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
+                    2D
+                  </button>
+                  <button onClick={() => setCroquiViewMode("3d")} className="px-2.5 py-1 rounded text-[11px]"
+                    style={{ ...heading, fontWeight: 600, background: croquiViewMode === "3d" ? C.gold : "transparent", color: croquiViewMode === "3d" ? "#141311" : C.mute }}>
+                    3D
+                  </button>
                 </div>
+              </div>
+
+              {croquiViewMode === "2d" && croquiLevel && (
                 <VectorSketch level={croquiLevel} allLevels={levels} rooms={rooms.filter(r => r.level === croquiLevel.name)}
                   onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
                   onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
                   onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)}
                   exportMode={pdfExporting} onOpenThreeD={() => setCroquiViewMode("3d")} />
-              </div>
-            )}
-            {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
+              )}
+              {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
+            </div>
 
             {croquiViewMode === "3d" && (
               <div>
