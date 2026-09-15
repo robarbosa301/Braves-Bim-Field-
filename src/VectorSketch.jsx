@@ -424,9 +424,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // reselecting the tool each time) — a mouse/trackpad (an iPad with a
   // Magic Keyboard, a desktop browser) can hover before committing, so
   // this tracks that position the same way a real tap would resolve it
-  // (endpoint/wall-line snap, then angle-snap), giving a dashed rubber-band
-  // line instead of leaving the chain's next segment invisible until the
-  // tap actually lands. Touch alone has no hover to preview from, but the
+  // (endpoint/wall-line snap, then angle-snap), giving a solid preview
+  // styled like the real wall itself — not a dashed placeholder — instead
+  // of leaving the chain's next segment invisible until the tap actually
+  // lands. Touch alone has no hover to preview from, but the
   // chain logic itself (in handleTap) works the same regardless.
   const [hoverPos, setHoverPos] = useState(null);
   // Visual-only anchor for the press-drag-release gesture below, separate
@@ -2535,7 +2536,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {polygon.length > 0 && <polyline points={polygon.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#4A4A46" strokeWidth="1.5" strokeDasharray="4,3" />}
         {polygon.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#4A4A46" />)}
         {(gestureAnchor || pending) && hoverPos && (tool === "parede" || tool === "escada") && (
-          <line x1={(gestureAnchor || pending).x} y1={(gestureAnchor || pending).y} x2={hoverPos.x} y2={hoverPos.y} stroke="#4A4A46" strokeWidth="3" strokeDasharray="7,5" opacity="0.55" pointerEvents="none" />
+          <line x1={(gestureAnchor || pending).x} y1={(gestureAnchor || pending).y} x2={hoverPos.x} y2={hoverPos.y} stroke="#1B1E1A" strokeWidth="4" strokeLinecap="square" opacity="0.6" pointerEvents="none" />
         )}
         {pending && <circle cx={pending.x} cy={pending.y} r="4.5" fill="#4A4A46" stroke="#1B1E1A" strokeWidth="1" />}
         </g>
