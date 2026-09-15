@@ -8,7 +8,7 @@ import {
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM } from "./constants.js";
-import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, wrapTextLines, rotatePoint } from "./geometry.js";
+import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, resyncVbAspect, wrapTextLines, rotatePoint } from "./geometry.js";
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
 
 // Split out of App.jsx — this is the Croqui (2D sketch) editor, the
@@ -584,7 +584,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (fullscreen) {
         const w = window.innerWidth || 340, h = window.innerHeight || 600;
         setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
-        setVb(v => v || fitViewBoxToElements(elements, w, h));
+        setVb(v => v ? resyncVbAspect(v, w, h) : fitViewBoxToElements(elements, w, h));
         return;
       }
       const w = svgRef.current.parentElement.clientWidth || 340;
@@ -603,7 +603,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const belowH = belowCanvasRef.current ? belowCanvasRef.current.getBoundingClientRect().height : 64;
       const h = Math.max(220, bottomEdge - svgTop - belowH - 8);
       setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
-      setVb(v => v || fitViewBoxToElements(elements, w, h));
+      setVb(v => v ? resyncVbAspect(v, w, h) : fitViewBoxToElements(elements, w, h));
     }
     const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);

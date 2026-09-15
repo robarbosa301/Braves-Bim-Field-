@@ -88,6 +88,28 @@ export function fitViewBoxToElements(elements, w, h) {
   newH = newW / aspect;
   return { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
 }
+// The <svg> has no preserveAspectRatio override, so it defaults to "xMidYMid
+// meet": whenever the viewBox's own aspect ratio doesn't match the element's
+// actual on-screen box, the browser letterboxes the drawing (grey bars,
+// content shrunk and centered) rather than stretching it. That's the right
+// call visually — walls shouldn't distort — but every screen-to-drawing tap
+// conversion in this file assumes the drawing fills the box edge to edge,
+// so a stale viewBox left over from before the box's aspect ratio changed
+// (e.g. selecting an element reveals its editor panel below the canvas,
+// shrinking the available height) reads taps at the wrong point — clicking
+// a spot near the top of the visible drawing can land on a point further
+// down, since the math still divides by the full (now taller-than-content)
+// box. Called whenever the box is remeasured, this keeps an existing
+// viewBox's width/x (the zoom level and horizontal framing the person left
+// it at) and only resizes/recenters its height to match the box's new
+// aspect ratio, so the drawing keeps filling the box exactly — no
+// letterboxing, and no coordinate drift — instead of only ever being set
+// once and left to drift out of sync.
+export function resyncVbAspect(v, w, h) {
+  const newH = v.w * (h / w);
+  const cy = v.y + v.h / 2;
+  return { ...v, h: newH, y: cy - newH / 2 };
+}
 export function wrapTextLines(text, maxChars) {
   if (!text) return [""];
   const words = text.split(" ");
