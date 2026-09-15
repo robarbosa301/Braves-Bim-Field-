@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Layers, ChevronDown,
+  Expand, Shrink, Box,
 } from "lucide-react";
-import { C, mono, heading, phaseColor, matchesPhaseView, PHASE_VIEWS } from "./theme.js";
+import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM } from "./constants.js";
 import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, wrapTextLines, rotatePoint } from "./geometry.js";
@@ -412,17 +412,12 @@ function trimWallsToCorner(a, b) {
   };
 }
 
-export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD }) {
+export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD, phaseView = "tudo" }) {
   const svgRef = useRef(null);
   const toolbarRef = useRef(null);
   const belowCanvasRef = useRef(null);
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
-  const [phaseView, setPhaseView] = useState("tudo");
-  // The phase-view choices sit behind one button now instead of always
-  // showing all of them — same "closed by default, opens on demand" pattern
-  // as the Sincronização tab's DADOS DO IMÓVEL panel.
-  const [phaseMenuOpen, setPhaseMenuOpen] = useState(false);
   const [pending, setPending] = useState(null);
   const [polygon, setPolygon] = useState([]);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
@@ -443,7 +438,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [namingValue, setNamingValue] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [showBelow, setShowBelow] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
   // entire phone screen — the toolbar rows and the selected-element panel
@@ -470,11 +465,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const wallsById = {};
   elements.filter(e => e.type === "wall").forEach(w => { wallsById[w.id] = w; });
   const selected = elements.find(e => e.id === selectedId) || null;
-  // Whether this level has any wall/opening actually marked for demolition
-  // or new construction — the "Vistas" phase selector below only makes
-  // sense (and only shows up) once a reforma project actually has phases
-  // to switch between; a plain new-build project never sees it.
-  const hasPhaseElements = elements.some(e => (e.type === "wall" || e.type === "door" || e.type === "window" || e.type === "stair") && (e.demolir || e.construir));
   const phaseVisible = el => phaseView === "tudo" || matchesPhaseView(el, phaseView);
   // "Final" (what's kept and what's new should look identical, nothing
   // left to tell apart once the work is done) and "Existente" (what's
@@ -1910,37 +1900,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           paddingTop: "max(10px, env(safe-area-inset-top))",
           paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
         } : undefined}>
-      {/* Piso/Forro fills the row (instead of two fixed-width buttons)
-          so it keeps the bigger, easier-to-tap size it had before — the
-          Vistas selector still shares this same line rather than needing
-          its own full-width row, it just sits at the end instead of
-          splitting the row down the middle with Piso/Forro. */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-2">
-        <div className="flex-1 flex gap-1 rounded p-1" style={{ background: C.panelAlt }}>
-          <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
-            style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : "transparent", color: planMode === "piso" ? "#141311" : C.mute }}>Piso</button>
-          <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
-            style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : "transparent", color: planMode === "forro" ? "#141311" : C.mute }}>Forro</button>
-        </div>
-        {hasPhaseElements && (
-          <button onClick={() => setPhaseMenuOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] shrink-0"
-            style={{ ...heading, fontWeight: 600, background: phaseMenuOpen ? C.goldTint : C.panelAlt, color: phaseMenuOpen ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen ? C.gold : C.line}` }}>
-            <Layers size={12} /> Vistas: {PHASE_VIEWS.find(v => v.id === phaseView)?.label}
-            <ChevronDown size={12} style={{ transform: phaseMenuOpen ? "rotate(180deg)" : undefined }} />
-          </button>
-        )}
+      {/* Vistas moved up to share App.jsx's own level-select row (this
+          component now just reads it as the phaseView prop) — Piso/Forro
+          gets the whole row to itself again. */}
+      <div className="flex items-center gap-1 rounded p-1 mb-2" style={{ background: C.panelAlt }}>
+        <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
+          style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : "transparent", color: planMode === "piso" ? "#141311" : C.mute }}>Piso</button>
+        <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
+          style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : "transparent", color: planMode === "forro" ? "#141311" : C.mute }}>Forro</button>
       </div>
-
-      {hasPhaseElements && phaseMenuOpen && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          {PHASE_VIEWS.map(({ id, label }) => (
-            <button key={id} onClick={() => { setPhaseView(id); setPhaseMenuOpen(false); }} className="px-2 py-1 rounded text-[10px]"
-              style={{ ...heading, fontWeight: 600, background: phaseView === id ? C.goldTint : C.panelAlt, color: phaseView === id ? C.gold : C.mute, border: `1px solid ${phaseView === id ? C.gold : C.line}` }}>
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-1.5 mb-1">
         {TOOLS.map(({ id, label, Icon }) => {
@@ -1954,6 +1922,25 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </button>
           );
         })}
+        {/* Cor das cotas + "ver [nível acima/abaixo]" stacked beside the
+            tool icons instead of on their own row below, freeing that row
+            for the grid/zoom cluster to move up onto the same line as the
+            scale (⊞/PD) fields. */}
+        {planMode === "piso" && (
+          <div className="flex flex-col gap-1 text-[10px] ml-1" style={{ color: C.mute }}>
+            <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
+              <Ruler size={11} />
+              <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+            {belowLevel && (
+              <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
+            )}
+            {aboveLevel && (
+              <label className="flex items-center gap-1"><input type="checkbox" checked={showAbove} onChange={e => setShowAbove(e.target.checked)} /> ver {aboveLevel.name}</label>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
         {planMode === "piso" && (
@@ -1966,21 +1953,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <input type="text" inputMode="decimal" value={wallHeightDefault} onChange={e => onMeta({ wallHeightDefault: e.target.value })}
                 className="w-14 px-1 py-0.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} /> m
             </span>
-            <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
-              <Ruler size={12} />
-              <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
-                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
-            </span>
-            {(belowLevel || aboveLevel) && (
-              <span className="flex items-center gap-2">
-                {belowLevel && (
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
-                )}
-                {aboveLevel && (
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={showAbove} onChange={e => setShowAbove(e.target.checked)} /> ver {aboveLevel.name}</label>
-                )}
-              </span>
-            )}
           </>
         )}
         <div className="flex items-center gap-1 ml-auto">

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, Suspense } from "react";
 import {
   MapPin, LayoutGrid, Camera, RefreshCw, Wifi, WifiOff, Plus, Trash2,
   CheckCircle2, BrickWall, Building2,
-  ChevronRight, ChevronDown, Pencil, Layers3,
+  ChevronRight, ChevronDown, Pencil, Layers3, Layers,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, Rotate3d, Box, Home,
   DoorOpen, Scissors
@@ -372,6 +372,10 @@ export default function PranchetaBIM() {
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [croquiLevelId, setCroquiLevelId] = useState(null);
   const [croquiViewMode, setCroquiViewMode] = useState("2d");
+  const [phaseView2D, setPhaseView2D] = useState("tudo");
+  // "Vistas" sits behind one button, closed by default — same pattern as
+  // the Sincronização tab's DADOS DO IMÓVEL panel.
+  const [phaseMenuOpen2D, setPhaseMenuOpen2D] = useState(false);
   const [view3dMode, setView3dMode] = useState("casa");
   const [view3dOpen, setView3dOpen] = useState(false);
   const [phaseView3D, setPhaseView3D] = useState("tudo");
@@ -635,6 +639,11 @@ export default function PranchetaBIM() {
 
   const activeRoom = rooms.find(r => r.id === activeRoomId) || null;
   const croquiLevel = levels.find(l => l.id === croquiLevelId) || levels[0] || null;
+  // Whether this level has any wall/opening actually marked for demolition
+  // or new construction — the "Vistas" phase selector only makes sense
+  // (and only shows up) once a reforma project actually has phases to
+  // switch between; a plain new-build project never sees it.
+  const hasPhaseElements2D = (croquiLevel?.sketchElements || []).some(e => (e.type === "wall" || e.type === "door" || e.type === "window" || e.type === "stair") && (e.demolir || e.construir));
   const activeRoomLevel = activeRoom ? levels.find(l => l.name === activeRoom.level) : null;
   // The room's own polygon (traced in Croqui) carries the forro/piso finish
   // chosen there; walls have no direct link to a room, so which face (and
@@ -1439,6 +1448,13 @@ export default function PranchetaBIM() {
                     </select>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhum nível criado</span>
                 ) : <span className="text-xs font-medium" style={{ color: C.chalk }}>Modelo 3D</span>}
+                {croquiViewMode === "2d" && hasPhaseElements2D && (
+                  <button onClick={() => setPhaseMenuOpen2D(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] shrink-0"
+                    style={{ ...heading, fontWeight: 600, background: phaseMenuOpen2D ? C.goldTint : C.panelAlt, color: phaseMenuOpen2D ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen2D ? C.gold : C.line}` }}>
+                    <Layers size={12} /> Vistas: {PHASE_VIEWS.find(v => v.id === phaseView2D)?.label}
+                    <ChevronDown size={12} style={{ transform: phaseMenuOpen2D ? "rotate(180deg)" : undefined }} />
+                  </button>
+                )}
                 <div className="flex gap-1 shrink-0 rounded p-0.5 ml-auto" style={{ background: C.panelAlt }}>
                   <button onClick={() => setCroquiViewMode("2d")} className="px-2.5 py-1 rounded text-[11px]"
                     style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : "transparent", color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
@@ -1451,11 +1467,23 @@ export default function PranchetaBIM() {
                 </div>
               </div>
 
+              {croquiViewMode === "2d" && hasPhaseElements2D && phaseMenuOpen2D && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  {PHASE_VIEWS.map(({ id, label }) => (
+                    <button key={id} onClick={() => { setPhaseView2D(id); setPhaseMenuOpen2D(false); }} className="px-2 py-1 rounded text-[10px]"
+                      style={{ ...heading, fontWeight: 600, background: phaseView2D === id ? C.goldTint : C.panelAlt, color: phaseView2D === id ? C.gold : C.mute, border: `1px solid ${phaseView2D === id ? C.gold : C.line}` }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {croquiViewMode === "2d" && croquiLevel && (
                 <VectorSketch level={croquiLevel} allLevels={levels} rooms={rooms.filter(r => r.level === croquiLevel.name)}
                   onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
                   onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
                   onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)}
+                  phaseView={phaseView2D}
                   exportMode={pdfExporting} onOpenThreeD={() => setCroquiViewMode("3d")} />
               )}
               {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
