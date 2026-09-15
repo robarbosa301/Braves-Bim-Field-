@@ -151,15 +151,15 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.localClippingEnabled = true;
-      if (sectionCut && sectionCut.enabled) {
-        let plane;
-        if (sectionCut.axis === "horizontal") plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), sectionCut.position);
-        else if (sectionCut.axis === "vertical-x") plane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), sectionCut.position);
-        else plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionCut.position);
-        renderer.clippingPlanes = [plane];
-      } else {
-        renderer.clippingPlanes = [];
-      }
+      // Each axis is independent — clippingPlanes takes an array and
+      // three.js clips against the intersection of all of them, so any
+      // combination (X+Y, X+Z, all three, …) just works by including
+      // whichever axes are enabled, instead of only ever one at a time.
+      const clipPlanes = [];
+      if (sectionCut?.x?.enabled) clipPlanes.push(new THREE.Plane(new THREE.Vector3(-1, 0, 0), sectionCut.x.position));
+      if (sectionCut?.y?.enabled) clipPlanes.push(new THREE.Plane(new THREE.Vector3(0, -1, 0), sectionCut.y.position));
+      if (sectionCut?.z?.enabled) clipPlanes.push(new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionCut.z.position));
+      renderer.clippingPlanes = clipPlanes;
       mount.innerHTML = "";
       mount.appendChild(renderer.domElement);
 

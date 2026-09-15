@@ -383,7 +383,15 @@ export default function PranchetaBIM() {
   const [view3dMode, setView3dMode] = useState("casa");
   const [view3dOpen, setView3dOpen] = useState(false);
   const [phaseView3D, setPhaseView3D] = useState("tudo");
-  const [sectionCut, setSectionCut] = useState({ enabled: false, axis: "horizontal", position: 1.2 });
+  // Each axis is its own independent clipping plane — any combination can
+  // be enabled at once (three.js's renderer.clippingPlanes already takes
+  // an array and intersects them all), instead of the old single "pick one
+  // axis from a dropdown" cut.
+  const [sectionCut, setSectionCut] = useState({
+    x: { enabled: false, position: 5 },
+    y: { enabled: false, position: 1.2 },
+    z: { enabled: false, position: 5 },
+  });
   const [view3dRoomId, setView3dRoomId] = useState(null);
   const [conn, setConn] = useState({ revit: false, cad: false });
   const [syncing, setSyncing] = useState(false);
@@ -1451,7 +1459,18 @@ export default function PranchetaBIM() {
                       {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhum nível criado</span>
-                ) : <span className="text-xs font-medium" style={{ color: C.chalk }}>Modelo 3D</span>}
+                ) : (
+                  <div className="flex gap-1 rounded p-0.5" style={{ background: C.panelAlt }}>
+                    <button onClick={() => setView3dMode("casa")} className="flex items-center gap-1 px-2 py-1 rounded text-[11px]"
+                      style={{ ...heading, fontWeight: 600, background: view3dMode === "casa" ? C.gold : "transparent", color: view3dMode === "casa" ? "#141311" : C.mute }}>
+                      <Home size={11} /> Casa toda
+                    </button>
+                    <button onClick={() => setView3dMode("ambiente")} className="flex items-center gap-1 px-2 py-1 rounded text-[11px]"
+                      style={{ ...heading, fontWeight: 600, background: view3dMode === "ambiente" ? C.gold : "transparent", color: view3dMode === "ambiente" ? "#141311" : C.mute }}>
+                      <Box size={11} /> Ambiente
+                    </button>
+                  </div>
+                )}
                 {croquiViewMode === "2d" && hasPhaseElements2D && (
                   <button onClick={() => setPhaseMenuOpen2D(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] shrink-0"
                     style={{ ...heading, fontWeight: 600, background: phaseMenuOpen2D ? C.goldTint : C.panelAlt, color: phaseMenuOpen2D ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen2D ? C.gold : C.line}` }}>
@@ -1496,14 +1515,6 @@ export default function PranchetaBIM() {
             {croquiViewMode === "3d" && (
               <div>
                 <div className="flex gap-1.5 mb-3 flex-wrap">
-                  <button onClick={() => setView3dMode("casa")} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
-                    style={{ background: view3dMode === "casa" ? C.goldTint : C.panelAlt, color: view3dMode === "casa" ? C.gold : C.mute, border: `1px solid ${view3dMode === "casa" ? "#FFFFFF" : C.line}` }}>
-                    <Home size={12} /> Casa toda
-                  </button>
-                  <button onClick={() => setView3dMode("ambiente")} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
-                    style={{ background: view3dMode === "ambiente" ? C.goldTint : C.panelAlt, color: view3dMode === "ambiente" ? C.gold : C.mute, border: `1px solid ${view3dMode === "ambiente" ? "#FFFFFF" : C.line}` }}>
-                    <Box size={12} /> Este ambiente
-                  </button>
                   {view3dMode === "ambiente" && (
                     <select value={view3dRoomId || ""} onChange={e => setView3dRoomId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
                       style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
@@ -1529,24 +1540,34 @@ export default function PranchetaBIM() {
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
-                  <button onClick={() => setSectionCut(s => ({ ...s, enabled: !s.enabled }))} className="flex items-center gap-1 px-2 py-1.5 rounded text-xs"
-                    style={{ background: sectionCut.enabled ? C.goldTint : "transparent", color: sectionCut.enabled ? C.gold : C.mute, border: `1px solid ${sectionCut.enabled ? "#FFFFFF" : C.line}` }}>
-                    <Scissors size={12} /> Corte de seção
-                  </button>
-                  {sectionCut.enabled && (
-                    <>
-                      <select value={sectionCut.axis} onChange={e => setSectionCut(s => ({ ...s, axis: e.target.value }))} className="text-xs px-2 py-1 rounded"
-                        style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
-                        <option value="horizontal">Horizontal (planta em corte)</option>
-                        <option value="vertical-x">Vertical — eixo X</option>
-                        <option value="vertical-z">Vertical — eixo Z</option>
-                      </select>
-                      <input type="range" min={sectionCut.axis === "horizontal" ? -1 : -15} max="15" step="0.1" value={sectionCut.position}
-                        onChange={e => setSectionCut(s => ({ ...s, position: toNum(e.target.value, s.position) }))} className="flex-1 min-w-[100px]" />
-                      <span className="text-[10px]" style={{ ...mono, color: C.mute }}>{sectionCut.position.toFixed(1)} m</span>
-                    </>
-                  )}
+                <div className="flex flex-col gap-2 mb-3 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                  <div className="flex items-center gap-1 text-xs" style={{ color: C.mute }}>
+                    <Scissors size={12} /> Corte de seção (combine os eixos)
+                  </div>
+                  {[
+                    { key: "x", label: "Eixo X", min: -15 },
+                    { key: "y", label: "Eixo Y (altura)", min: -1 },
+                    { key: "z", label: "Eixo Z", min: -15 },
+                  ].map(({ key, label, min }) => {
+                    const axis = sectionCut[key];
+                    return (
+                      <div key={key} className="flex flex-wrap items-center gap-2">
+                        <button onClick={() => setSectionCut(s => ({ ...s, [key]: { ...s[key], enabled: !s[key].enabled } }))}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-xs shrink-0"
+                          style={{ background: axis.enabled ? C.goldTint : "transparent", color: axis.enabled ? C.gold : C.mute, border: `1px solid ${axis.enabled ? "#FFFFFF" : C.line}` }}>
+                          {label}
+                        </button>
+                        {axis.enabled && (
+                          <>
+                            <input type="range" min={min} max="15" step="0.1" value={axis.position}
+                              onChange={e => setSectionCut(s => ({ ...s, [key]: { ...s[key], position: toNum(e.target.value, s[key].position) } }))}
+                              className="flex-1 min-w-[100px]" />
+                            <span className="text-[10px] shrink-0" style={{ ...mono, color: C.mute }}>{axis.position.toFixed(1)} m</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {view3dMode === "casa" && (
