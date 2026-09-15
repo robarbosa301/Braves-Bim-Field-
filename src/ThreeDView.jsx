@@ -94,10 +94,18 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
     // Distinguished from the "nothing drawn at all" case above — a phase
     // view can legitimately have nothing to show (e.g. "Demolição" on a
     // level where nothing's marked for demolition), which needs a
-    // different message than "go draw something in the Croqui".
-    const visibleWalls = phaseView === "tudo" ? totalWalls
-      : buildingLevels.reduce((s, l) => s + l.walls.filter(w => matchesPhaseView(w, phaseView)).length, 0);
-    if (visibleWalls === 0) { setEmptyPhase(true); setEmpty(false); return; }
+    // different message than "go draw something in the Croqui". Counts
+    // doors/windows/stairs too, not just walls — a reforma where only a
+    // door (not its wall) is marked for demolition used to read as
+    // "nothing marked" and skip rendering entirely, even though the Croqui
+    // itself would show that door in the same view.
+    const visibleCount = phaseView === "tudo" ? totalWalls
+      : buildingLevels.reduce((s, l) =>
+        s + l.walls.filter(w => matchesPhaseView(w, phaseView)).length
+          + l.doors.filter(d => matchesPhaseView(d, phaseView)).length
+          + l.windows.filter(win => matchesPhaseView(win, phaseView)).length
+          + (l.stairs || []).filter(st => matchesPhaseView(st, phaseView)).length, 0);
+    if (visibleCount === 0) { setEmptyPhase(true); setEmpty(false); return; }
     setEmpty(false); setEmptyPhase(false);
 
     let renderer, raf, disposed = false;
@@ -145,6 +153,73 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
       // VectorSketch's flood-fill trace.
       const phaseVisible = el => phaseView === "tudo" || matchesPhaseView(el, phaseView);
 
+      // Positions a door/window relative to its own wall's line, independent
+      // of whether that wall itself is being drawn in this phase view — the
+      // Croqui's 2D view filters each element on its own terms (a door
+      // marked "demolir" still shows even when its wall isn't), so an
+      // orphaned opening below (its wall didn't pass phaseVisible) still
+      // needs this to place its leaf correctly.
+      function mapOpening(o, kind, w, ux, uz, len) {
+        const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uz;
+        const halfW = Math.max(0.15, o.width / 2);
+        return {
+          ...o, kind, pos,
+          start: Math.max(0, pos - halfW), end: Math.min(len, pos + halfW),
+          yBottom: kind === "door" ? 0 : o.peitoril,
+          yTop: kind === "door" ? o.height : o.peitoril + o.height,
+        };
+      }
+      // Door/window leaves: split into their real panel ("folha") count,
+      // always rotated flush with the wall's own angle so they never clip
+      // through or poke out of it. Sliding ("Correr") panels slide sideways
+      // in the wall plane when open; hinged panels swing on a vertical
+      // hinge into the room.
+      function addOpeningLeaves(o, w, ux, uz, angle, elev) {
+        const panels = Math.max(1, o.panels || 1);
+        const panelWidth = o.width / panels;
+        const gap = Math.min(0.03, panelWidth * 0.08);
+        const isSliding = /correr/i.test(o.doorType || o.windowType || "");
+        const isDoorKind = o.kind === "door";
+        const oDemolir = o.demolir && phaseView !== "final" && phaseView !== "existente";
+        const oConstruir = o.construir && phaseView !== "final" && phaseView !== "existente";
+        const color = oDemolir ? 0xC1543F : oConstruir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
+        const matOpts = (oDemolir || oConstruir)
+          ? { roughness: 0.6, transparent: true, opacity: 0.5 }
+          : isDoorKind
+            ? { roughness: 0.5 }
+            : { roughness: 0.2, transparent: true, opacity: 0.75 };
+
+        for (let i = 0; i < panels; i++) {
+          const segStart = o.pos - o.width / 2 + i * panelWidth;
+          const segEnd = segStart + panelWidth;
+          const segMid = (segStart + segEnd) / 2;
+          const leafW = Math.max(0.15, panelWidth - gap);
+          const leafH = Math.max(0.2, o.height - 0.04);
+          let cx, cz, leafAngle = angle;
+
+          if (openState === "open" && isSliding) {
+            const slidPos = segMid + (panelWidth - gap) * 0.92;
+            cx = w.x1 + ux * slidPos; cz = w.y1 + uz * slidPos;
+          } else if (openState === "open") {
+            const hingePos = segStart;
+            leafAngle = angle + Math.PI * 0.42; // ~75° swung open
+            const hx = w.x1 + ux * hingePos, hz = w.y1 + uz * hingePos;
+            cx = hx + Math.cos(leafAngle) * (leafW / 2);
+            cz = hz + Math.sin(leafAngle) * (leafW / 2);
+          } else {
+            cx = w.x1 + ux * segMid; cz = w.y1 + uz * segMid;
+          }
+
+          const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(leafW, leafH, 0.05),
+            new THREE.MeshStandardMaterial({ color, ...matOpts })
+          );
+          mesh.position.set(cx, elev + o.yBottom + o.height / 2, cz);
+          mesh.rotation.y = -leafAngle;
+          scene.add(mesh);
+        }
+      }
+
       buildingLevels.forEach(lvl => {
         const elev = lvl.elevation;
         const levelWalls = lvl.walls.filter(phaseVisible);
@@ -165,18 +240,9 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           // the hole (that used to make windows vanish and doors clip through
           // solid wall when toggled open).
           const openings = [
-            ...levelDoors.filter(d => d.wallId === w.id).map(d => ({ kind: "door", ...d })),
-            ...levelWindows.filter(win => win.wallId === w.id).map(win => ({ kind: "window", ...win })),
-          ].map(o => {
-            const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uz;
-            const halfW = Math.max(0.15, o.width / 2);
-            return {
-              ...o, pos,
-              start: Math.max(0, pos - halfW), end: Math.min(len, pos + halfW),
-              yBottom: o.kind === "door" ? 0 : o.peitoril,
-              yTop: o.kind === "door" ? o.height : o.peitoril + o.height,
-            };
-          }).sort((a, b) => a.start - b.start);
+            ...levelDoors.filter(d => d.wallId === w.id).map(d => mapOpening(d, "door", w, ux, uz, len)),
+            ...levelWindows.filter(win => win.wallId === w.id).map(win => mapOpening(win, "window", w, ux, uz, len)),
+          ].sort((a, b) => a.start - b.start);
 
           const segs = [];
           let cursor = 0;
@@ -228,58 +294,35 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
 
           // Door/window leaves: split into their real panel ("folha") count,
           // always rotated flush with this wall's own angle so they never
-          // clip through or poke out of it. Sliding ("Correr") panels slide
-          // sideways in the wall plane when open; hinged panels swing on a
-          // vertical hinge into the room.
-          openings.forEach(o => {
-            const panels = Math.max(1, o.panels || 1);
-            const panelWidth = o.width / panels;
-            const gap = Math.min(0.03, panelWidth * 0.08);
-            const isSliding = /correr/i.test(o.doorType || o.windowType || "");
-            const isDoorKind = o.kind === "door";
-            const oDemolir = o.demolir && phaseView !== "final" && phaseView !== "existente";
-            const oConstruir = o.construir && phaseView !== "final" && phaseView !== "existente";
-            const color = oDemolir ? 0xC1543F : oConstruir ? 0x6B9C5A : (isDoorKind ? 0x4A4A46 : 0xC7C5BE);
-            const matOpts = (oDemolir || oConstruir)
-              ? { roughness: 0.6, transparent: true, opacity: 0.5 }
-              : isDoorKind
-                ? { roughness: 0.5 }
-                : { roughness: 0.2, transparent: true, opacity: 0.75 };
-
-            for (let i = 0; i < panels; i++) {
-              const segStart = o.pos - o.width / 2 + i * panelWidth;
-              const segEnd = segStart + panelWidth;
-              const segMid = (segStart + segEnd) / 2;
-              const leafW = Math.max(0.15, panelWidth - gap);
-              const leafH = Math.max(0.2, o.height - 0.04);
-              let cx, cz, leafAngle = angle;
-
-              if (openState === "open" && isSliding) {
-                const slidPos = segMid + (panelWidth - gap) * 0.92;
-                cx = w.x1 + ux * slidPos; cz = w.y1 + uz * slidPos;
-              } else if (openState === "open") {
-                const hingePos = segStart;
-                leafAngle = angle + Math.PI * 0.42; // ~75° swung open
-                const hx = w.x1 + ux * hingePos, hz = w.y1 + uz * hingePos;
-                cx = hx + Math.cos(leafAngle) * (leafW / 2);
-                cz = hz + Math.sin(leafAngle) * (leafW / 2);
-              } else {
-                cx = w.x1 + ux * segMid; cz = w.y1 + uz * segMid;
-              }
-
-              const mesh = new THREE.Mesh(
-                new THREE.BoxGeometry(leafW, leafH, 0.05),
-                new THREE.MeshStandardMaterial({ color, ...matOpts })
-              );
-              mesh.position.set(cx, elev + o.yBottom + o.height / 2, cz);
-              mesh.rotation.y = -leafAngle;
-              scene.add(mesh);
-            }
-          });
+          // clip through or poke out of it.
+          openings.forEach(o => addOpeningLeaves(o, w, ux, uz, angle, elev));
 
           minX = Math.min(minX, w.x1, w.x2); maxX = Math.max(maxX, w.x1, w.x2);
           minZ = Math.min(minZ, w.y1, w.y2); maxZ = Math.max(maxZ, w.y1, w.y2);
           maxY = Math.max(maxY, elev + h);
+        });
+
+        // Doors/windows whose own wall didn't pass this phase's filter (a
+        // door marked "demolir" on a wall that isn't, say) still get their
+        // leaf drawn on its own — mirroring the Croqui's 2D view, where
+        // each element is filtered independently rather than disappearing
+        // along with an unmarked wall. Only the leaf shows, no wall body:
+        // that wall isn't part of this phase, same as the 2D view leaving
+        // it undrawn too.
+        const levelWallsById = {};
+        lvl.walls.forEach(w => { levelWallsById[w.id] = w; });
+        const visibleWallIds = new Set(levelWalls.map(w => w.id));
+        [
+          ...levelDoors.filter(d => !visibleWallIds.has(d.wallId)).map(d => ({ kind: "door", el: d })),
+          ...levelWindows.filter(win => !visibleWallIds.has(win.wallId)).map(win => ({ kind: "window", el: win })),
+        ].forEach(({ kind, el }) => {
+          const w = levelWallsById[el.wallId];
+          if (!w) return;
+          const dx = w.x2 - w.x1, dz = w.y2 - w.y1;
+          const len = Math.max(0.05, Math.hypot(dx, dz));
+          const angle = Math.atan2(dz, dx);
+          const ux = dx / len, uz = dz / len;
+          addOpeningLeaves(mapOpening(el, kind, w, ux, uz, len), w, ux, uz, angle, elev);
         });
 
         (lvl.rooms || []).forEach(r => {
@@ -313,7 +356,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           }
         });
 
-        (lvl.stairs || []).forEach(st => {
+        (lvl.stairs || []).filter(phaseVisible).forEach(st => {
           const targetElev = (elevationsById && elevationsById[st.toLevelId] != null) ? elevationsById[st.toLevelId] : elev + 3;
           const totalRise = targetElev - elev;
           const mat = new THREE.MeshStandardMaterial({ color: 0x8A8880, roughness: 0.85 });
