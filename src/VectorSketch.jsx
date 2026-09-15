@@ -419,6 +419,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
   const [pending, setPending] = useState(null);
+  // Live preview of the segment about to be placed while chain-drawing
+  // walls/stairs (tap a point, tap the next, tap the next... without
+  // reselecting the tool each time) — a mouse/trackpad (an iPad with a
+  // Magic Keyboard, a desktop browser) can hover before committing, so
+  // this tracks that position the same way a real tap would resolve it
+  // (endpoint/wall-line snap, then angle-snap), giving a dashed rubber-band
+  // line instead of leaving the chain's next segment invisible until the
+  // tap actually lands. Touch alone has no hover to preview from, but the
+  // chain logic itself (in handleTap) works the same regardless.
+  const [hoverPos, setHoverPos] = useState(null);
   const [polygon, setPolygon] = useState([]);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
   const [lastPolygonAdd, setLastPolygonAdd] = useState(1);
@@ -1699,6 +1709,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function onCanvasPointerUp() { onLabelDragEnd(); onDimLabelDragEnd(); onGapDimLabelDragEnd(); setDragSession(null); }
 
+  function onCanvasHover(e) {
+    // Touch has no hover — only a mouse/trackpad pointer gets a preview,
+    // and only mid-chain (once a first point is already pending).
+    if (e.touches || (tool !== "parede" && tool !== "escada") || !pending) {
+      if (hoverPos) setHoverPos(null);
+      return;
+    }
+    const rawP = svgPointRaw(e);
+    const endpointHit = findNearbyEndpoint(rawP, null);
+    const wallLineHit = !endpointHit ? findNearbyWallPoint(rawP, null) : null;
+    const p = endpointHit || wallLineHit || angleSnap(pending, { x: snap(rawP.x), y: snap(rawP.y) });
+    setHoverPos(p);
+  }
+
   // Angle (degrees) to rotate a dimension label so it runs parallel to the
   // wall it measures instead of always sitting flat/horizontal — flipped
   // 180° whenever the raw angle would otherwise render the text upside
@@ -2060,7 +2084,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         }}
         onClick={handleTap} onWheel={onWheel}
         onTouchStart={onTouchStartCanvas} onTouchMove={onTouchMoveCanvas} onTouchEnd={onTouchEndCanvas}
-        onMouseMove={onCanvasPointerMove} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}>
+        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); }} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}>
         <defs>
           <pattern id={`grid-${level.id}`} width={GRID} height={GRID} patternUnits="userSpaceOnUse">
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
@@ -2414,6 +2438,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         })}
         {polygon.length > 0 && <polyline points={polygon.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#4A4A46" strokeWidth="1.5" strokeDasharray="4,3" />}
         {polygon.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#4A4A46" />)}
+        {pending && hoverPos && (tool === "parede" || tool === "escada") && (
+          <line x1={pending.x} y1={pending.y} x2={hoverPos.x} y2={hoverPos.y} stroke="#4A4A46" strokeWidth="3" strokeDasharray="7,5" opacity="0.55" pointerEvents="none" />
+        )}
         {pending && <circle cx={pending.x} cy={pending.y} r="4.5" fill="#4A4A46" stroke="#1B1E1A" strokeWidth="1" />}
         </g>
       </svg>
