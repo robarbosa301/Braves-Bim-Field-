@@ -468,6 +468,21 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [splittingWall, setSplittingWall] = useState(null);
   const pinch = useRef(null);
   const twist = useRef(null);
+  // Draw-by-dragging a wall/stair in one motion (press, drag, release) as
+  // an alternative to the tap-tap chain method above — someone who just
+  // wants one straight wall shouldn't have to place two separate taps for
+  // it. Kept as a ref (not state) since it's only read/written from inside
+  // the gesture handlers themselves, never rendered directly — hoverPos
+  // (already used for the tap-chain's own preview line) doubles as this
+  // drag's live end point too.
+  const wallGesture = useRef(null);
+  // Mouse's own click event fires on mouseup regardless of how far the
+  // pointer moved in between (no built-in "that was a drag, not a tap"
+  // suppression the way touch-to-click synthesis usually has) — set right
+  // before a drag-placed wall/stair commits, and checked at the top of
+  // handleTap, so that same release doesn't ALSO run the tap-chain logic
+  // on top of the segment the drag itself just placed.
+  const justDraggedWall = useRef(false);
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
   const dimColor = level.dimColor || "#4A4A46";
@@ -802,7 +817,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function onTouchEndCanvas(e) {
     if (e.touches.length < 2) pinch.current = null;
     if (e.touches.length < 3) twist.current = null;
-    if (e.touches.length === 0) onCanvasPointerUp();
+    if (e.touches.length === 0) { onCanvasPointerUp(); endWallGesture(); }
   }
 
   function nearestWall(p) {
@@ -921,7 +936,29 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     return null;
   }
 
+  // Shared by the tap-tap chain (handleTap below) and the press-drag-release
+  // gesture (endWallGesture) — one wall/stair segment from start to end,
+  // whichever method placed those two points.
+  function placeWallOrStairSegment(kind, start, end) {
+    if (kind === "parede") {
+      const length = pxToMeters(dist(start, end));
+      const wallCount = elements.filter(x => x.type === "wall").length;
+      // Drawn while looking at the "Construção Nova" view, a wall is
+      // obviously meant to be part of that new construction — tag it as
+      // such automatically, or it'd vanish the instant it's drawn (this
+      // view only shows elements already marked construir).
+      const el = { id: uid(), type: "wall", x1: start.x, y1: start.y, x2: end.x, y2: end.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar", demolir: false, construir: phaseView === "novo" };
+      commitElements([...elements, el]);
+      return el;
+    }
+    const count = elements.filter(x => x.type === "stair").length;
+    const el = { id: uid(), type: "stair", x1: start.x, y1: start.y, x2: end.x, y2: end.y, tag: `ES-${count + 1}`, toLevelId: aboveLevel?.id || "", width: 1.0, condition: "A confirmar" };
+    commitElements([...elements, el]);
+    return el;
+  }
+
   function handleTap(e) {
+    if (justDraggedWall.current) { justDraggedWall.current = false; return; }
     if (e.touches && e.touches.length > 1) return;
     if (draggingLabel || draggingDimLabel || draggingGapDimLabel) return;
     e.preventDefault();
@@ -970,14 +1007,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (tool === "parede") {
       if (!pending) { setPending(p); return; }
       if (p.x === pending.x && p.y === pending.y) { setPending(null); return; }
-      const length = pxToMeters(dist(pending, p));
-      const wallCount = elements.filter(x => x.type === "wall").length;
-      // Drawn while looking at the "Construção Nova" view, a wall is
-      // obviously meant to be part of that new construction — tag it as
-      // such automatically, or it'd vanish the instant it's drawn (this
-      // view only shows elements already marked construir).
-      const el = { id: uid(), type: "wall", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `P-${wallCount + 1}`, length, height: wallHeightDefault, wallType: WALL_TYPES[0], finishA: "A definir", paintColorA: "#E8E4DA", finishB: "A definir", paintColorB: "#E8E4DA", condition: "A confirmar", demolir: false, construir: phaseView === "novo" };
-      commitElements([...elements, el]);
+      placeWallOrStairSegment("parede", pending, p);
       // Chain mode: keep drawing from this wall's endpoint instead of
       // requiring a fresh start tap for every segment. Tap the same point
       // again (or reselect the Parede tool) to end the chain.
@@ -988,9 +1018,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (tool === "escada") {
       if (!pending) { setPending(p); return; }
       if (p.x === pending.x && p.y === pending.y) { setPending(null); return; }
-      const count = elements.filter(x => x.type === "stair").length;
-      const el = { id: uid(), type: "stair", x1: pending.x, y1: pending.y, x2: p.x, y2: p.y, tag: `ES-${count + 1}`, toLevelId: aboveLevel?.id || "", width: 1.0, condition: "A confirmar" };
-      commitElements([...elements, el]);
+      const el = placeWallOrStairSegment("escada", pending, p);
       setPending(null);
       setSelectedId(el.id);
       return;
@@ -1709,6 +1737,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function onCanvasPointerUp() { onLabelDragEnd(); onDimLabelDragEnd(); onGapDimLabelDragEnd(); setDragSession(null); }
 
+  // Same endpoint/wall-line snap (and, given an anchor, angle-snap) a real
+  // tap resolves to — shared by the hover preview, the tap-chain itself
+  // (handleTap above already inlines its own copy of this) and the
+  // press-drag-release gesture below, so all three ways of placing a point
+  // land in exactly the same spot for the same finger/cursor position.
+  function resolveDrawPoint(rawP, angleAnchor) {
+    const endpointHit = findNearbyEndpoint(rawP, null);
+    const wallLineHit = !endpointHit ? findNearbyWallPoint(rawP, null) : null;
+    if (endpointHit || wallLineHit) return endpointHit || wallLineHit;
+    const snapped = { x: snap(rawP.x), y: snap(rawP.y) };
+    return angleAnchor ? angleSnap(angleAnchor, snapped) : snapped;
+  }
   function onCanvasHover(e) {
     // Touch has no hover — only a mouse/trackpad pointer gets a preview,
     // and only mid-chain (once a first point is already pending).
@@ -1716,11 +1756,47 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (hoverPos) setHoverPos(null);
       return;
     }
-    const rawP = svgPointRaw(e);
-    const endpointHit = findNearbyEndpoint(rawP, null);
-    const wallLineHit = !endpointHit ? findNearbyWallPoint(rawP, null) : null;
-    const p = endpointHit || wallLineHit || angleSnap(pending, { x: snap(rawP.x), y: snap(rawP.y) });
-    setHoverPos(p);
+    setHoverPos(resolveDrawPoint(svgPointRaw(e), pending));
+  }
+
+  // Draw-by-dragging: press on empty canvas with the Parede/Escada tool,
+  // drag, release — one wall/stair in a single motion, instead of the
+  // tap-chain's two separate taps. A plain tap (no real movement) falls
+  // through untouched to handleTap's own tap-chain logic, via onClick.
+  function beginWallGesture(e) {
+    if (tool !== "parede" && tool !== "escada") return;
+    if (e.touches && e.touches.length !== 1) return;
+    const p = e.touches ? e.touches[0] : e;
+    wallGesture.current = { startClientX: p.clientX, startClientY: p.clientY, startPoint: null, moved: false };
+  }
+  function moveWallGesture(e) {
+    const g = wallGesture.current;
+    if (!g) return;
+    const p = e.touches ? e.touches[0] : e;
+    if (!g.moved) {
+      if (Math.hypot(p.clientX - g.startClientX, p.clientY - g.startClientY) < 10) return;
+      // Crossed the drag threshold — resolve the START from the ORIGINAL
+      // press position (not wherever the finger/cursor has moved to since),
+      // replacing any stale tap-chain point so a fresh drag never anchors
+      // itself to an unrelated leftover pending tap.
+      g.startPoint = resolveDrawPoint(svgPointRaw({ clientX: g.startClientX, clientY: g.startClientY }), null);
+      g.moved = true;
+      setPending(g.startPoint);
+    }
+    if (e.cancelable) e.preventDefault();
+    setHoverPos(resolveDrawPoint(svgPointRaw(e), g.startPoint));
+  }
+  function endWallGesture() {
+    const g = wallGesture.current;
+    wallGesture.current = null;
+    if (!g || !g.moved) return; // a plain tap — handleTap (via onClick) handles it
+    const endPoint = hoverPos;
+    setHoverPos(null);
+    if (!endPoint || (endPoint.x === g.startPoint.x && endPoint.y === g.startPoint.y)) { setPending(null); return; }
+    justDraggedWall.current = true;
+    const el = placeWallOrStairSegment(tool, g.startPoint, endPoint);
+    if (tool === "escada") { setPending(null); setSelectedId(el.id); }
+    else setPending(endPoint); // chain: another drag (or tap) from here continues it
   }
 
   // Angle (degrees) to rotate a dimension label so it runs parallel to the
@@ -2083,8 +2159,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           ...(fullscreen ? { position: "absolute", inset: 0, zIndex: 0, borderRadius: 0 } : null),
         }}
         onClick={handleTap} onWheel={onWheel}
-        onTouchStart={onTouchStartCanvas} onTouchMove={onTouchMoveCanvas} onTouchEnd={onTouchEndCanvas}
-        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); }} onMouseUp={onCanvasPointerUp} onMouseLeave={onCanvasPointerUp}>
+        onMouseDown={beginWallGesture}
+        onTouchStart={e => { onTouchStartCanvas(e); if (e.touches.length === 1) beginWallGesture(e); }}
+        onTouchMove={e => { onTouchMoveCanvas(e); if (e.touches.length === 1) moveWallGesture(e); }}
+        onTouchEnd={onTouchEndCanvas}
+        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); moveWallGesture(e); }}
+        onMouseUp={e => { onCanvasPointerUp(e); endWallGesture(); }}
+        onMouseLeave={e => { onCanvasPointerUp(e); endWallGesture(); }}>
         <defs>
           <pattern id={`grid-${level.id}`} width={GRID} height={GRID} patternUnits="userSpaceOnUse">
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
