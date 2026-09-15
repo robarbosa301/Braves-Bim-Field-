@@ -149,12 +149,12 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
                 onChange={e => onUpdateBuildingInfo({ siteMapApiKey: e.target.value.trim() })}
                 className="w-full px-3 py-2 rounded text-xs mb-1.5" style={{ ...mono, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
               <p className="text-[10px] leading-snug" style={{ color: C.muteDim }}>
-                Sem essa chave, a planta de situação não entra no PDF (o resto do relatório sai normal). Crie uma gratuita em myprojects.geoapify.com — não pede cartão — e cole aqui. Fica salva com este levantamento.
+                Cole aqui uma chave gratuita do Geoapify (myprojects.geoapify.com, sem pedir cartão) para o PDF incluir a planta de situação — sem ela, o resto do relatório sai normal, só sem essa página. Fica salva com este levantamento.
               </p>
             </div>
             <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
               <div className="text-[11px] mb-2" style={{ color: C.mute }}>OBSERVAÇÕES GERAIS (uma por linha, numeradas nos dados do levantamento)</div>
-              <textarea rows={4} placeholder={"Ex.: Será instalado hidrômetro conforme padrão da concessionária\nCotas prevalecem sobre a escala\nAntes de iniciar a obra, verificar medidas in loco"}
+              <textarea rows={4} placeholder={"Ex.: Medidas conferidas em campo em [data]\nCotas prevalecem sobre a escala do desenho\nVerificar interferências de rede elétrica/hidráulica antes de iniciar a obra"}
                 value={buildingInfo?.observacoes || ""} onChange={e => onUpdateBuildingInfo({ observacoes: e.target.value })}
                 className="w-full px-3 py-2 rounded text-xs resize-y" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
             </div>
