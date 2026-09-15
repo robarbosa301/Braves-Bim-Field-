@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box,
+  Expand, Shrink, Box, Layers, ChevronDown,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView, PHASE_VIEWS } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -419,6 +419,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [tool, setTool] = useState("selecionar");
   const [planMode, setPlanMode] = useState("piso");
   const [phaseView, setPhaseView] = useState("tudo");
+  // The phase-view choices sit behind one button now instead of always
+  // showing all of them — same "closed by default, opens on demand" pattern
+  // as the Sincronização tab's DADOS DO IMÓVEL panel.
+  const [phaseMenuOpen, setPhaseMenuOpen] = useState(false);
   const [pending, setPending] = useState(null);
   const [polygon, setPolygon] = useState([]);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
@@ -1907,9 +1911,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
       {hasPhaseElements && (
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vistas:</span>
-          {PHASE_VIEWS.map(({ id, label }) => (
-            <button key={id} onClick={() => setPhaseView(id)} className="px-2 py-1 rounded text-[10px]"
+          <button onClick={() => setPhaseMenuOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+            style={{ ...heading, fontWeight: 600, background: phaseMenuOpen ? C.goldTint : C.panelAlt, color: phaseMenuOpen ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen ? C.gold : C.line}` }}>
+            <Layers size={12} /> Vistas: {PHASE_VIEWS.find(v => v.id === phaseView)?.label}
+            <ChevronDown size={12} style={{ transform: phaseMenuOpen ? "rotate(180deg)" : undefined }} />
+          </button>
+          {phaseMenuOpen && PHASE_VIEWS.map(({ id, label }) => (
+            <button key={id} onClick={() => { setPhaseView(id); setPhaseMenuOpen(false); }} className="px-2 py-1 rounded text-[10px]"
               style={{ ...heading, fontWeight: 600, background: phaseView === id ? C.goldTint : C.panelAlt, color: phaseView === id ? C.gold : C.mute, border: `1px solid ${phaseView === id ? C.gold : C.line}` }}>
               {label}
             </button>
