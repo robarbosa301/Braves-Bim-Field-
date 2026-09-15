@@ -429,6 +429,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // tap actually lands. Touch alone has no hover to preview from, but the
   // chain logic itself (in handleTap) works the same regardless.
   const [hoverPos, setHoverPos] = useState(null);
+  // Visual-only anchor for the press-drag-release gesture below, separate
+  // from `pending` — set the instant a finger/cursor goes down, before it's
+  // even known whether this will turn into a real drag or just a plain tap,
+  // so the preview line starts from the press point immediately instead of
+  // only appearing once the drag has already traveled the threshold
+  // distance. `pending` itself is only touched once that threshold is
+  // actually crossed (see moveWallGesture) — a plain tap needs `pending`
+  // left exactly as the tap-chain logic in handleTap expects it.
+  const [gestureAnchor, setGestureAnchor] = useState(null);
   const [polygon, setPolygon] = useState([]);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
   const [lastPolygonAdd, setLastPolygonAdd] = useState(1);
@@ -1767,19 +1776,24 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (tool !== "parede" && tool !== "escada") return;
     if (e.touches && e.touches.length !== 1) return;
     const p = e.touches ? e.touches[0] : e;
-    wallGesture.current = { startClientX: p.clientX, startClientY: p.clientY, startPoint: null, moved: false };
+    // Resolved immediately (not deferred to when/if the drag threshold is
+    // crossed) so the preview line has an anchor from the very first frame
+    // of contact — see gestureAnchor's own declaration for why this stays
+    // out of `pending` until moveWallGesture confirms a real drag.
+    const startPoint = resolveDrawPoint(svgPointRaw(e), null);
+    wallGesture.current = { startClientX: p.clientX, startClientY: p.clientY, startPoint, moved: false };
+    setGestureAnchor(startPoint);
+    setHoverPos(startPoint);
   }
   function moveWallGesture(e) {
     const g = wallGesture.current;
     if (!g) return;
     const p = e.touches ? e.touches[0] : e;
-    if (!g.moved) {
-      if (Math.hypot(p.clientX - g.startClientX, p.clientY - g.startClientY) < 10) return;
-      // Crossed the drag threshold — resolve the START from the ORIGINAL
-      // press position (not wherever the finger/cursor has moved to since),
-      // replacing any stale tap-chain point so a fresh drag never anchors
-      // itself to an unrelated leftover pending tap.
-      g.startPoint = resolveDrawPoint(svgPointRaw({ clientX: g.startClientX, clientY: g.startClientY }), null);
+    if (!g.moved && Math.hypot(p.clientX - g.startClientX, p.clientY - g.startClientY) >= 10) {
+      // Crossed the drag threshold — now it's a real drag, so `pending`
+      // (the tap-chain's own state) takes over from here, overriding
+      // whatever it held before: a fresh drag never anchors itself to an
+      // unrelated leftover pending tap.
       g.moved = true;
       setPending(g.startPoint);
     }
@@ -1789,7 +1803,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function endWallGesture() {
     const g = wallGesture.current;
     wallGesture.current = null;
-    if (!g || !g.moved) return; // a plain tap — handleTap (via onClick) handles it
+    setGestureAnchor(null);
+    if (!g || !g.moved) { setHoverPos(null); return; } // a plain tap — handleTap (via onClick) handles it, `pending` untouched
     const endPoint = hoverPos;
     setHoverPos(null);
     if (!endPoint || (endPoint.x === g.startPoint.x && endPoint.y === g.startPoint.y)) { setPending(null); return; }
@@ -2519,8 +2534,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         })}
         {polygon.length > 0 && <polyline points={polygon.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#4A4A46" strokeWidth="1.5" strokeDasharray="4,3" />}
         {polygon.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#4A4A46" />)}
-        {pending && hoverPos && (tool === "parede" || tool === "escada") && (
-          <line x1={pending.x} y1={pending.y} x2={hoverPos.x} y2={hoverPos.y} stroke="#4A4A46" strokeWidth="3" strokeDasharray="7,5" opacity="0.55" pointerEvents="none" />
+        {(gestureAnchor || pending) && hoverPos && (tool === "parede" || tool === "escada") && (
+          <line x1={(gestureAnchor || pending).x} y1={(gestureAnchor || pending).y} x2={hoverPos.x} y2={hoverPos.y} stroke="#4A4A46" strokeWidth="3" strokeDasharray="7,5" opacity="0.55" pointerEvents="none" />
         )}
         {pending && <circle cx={pending.x} cy={pending.y} r="4.5" fill="#4A4A46" stroke="#1B1E1A" strokeWidth="1" />}
         </g>
