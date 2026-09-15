@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useLayoutEffect } from "react";
 import * as THREE from "three";
 import { C, matchesPhaseView } from "./theme.js";
 import { toNum } from "./utils.js";
@@ -82,9 +82,39 @@ function wallFaceMaterial(finish, color, segLen, segH) {
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
 export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
   const mountRef = useRef(null);
+  const hintRef = useRef(null);
   const [ok, setOk] = useState(true);
   const [empty, setEmpty] = useState(false);
   const [emptyPhase, setEmptyPhase] = useState(false);
+  // A fixed 340px used to leave a big band of empty space below the model
+  // on any screen taller than that — same "fill whatever's actually left
+  // down to the bottom nav" auto-sizing the Croqui's own 2D canvas already
+  // does. Kept as its own state (rather than measured inline in the effect
+  // below) so a plain window resize/orientation change can update it
+  // without needing to rebuild the whole scene from scratch first.
+  const [dims, setDims] = useState({ w: 320, h: 340 });
+  useLayoutEffect(() => {
+    function measure() {
+      if (!mountRef.current) return;
+      const w = mountRef.current.clientWidth || 320;
+      const mountTop = mountRef.current.getBoundingClientRect().top;
+      const nav = document.querySelector("[data-braves-bottom-nav]");
+      const bottomEdge = nav ? nav.getBoundingClientRect().top : (window.innerHeight || 700);
+      const belowH = hintRef.current ? hintRef.current.getBoundingClientRect().height : 20;
+      const h = Math.max(220, bottomEdge - mountTop - belowH - 8);
+      setDims(prev => (Math.abs(prev.w - w) > 1 || Math.abs(prev.h - h) > 1) ? { w, h } : prev);
+    }
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", measure);
+    };
+  });
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -111,7 +141,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
     let renderer, raf, disposed = false;
     const cleanupFns = [];
     try {
-      const width = mount.clientWidth || 320, height = 340;
+      const width = dims.w, height = dims.h;
       // preserveDrawingBuffer: without it, the browser is free to clear the
       // WebGL drawing buffer right after compositing each frame — reading
       // it back later via canvas.toDataURL() (the PDF export's 3D
@@ -419,7 +449,19 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
       if (!isFinite(minX)) { minX = 0; maxX = 4; minZ = 0; maxZ = 4; }
       const target = new THREE.Vector3((minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2);
       let theta = Math.PI / 4, phi = Math.PI / 3.2;
-      let camDist = Math.max(6, Math.hypot(maxX - minX, maxZ - minZ) * 1.25 + 3);
+      // Distance needed to frame the whole building's bounding sphere (half
+      // the box diagonal — width, depth AND height — not just its
+      // horizontal footprint like before) inside whichever of the camera's
+      // two FOV axes is tighter. A narrow/tall canvas (portrait phones, now
+      // that this view fills the available height instead of a fixed
+      // 340px) has a much narrower horizontal FOV than the 45° vertical
+      // one; framing by footprint alone left the building's own height
+      // poking past the frame's bottom edge at that camera angle.
+      const boxRadius = Math.hypot((maxX - minX) / 2, maxY / 2, (maxZ - minZ) / 2);
+      const vFov = (45 * Math.PI) / 180;
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (width / height));
+      const fitFov = Math.min(vFov, hFov);
+      let camDist = Math.max(6, boxRadius / Math.sin(fitFov / 2) + 2);
 
       function updateCamera() {
         camera.position.set(
@@ -506,7 +548,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
       }
     };
-  }, [buildingLevels, openState, sectionCut, phaseView]);
+  }, [buildingLevels, openState, sectionCut, phaseView, dims]);
 
   // The mount div stays in the tree always, even in an ok/empty/emptyPhase
   // state — the status text overlays it instead of replacing it. The
@@ -533,12 +575,12 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           // the bottom nav. touch-action: none opts this element out of the
           // browser's own gesture handling entirely, leaving it all to the
           // touch handlers below.
-          style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880", touchAction: "none" }} />
+          style={{ width: "100%", height: dims.h, borderRadius: 8, overflow: "hidden", background: "#8A8880", touchAction: "none" }} />
         {statusMsg && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-center p-6" style={{ color: C.mute }}>{statusMsg}</div>
         )}
       </div>
-      {!statusMsg && <p className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>}
+      {!statusMsg && <p ref={hintRef} className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>}
     </div>
   );
 }
