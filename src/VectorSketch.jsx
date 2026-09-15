@@ -1910,20 +1910,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           paddingTop: "max(10px, env(safe-area-inset-top))",
           paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
         } : undefined}>
-      {/* Piso/Forro as a compact pill pair (instead of two 50%-width
-          buttons) frees the rest of this row for the Vistas selector, so
-          both fit on one line — one less full-width row pushing the canvas
-          down, on top of Vistas already being collapsed behind its own
-          button. */}
+      {/* Piso/Forro fills the row (instead of two fixed-width buttons)
+          so it keeps the bigger, easier-to-tap size it had before — the
+          Vistas selector still shares this same line rather than needing
+          its own full-width row, it just sits at the end instead of
+          splitting the row down the middle with Piso/Forro. */}
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
-        <div className="flex gap-1 rounded p-0.5 shrink-0" style={{ background: C.panelAlt }}>
-          <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="px-2.5 py-1 rounded text-[11px]"
+        <div className="flex-1 flex gap-1 rounded p-1" style={{ background: C.panelAlt }}>
+          <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
             style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : "transparent", color: planMode === "piso" ? "#141311" : C.mute }}>Piso</button>
-          <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="px-2.5 py-1 rounded text-[11px]"
+          <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
             style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : "transparent", color: planMode === "forro" ? "#141311" : C.mute }}>Forro</button>
         </div>
         {hasPhaseElements && (
-          <button onClick={() => setPhaseMenuOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] ml-auto"
+          <button onClick={() => setPhaseMenuOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] shrink-0"
             style={{ ...heading, fontWeight: 600, background: phaseMenuOpen ? C.goldTint : C.panelAlt, color: phaseMenuOpen ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen ? C.gold : C.line}` }}>
             <Layers size={12} /> Vistas: {PHASE_VIEWS.find(v => v.id === phaseView)?.label}
             <ChevronDown size={12} style={{ transform: phaseMenuOpen ? "rotate(180deg)" : undefined }} />

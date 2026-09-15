@@ -10,10 +10,10 @@ import { WALL_TYPES, FINISH_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES } from 
 
 export function Pill({ active, label, Icon }) {
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full"
       style={{ background: active ? C.goldTint : "rgba(255,255,255,0.05)", border: `1px solid ${active ? C.gold : "rgba(255,255,255,0.15)"}` }}>
-      <Icon size={12} color={active ? C.gold : C.muteDim} />
-      <span className="text-[11px]" style={{ ...heading, fontWeight: 700, letterSpacing: "0.03em", color: active ? C.gold : C.muteDim }}>{label}</span>
+      <Icon size={11} color={active ? C.gold : C.muteDim} />
+      <span className="text-[10px]" style={{ ...heading, fontWeight: 700, letterSpacing: "0.03em", color: active ? C.gold : C.muteDim }}>{label}</span>
     </div>
   );
 }

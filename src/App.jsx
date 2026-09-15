@@ -74,9 +74,19 @@ function useRealViewportHeight() {
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
+    // Still reads window.innerHeight above, never visualViewport.height —
+    // this only adds visualViewport's own resize event as an extra trigger
+    // to re-check it, since mobile Safari settling its address bar after
+    // load can change innerHeight without reliably firing a plain window
+    // "resize" (especially standalone/PWA), which left --app-vh stuck at a
+    // stale, too-short value — a band of the body's bare background
+    // exposed below the bottom nav instead of it sitting flush with the
+    // real screen edge.
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", update);
     };
   }, []);
 }
@@ -1205,19 +1215,21 @@ export default function PranchetaBIM() {
               </div>
             </div>
           </div>
-          <div className="flex gap-2 items-center">
-            <div className="flex items-center gap-1 px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${C.line}` }}>
-              <Users size={12} color={C.gold} />
-              <span className="text-[11px]" style={{ ...mono, color: C.chalk }}>{peers}</span>
+          <div className="flex flex-wrap gap-1 items-center justify-end">
+            <Pill active={online} label={online ? "ONLINE" : "SEM SINAL — SALVANDO NO APARELHO"} Icon={online ? Wifi : WifiOff} />
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${C.line}` }}>
+              <Users size={11} color={C.gold} />
+              <span className="text-[10px]" style={{ ...mono, color: C.chalk }}>{peers}</span>
             </div>
             <Pill active={conn.revit} label="REVIT" Icon={conn.revit ? Wifi : WifiOff} />
             <Pill active={conn.cad} label="CAD" Icon={conn.cad ? Wifi : WifiOff} />
           </div>
         </div>
-        <div className="mt-2 flex items-center gap-1.5">
-          <Pill active={online} label={online ? "ONLINE" : "SEM SINAL — SALVANDO NO APARELHO"} Icon={online ? Wifi : WifiOff} />
-          {pending > 0 && <span className="text-[10px] px-2 py-1 rounded-full" style={{ ...heading, fontWeight: 600, color: C.bad, background: "rgba(193,84,63,0.14)", border: "1px solid rgba(193,84,63,0.4)" }}>{pending} pendente(s)</span>}
-        </div>
+        {pending > 0 && (
+          <div className="mt-1.5 flex justify-end">
+            <span className="text-[10px] px-2 py-1 rounded-full" style={{ ...heading, fontWeight: 600, color: C.bad, background: "rgba(193,84,63,0.14)", border: "1px solid rgba(193,84,63,0.4)" }}>{pending} pendente(s)</span>
+          </div>
+        )}
         <div className="mt-3 flex gap-4 text-xs" style={{ color: C.mute }}>
           <span style={{ ...heading, fontWeight: 600 }}>{rooms.length} ambientes</span><span>·</span>
           <span style={{ ...heading, fontWeight: 600 }}>{totalArea} m²</span><span>·</span>
@@ -1421,13 +1433,13 @@ export default function PranchetaBIM() {
               <div className="flex items-center gap-1.5 mb-2">
                 {croquiViewMode === "2d" ? (
                   levels.length > 0 ? (
-                    <select value={croquiLevel?.id || ""} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1.5 rounded flex-1 min-w-0"
+                    <select value={croquiLevel?.id || ""} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1.5 rounded w-24 truncate"
                       style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
                       {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
-                  ) : <span className="text-xs flex-1" style={{ color: C.mute }}>Nenhum nível criado</span>
-                ) : <span className="text-xs font-medium flex-1" style={{ color: C.chalk }}>Modelo 3D</span>}
-                <div className="flex gap-1 shrink-0 rounded p-0.5" style={{ background: C.panelAlt }}>
+                  ) : <span className="text-xs" style={{ color: C.mute }}>Nenhum nível criado</span>
+                ) : <span className="text-xs font-medium" style={{ color: C.chalk }}>Modelo 3D</span>}
+                <div className="flex gap-1 shrink-0 rounded p-0.5 ml-auto" style={{ background: C.panelAlt }}>
                   <button onClick={() => setCroquiViewMode("2d")} className="px-2.5 py-1 rounded text-[11px]"
                     style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : "transparent", color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
                     2D
