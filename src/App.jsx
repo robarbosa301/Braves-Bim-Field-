@@ -417,7 +417,12 @@ export default function PranchetaBIM() {
       await upsertProjectIndex(code, { name: initial.buildingInfo.name, address: composeAddress(initial.buildingInfo), roomsCount: 0, levelsCount: lv.length });
     }
     setSession({ code, role, deviceId });
-    setTab(buildingInfo ? "croqui" : "ambientes");
+    // Croqui first, always — this "buildingInfo" is the function's own
+    // parameter (truthy only when CREATING a project, since JoinScreen
+    // passes null when opening an existing one), not the state that was
+    // actually just loaded a few lines up, so it used to send anyone
+    // reopening a saved project to Ambientes instead.
+    setTab("croqui");
   }
 
   async function flushPending() {
