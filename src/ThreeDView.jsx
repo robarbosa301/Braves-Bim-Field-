@@ -431,10 +431,29 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
       }
       updateCamera();
 
-      let dragging = false, lastX = 0, lastY = 0;
-      function onDown(e) { dragging = true; const p = e.touches ? e.touches[0] : e; lastX = p.clientX; lastY = p.clientY; }
+      let dragging = false, lastX = 0, lastY = 0, pinchDist = null;
+      const touchDist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      function onDown(e) {
+        if (e.touches && e.touches.length === 2) {
+          dragging = false;
+          pinchDist = touchDist(e.touches[0], e.touches[1]);
+          return;
+        }
+        dragging = true; const p = e.touches ? e.touches[0] : e; lastX = p.clientX; lastY = p.clientY;
+      }
       function onMove(e) {
+        if (e.touches && e.touches.length === 2) {
+          if (e.cancelable) e.preventDefault();
+          const d = touchDist(e.touches[0], e.touches[1]);
+          if (pinchDist != null) {
+            camDist = Math.min(80, Math.max(3, camDist - (d - pinchDist) * 0.02));
+            updateCamera();
+          }
+          pinchDist = d;
+          return;
+        }
         if (!dragging) return;
+        if (e.touches && e.cancelable) e.preventDefault();
         const p = e.touches ? e.touches[0] : e;
         const dx = p.clientX - lastX, dy = p.clientY - lastY;
         lastX = p.clientX; lastY = p.clientY;
@@ -442,21 +461,28 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         phi = Math.min(Math.PI - 0.15, Math.max(0.2, phi - dy * 0.008));
         updateCamera();
       }
-      function onUp() { dragging = false; }
+      function onUp(e) { dragging = false; if (!e.touches || e.touches.length < 2) pinchDist = null; }
       function onWheel(e) { e.preventDefault(); camDist = Math.min(80, Math.max(3, camDist + e.deltaY * 0.01)); updateCamera(); }
 
       const el = renderer.domElement;
       el.addEventListener("mousedown", onDown);
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
-      el.addEventListener("touchstart", onDown, { passive: true });
-      el.addEventListener("touchmove", onMove, { passive: true });
+      // Not passive: a pinch (two touches) has to call preventDefault from
+      // inside the handler itself to stop the browser reading the same
+      // gesture as its own page-zoom (see the touch-action note above —
+      // this is the other half of it, for the pinch specifically).
+      el.addEventListener("touchstart", onDown, { passive: false });
+      el.addEventListener("touchmove", onMove, { passive: false });
       el.addEventListener("touchend", onUp);
       el.addEventListener("wheel", onWheel, { passive: false });
       cleanupFns.push(() => {
         el.removeEventListener("mousedown", onDown);
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        el.removeEventListener("touchstart", onDown);
+        el.removeEventListener("touchmove", onMove);
+        el.removeEventListener("touchend", onUp);
         el.removeEventListener("wheel", onWheel);
       });
 
@@ -482,13 +508,37 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
     };
   }, [buildingLevels, openState, sectionCut, phaseView]);
 
-  if (!ok) return <div className="text-xs p-4 text-center" style={{ color: C.mute }}>A visualização 3D não pôde ser iniciada neste navegador.</div>;
-  if (empty) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Ainda não há paredes desenhadas para mostrar em 3D. Desenhe no Croqui primeiro.</div>;
-  if (emptyPhase) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Nada marcado para essa vista ainda.</div>;
+  // The mount div stays in the tree always, even in an ok/empty/emptyPhase
+  // state — the status text overlays it instead of replacing it. The
+  // effect above needs mountRef.current to exist to run its own detection
+  // logic (it bails immediately if not); returning a different element
+  // tree here used to unmount that div whenever emptyPhase went true,
+  // which left mountRef.current null and permanently stuck that same
+  // effect from ever re-checking a later, actually-non-empty view —
+  // exactly the "works the first time, blank every time after" bug.
+  const statusMsg = !ok ? "A visualização 3D não pôde ser iniciada neste navegador."
+    : empty ? "Ainda não há paredes desenhadas para mostrar em 3D. Desenhe no Croqui primeiro."
+      : emptyPhase ? "Nada marcado para essa vista ainda." : null;
   return (
     <div>
-      <div ref={mountRef} data-threed-mount={exportMarker ? "true" : undefined} style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880" }} />
-      <p className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>
+      <div className="relative">
+        <div ref={mountRef} data-threed-mount={exportMarker ? "true" : undefined}
+          // Without this, a two-finger pinch meant for our own zoom handler
+          // (below) is free to also be read by the browser itself as a page
+          // zoom gesture — iOS Safari does this even with the page's own
+          // user-scalable=no, since it now ignores that for accessibility.
+          // The whole app then renders visibly smaller/zoomed out (not just
+          // this canvas) until the person manually zooms back out, which
+          // reads as the UI randomly shrinking and leaving dead space around
+          // the bottom nav. touch-action: none opts this element out of the
+          // browser's own gesture handling entirely, leaving it all to the
+          // touch handlers below.
+          style={{ width: "100%", height: 340, borderRadius: 8, overflow: "hidden", background: "#8A8880", touchAction: "none" }} />
+        {statusMsg && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-center p-6" style={{ color: C.mute }}>{statusMsg}</div>
+        )}
+      </div>
+      {!statusMsg && <p className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>}
     </div>
   );
 }
