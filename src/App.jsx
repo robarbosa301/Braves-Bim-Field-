@@ -168,13 +168,36 @@ function resizeLogoFile(file, maxW = 360) {
 // missing/invalid key or address, a network hiccup) — this is a nice-to-have
 // on the PDF, never worth blocking the export the user actually asked for.
 const SITE_MAP_W = 520, SITE_MAP_H = 360;
-async function fetchSiteMapDataUrl(address, apiKey) {
-  if (!address || !apiKey) return null;
+async function geocodeNominatim(query) {
   try {
-    const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`);
-    if (!geoRes.ok) return null;
-    const geoData = await geoRes.json();
-    const hit = geoData && geoData[0];
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data && data[0]) || null;
+  } catch (e) { return null; }
+}
+async function fetchSiteMapDataUrl(b, apiKey) {
+  if (!b || !apiKey || (!b.city && !b.street)) return null;
+  try {
+    // Real Brazilian addresses (small bairro/município) often aren't indexed
+    // precisely in Nominatim, and the em-dash composeAddress uses for display
+    // isn't a separator its parser expects — so try the full address first,
+    // then progressively coarser queries (dropping street/bairro, appending
+    // "Brasil" for disambiguation from same-named places abroad) rather than
+    // giving up after one miss. A city-level pin still beats no map at all.
+    const full = [b.street, b.number].filter(Boolean).join(", ");
+    const bairro = [b.neighborhood, b.city, b.state, "Brasil"].filter(Boolean).join(", ");
+    const cityOnly = [b.city, b.state, "Brasil"].filter(Boolean).join(", ");
+    const candidates = [
+      [full, b.neighborhood, b.city, b.state, "Brasil"].filter(Boolean).join(", "),
+      bairro,
+      cityOnly,
+    ].filter(Boolean);
+    let hit = null;
+    for (const q of candidates) {
+      hit = await geocodeNominatim(q);
+      if (hit) break;
+    }
     if (!hit) return null;
     const { lat, lon } = hit;
     const mapUrl = `https://maps.geoapify.com/v1/staticmap?style=osm-carto&width=${SITE_MAP_W}&height=${SITE_MAP_H}&center=lonlat:${lon},${lat}&zoom=17&marker=lonlat:${lon},${lat};color:%23c1543f;size:large&apiKey=${encodeURIComponent(apiKey)}`;
@@ -790,7 +813,7 @@ export default function PranchetaBIM() {
     setPdfExporting(true);
     const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId, prevCroquiViewMode = croquiViewMode;
     try {
-      const siteMap = await fetchSiteMapDataUrl(composeAddress(buildingInfo), buildingInfo?.siteMapApiKey);
+      const siteMap = await fetchSiteMapDataUrl(buildingInfo, buildingInfo?.siteMapApiKey);
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "mm", format: "a4", orientation: pdfOrientation === "paisagem" ? "landscape" : "portrait" });
       const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();

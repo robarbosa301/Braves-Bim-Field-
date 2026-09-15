@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2, ImagePlus, X, RectangleVertical, RectangleHorizontal } from "lucide-react";
+import { RefreshCw, FileJson, FileText, FileDown, CheckCircle2, ImagePlus, X, RectangleVertical, RectangleHorizontal, Pencil, Check } from "lucide-react";
 import { C, mono } from "./theme.js";
 
 // The Sincronização tab: manual sync trigger, JSON/CSV/PDF export, the
@@ -10,6 +10,10 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
   // CEP auto-fill, same lookup JoinScreen's own building step does at
   // project creation — this panel is the only place to fix or update that
   // address afterward, since the creation step never comes back around.
+  // Location fields are gated behind an explicit "Editar" button — a
+  // read-only summary is what's shown by default so the panel doesn't look
+  // like an always-open form the user has to scroll past every visit.
+  const [editingLocation, setEditingLocation] = useState(false);
   const [cepStatus, setCepStatus] = useState("");
   useEffect(() => {
     const digits = (buildingInfo?.cep || "").replace(/\D/g, "");
@@ -38,7 +42,26 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
   return (
           <div>
             <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-              <div className="text-[11px] mb-2" style={{ color: C.mute }}>DADOS DO IMÓVEL</div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px]" style={{ color: C.mute }}>DADOS DO IMÓVEL</div>
+                <button onClick={() => setEditingLocation(v => !v)}
+                  className="flex items-center gap-1 text-[11px] px-2 py-1 rounded"
+                  style={{ color: editingLocation ? C.chalk : C.gold, border: `1px solid ${C.line}`, background: C.panelAlt }}>
+                  {editingLocation ? <><Check size={12} /> Concluir</> : <><Pencil size={12} /> Editar</>}
+                </button>
+              </div>
+              {!editingLocation ? (
+                <div className="text-xs space-y-1" style={{ color: C.chalk }}>
+                  <div>{buildingInfo?.name || "Sem nome definido"}</div>
+                  <div style={{ color: C.mute }}>
+                    {[buildingInfo?.street, buildingInfo?.number].filter(Boolean).join(", ") || "Endereço não informado"}
+                  </div>
+                  <div style={{ color: C.mute }}>
+                    {[buildingInfo?.neighborhood, buildingInfo?.city, buildingInfo?.state].filter(Boolean).join(", ")}
+                  </div>
+                  <div style={{ color: C.mute }}>{buildingInfo?.type || "Residencial"}</div>
+                </div>
+              ) : (
               <div className="space-y-2">
                 <input placeholder="Nome do imóvel / projeto" value={buildingInfo?.name || ""}
                   onChange={e => onUpdateBuildingInfo({ name: e.target.value })}
@@ -73,6 +96,7 @@ export default function SyncTab({ syncing, runSync, exportJSON, exportCSV, expor
                   </select>
                 </div>
               </div>
+              )}
             </div>
             <div className="rounded-lg p-3 mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
               <div className="text-[11px] mb-2" style={{ color: C.mute }}>CARIMBO DO PROJETO (aparece em todas as folhas do PDF)</div>
