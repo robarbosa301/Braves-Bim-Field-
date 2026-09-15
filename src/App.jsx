@@ -51,6 +51,50 @@ function useLoadFonts() {
   }, []);
 }
 
+// `100dvh` alone is unreliable right after load on some Android/iOS browsers
+// (it can report a taller height than what's actually visible once the
+// address bar settles), leaving a blank gap below the app instead of the
+// bottom nav sitting flush with the real screen edge. Track the real
+// visible height via visualViewport (falling back to innerHeight) and
+// expose it as a CSS var so the root container always matches it exactly.
+//
+// position:fixed;inset:0 was tried in place of this (letting the browser
+// track the visible viewport natively, no JS) but made the real-device gap
+// worse, not better, so it's reverted back to this JS-measured approach.
+function useRealViewportHeight() {
+  useEffect(() => {
+    // window.innerHeight (the LAYOUT viewport) deliberately does NOT
+    // shrink when the on-screen keyboard opens on iOS/Android — the
+    // keyboard overlays on top instead. visualViewport.height DOES shrink
+    // for that, which sounds more "accurate" but backfires badly here: it
+    // made the whole app root resize to fit above the keyboard on every
+    // dimension edit, and that resize wasn't landing cleanly, leaving a
+    // large blank gap between the app and the keyboard. Sticking to
+    // innerHeight keeps the app's layout stable while typing; the keyboard
+    // just covers whatever's underneath, same as any ordinary page.
+    function update() {
+      document.documentElement.style.setProperty("--app-vh", `${window.innerHeight}px`);
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    // Still reads window.innerHeight above, never visualViewport.height —
+    // this only adds visualViewport's own resize event as an extra trigger
+    // to re-check it, since mobile Safari settling its address bar after
+    // load can change innerHeight without reliably firing a plain window
+    // "resize" (especially standalone/PWA), which left --app-vh stuck at a
+    // stale, too-short value — a band of the body's bare background
+    // exposed below the bottom nav instead of it sitting flush with the
+    // real screen edge.
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", update);
+    };
+  }, []);
+}
+
 function defaultLevels() {
   return [
     { id: uid(), name: "Térreo", elevation: "0.00", wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] },
@@ -314,6 +358,7 @@ function BrandMark({ size = 30 }) {
 // ---- main app --------------------------------------------------------------
 export default function PranchetaBIM() {
   useLoadFonts();
+  useRealViewportHeight();
   const [session, setSession] = useState(null);
   const [tab, setTab] = useState("ambientes");
   const [modeloSub, setModeloSub] = useState("elementos");
@@ -1156,8 +1201,7 @@ export default function PranchetaBIM() {
   ];
 
   return (
-    <div className="braves-app-root overflow-hidden flex flex-col"
-      style={{ ...METAL_BG, position: "fixed", inset: 0, fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
+    <div className="braves-app-root relative w-full overflow-hidden flex flex-col" style={{ ...METAL_BG, height: "var(--app-vh, 100dvh)", fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
       <Watermark />
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhotoCaptured} />
 
