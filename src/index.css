@@ -7,11 +7,10 @@ html, body, #root {
 }
 body {
   margin: 0;
-  /* Matches the app's own dark theme. The virtual keyboard opening/closing
-     shrinks the visual viewport (which --app-vh tracks) faster than the
-     layout can settle on some Android/iOS browsers, briefly exposing the
-     page underneath our fixed-height root — with the default white body
-     background that showed up as a jarring white flash/gap. */
+  /* Matches the app's own dark theme — the root itself is position:fixed
+     (see .braves-app-root below), so a stray sliver of body can briefly
+     show through under it during viewport changes (keyboard, address bar);
+     the default white body background turned that into a jarring flash. */
   background: #0B0B0A;
 }
 
