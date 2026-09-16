@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, Suspense } from "react";
 import {
   MapPin, LayoutGrid, Camera, RefreshCw, Wifi, WifiOff, Plus, Trash2,
   CheckCircle2, BrickWall, Building2,
-  ChevronRight, ChevronDown, Pencil, Layers3, Layers,
+  ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, Rotate3d, Box, Home,
   DoorOpen, Scissors
@@ -362,6 +362,11 @@ export default function PranchetaBIM() {
   const [session, setSession] = useState(null);
   const [tab, setTab] = useState("ambientes");
   const [modeloSub, setModeloSub] = useState("elementos");
+  // Elementos tab: which single element-type list is shown per level, and
+  // which levels are collapsed — ids toggled into this set hide that
+  // level's list instead of leaving everything always expanded.
+  const [elementTypeFilter, setElementTypeFilter] = useState("wall");
+  const [collapsedLevels, setCollapsedLevels] = useState(() => new Set());
   const [rooms, setRooms] = useState([]);
   const [levels, setLevels] = useState([]);
   const [buildingInfo, setBuildingInfo] = useState(null);
@@ -1605,21 +1610,45 @@ export default function PranchetaBIM() {
 
             {modeloSub === "elementos" && (
               <div className="space-y-4">
-                {levels.map(l => (
-                  <div key={l.id}>
-                    <div className="text-xs font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: C.gold }}>
-                      <ChevronDown size={12} /> {l.name.toUpperCase()} <span style={{ color: C.mute, ...mono, fontWeight: 400 }}>· cota {l.elevation} m</span>
-                    </div>
-                    <div className="space-y-1.5 mb-2">
-                      {(l.sketchElements || []).filter(e => e.type === "wall").map(el => <WallRow key={el.id} el={el} adjacency={wallRoomAdjacency(l, el)} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
-                      {(l.sketchElements || []).filter(e => e.type === "door").map(el => <DoorRow key={el.id} el={el} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
-                      {(l.sketchElements || []).filter(e => e.type === "window").map(el => <WindowRow key={el.id} el={el} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
-                      {(l.sketchElements || []).filter(e => e.type === "wall" || e.type === "door" || e.type === "window").length === 0 && (
-                        <div className="text-[11px] italic" style={{ color: C.mute }}>Nada desenhado ainda neste nível.</div>
+                <div className="flex gap-1.5">
+                  {[
+                    { type: "wall", icon: RectangleHorizontal, label: "Paredes" },
+                    { type: "door", icon: DoorClosed, label: "Portas" },
+                    { type: "window", icon: Layers3, label: "Janelas" },
+                  ].map(f => (
+                    <button key={f.type} onClick={() => setElementTypeFilter(f.type)} title={f.label}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
+                      style={{ ...heading, fontWeight: 600, background: elementTypeFilter === f.type ? C.goldTint : C.panelAlt, color: elementTypeFilter === f.type ? C.gold : C.mute, border: `1px solid ${elementTypeFilter === f.type ? "#FFFFFF" : C.line}` }}>
+                      <f.icon size={13} /> {f.label}
+                    </button>
+                  ))}
+                </div>
+                {levels.map(l => {
+                  const collapsed = collapsedLevels.has(l.id);
+                  const items = (l.sketchElements || []).filter(e => e.type === elementTypeFilter);
+                  const emptyLabel = elementTypeFilter === "wall" ? "Nenhuma parede neste nível." : elementTypeFilter === "door" ? "Nenhuma porta neste nível." : "Nenhuma janela neste nível.";
+                  return (
+                    <div key={l.id}>
+                      <button onClick={() => setCollapsedLevels(s => {
+                        const next = new Set(s);
+                        if (next.has(l.id)) next.delete(l.id); else next.add(l.id);
+                        return next;
+                      })} className="text-xs font-semibold mb-1.5 flex items-center gap-1.5 w-full text-left" style={{ color: C.gold }}>
+                        <ChevronDown size={12} style={{ transform: collapsed ? "rotate(-90deg)" : undefined }} /> {l.name.toUpperCase()} <span style={{ color: C.mute, ...mono, fontWeight: 400 }}>· cota {l.elevation} m</span>
+                      </button>
+                      {!collapsed && (
+                        <div className="space-y-1.5 mb-2">
+                          {elementTypeFilter === "wall" && items.map(el => <WallRow key={el.id} el={el} adjacency={wallRoomAdjacency(l, el)} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
+                          {elementTypeFilter === "door" && items.map(el => <DoorRow key={el.id} el={el} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
+                          {elementTypeFilter === "window" && items.map(el => <WindowRow key={el.id} el={el} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
+                          {items.length === 0 && (
+                            <div className="text-[11px] italic" style={{ color: C.mute }}>{emptyLabel}</div>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

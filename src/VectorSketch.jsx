@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
-  Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Eraser,
+  Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
   Expand, Shrink, Box,
 } from "lucide-react";
@@ -453,6 +453,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [rotationDeg, setRotationDeg] = useState(0);
   const [deletedStack, setDeletedStack] = useState([]);
   const [history, setHistory] = useState([]);
+  // States "Recente" (undoLast) has undone, so "Avançar" can restore them —
+  // any fresh commit invalidates this (there's no future to redo once the
+  // person draws something new), so commitElements clears it.
+  const [redoStack, setRedoStack] = useState([]);
   const isDraggingRef = useRef(false);
   const [namingId, setNamingId] = useState(null);
   const [namingValue, setNamingValue] = useState("");
@@ -724,6 +728,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function commitElements(next) {
     if (!isDraggingRef.current) pushHistory();
+    if (redoStack.length) setRedoStack([]);
     onChange(next);
   }
   function patchSelected(patch) { if (!selectedId) return; commitElements(elements.map(e => e.id === selectedId ? { ...e, ...patch } : e)); }
@@ -1247,8 +1252,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       // itself a kind of undo, so it bypasses commitElements/history —
       // "Recente" shouldn't need pressing twice to get past its own effect.
       if (last.type === "wall" && last.x2 === pending.x && last.y2 === pending.y) {
+        // Removes the whole segment, including its start point — leaving
+        // it as the new pending point drew a dangling dot on the canvas
+        // with nothing left to anchor it to.
+        setRedoStack(r => [...r, elements]);
         onChange(elements.slice(0, -1));
-        setPending({ x: last.x1, y: last.y1 });
+        setPending(null);
         return;
       }
     }
@@ -1261,7 +1270,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (!history.length) return;
     const prev = history[history.length - 1];
     setHistory(h => h.slice(0, -1));
+    setRedoStack(r => [...r, elements]);
     onChange(prev);
+  }
+  function redoLast() {
+    if (!redoStack.length) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack(r => r.slice(0, -1));
+    setHistory(h => [...h, elements]);
+    onChange(next);
   }
   function clearAll() {
     if (!window.confirm("Limpar todo o croqui deste nível? Essa ação não pode ser desfeita.")) return;
@@ -2801,8 +2818,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
       <div className="flex items-center justify-end mt-2 flex-wrap gap-2">
         <div className="flex gap-1.5">
-          <button onClick={undoLast} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-            <Undo2 size={12} /> Recente
+          <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+            <Undo2 size={13} />
+          </button>
+          <button onClick={redoLast} disabled={!redoStack.length} title="Avançar"
+            className="flex items-center justify-center px-2.5 py-1.5 rounded"
+            style={{ background: C.panelAlt, color: redoStack.length ? C.chalk : C.muteDim, border: `1px solid ${C.line}`, opacity: redoStack.length ? 1 : 0.5 }}>
+            <Redo2 size={13} />
           </button>
           <button onClick={restoreLast} disabled={!deletedStack.length}
             className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded"
