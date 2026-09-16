@@ -457,6 +457,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [namingId, setNamingId] = useState(null);
   const [namingValue, setNamingValue] = useState("");
   const [selectedId, setSelectedId] = useState(null);
+  // Drag-select (marquee): press empty canvas with the Selecionar tool,
+  // drag a box, release — every wall/door/window/stair/room fully inside it
+  // joins this batch, so a handful of elements can be deleted together
+  // instead of one Apagar tap per element or "Tudo" nuking the whole level.
+  // Kept apart from selectedId (that one drives the single-element property
+  // editor below the canvas) since the two modes are mutually exclusive but
+  // shouldn't have to share state to prove it.
+  const [selectionIds, setSelectionIds] = useState(() => new Set());
+  const [marqueeRect, setMarqueeRect] = useState(null);
+  const marqueeGesture = useRef(null);
   const [showBelow, setShowBelow] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   // Tela cheia: the whole editor floats out of the app's normal scrolling
@@ -489,10 +499,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // Mouse's own click event fires on mouseup regardless of how far the
   // pointer moved in between (no built-in "that was a drag, not a tap"
   // suppression the way touch-to-click synthesis usually has) — set right
-  // before a drag-placed wall/stair commits, and checked at the top of
-  // handleTap, so that same release doesn't ALSO run the tap-chain logic
-  // on top of the segment the drag itself just placed.
-  const justDraggedWall = useRef(false);
+  // before a drag-placed wall/stair commits OR a marquee selection lands,
+  // and checked at the top of handleTap, so that same release doesn't ALSO
+  // run the tap-chain/single-select logic on top of what the drag itself
+  // just did (placing a segment, or picking a batch of elements).
+  const justDraggedOnCanvas = useRef(false);
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
   const dimColor = level.dimColor || "#4A4A46";
@@ -827,7 +838,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function onTouchEndCanvas(e) {
     if (e.touches.length < 2) pinch.current = null;
     if (e.touches.length < 3) twist.current = null;
-    if (e.touches.length === 0) { onCanvasPointerUp(); endWallGesture(); }
+    if (e.touches.length === 0) { onCanvasPointerUp(); endWallGesture(); endMarquee(); }
   }
 
   function nearestWall(p) {
@@ -946,6 +957,46 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     return null;
   }
 
+  function elementBounds(el) {
+    if (el.type === "wall" || el.type === "stair") {
+      return { minX: Math.min(el.x1, el.x2), maxX: Math.max(el.x1, el.x2), minY: Math.min(el.y1, el.y2), maxY: Math.max(el.y1, el.y2) };
+    }
+    if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
+      return { minX: el.x, maxX: el.x, minY: el.y, maxY: el.y };
+    }
+    if (el.type === "room") {
+      const xs = el.points.map(p => p.x), ys = el.points.map(p => p.y);
+      return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    }
+    return null;
+  }
+  // Marquee selection is "fully inside the box", not "touches the box" —
+  // predictable (a small box dragged in a corner never grabs a huge wall
+  // that just happens to pass through it) and matches what most drawing
+  // tools do for a plain drag-select.
+  function elementsInRect(rect) {
+    const rx1 = Math.min(rect.x1, rect.x2), rx2 = Math.max(rect.x1, rect.x2);
+    const ry1 = Math.min(rect.y1, rect.y2), ry2 = Math.max(rect.y1, rect.y2);
+    return elements.filter(el => {
+      if (!phaseVisible(el)) return false;
+      const b = elementBounds(el);
+      return b && b.minX >= rx1 && b.maxX <= rx2 && b.minY >= ry1 && b.maxY <= ry2;
+    });
+  }
+  function deleteSelectionBatch() {
+    if (selectionIds.size === 0) return;
+    const targets = elements.filter(el => selectionIds.has(el.id));
+    // A wall taken out this way takes its own doors/windows with it, same
+    // as a single Apagar tap on that wall already does.
+    const attached = elements.filter(el => (el.type === "door" || el.type === "window") && selectionIds.has(el.wallId) && !selectionIds.has(el.id));
+    const batch = [...targets, ...attached];
+    const ids = new Set(batch.map(b => b.id));
+    setDeletedStack(s => [...s, batch]);
+    if (selectedId && ids.has(selectedId)) setSelectedId(null);
+    commitElements(elements.filter(el => !ids.has(el.id)));
+    setSelectionIds(new Set());
+  }
+
   // Shared by the tap-tap chain (handleTap below) and the press-drag-release
   // gesture (endWallGesture) — one wall/stair segment from start to end,
   // whichever method placed those two points.
@@ -968,7 +1019,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
 
   function handleTap(e) {
-    if (justDraggedWall.current) { justDraggedWall.current = false; return; }
+    if (justDraggedOnCanvas.current) { justDraggedOnCanvas.current = false; return; }
     if (e.touches && e.touches.length > 1) return;
     if (draggingLabel || draggingDimLabel || draggingGapDimLabel) return;
     e.preventDefault();
@@ -997,7 +1048,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (!endpointHit && !wallLineHit && pending && (tool === "parede" || tool === "escada")) p = angleSnap(pending, p);
     }
 
-    if (tool === "selecionar") { const hit = findAt(p); setSelectedId(hit ? hit.id : null); return; }
+    if (tool === "selecionar") {
+      const hit = findAt(p);
+      setSelectedId(hit ? hit.id : null);
+      if (selectionIds.size) setSelectionIds(new Set());
+      return;
+    }
 
     if (tool === "apagar") {
       const target = findAt(p);
@@ -1809,10 +1865,51 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const endPoint = hoverPos;
     setHoverPos(null);
     if (!endPoint || (endPoint.x === g.startPoint.x && endPoint.y === g.startPoint.y)) { setPending(null); return; }
-    justDraggedWall.current = true;
+    justDraggedOnCanvas.current = true;
     const el = placeWallOrStairSegment(tool, g.startPoint, endPoint);
     if (tool === "escada") { setPending(null); setSelectedId(el.id); }
     else setPending(endPoint); // chain: another drag (or tap) from here continues it
+  }
+
+  // Drag-select: press empty canvas with the Selecionar tool, drag, release
+  // — everything fully inside the box joins selectionIds. A press that
+  // actually lands ON an element is left alone here (findAt below bails
+  // out), so it falls through to that element's own onMouseDown/
+  // onTouchStart (drag-to-move, drag-an-endpoint, etc.) exactly as before.
+  function beginMarquee(e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length !== 1) return;
+    const rawP = svgPointRaw(e);
+    if (findAt(rawP)) return;
+    const p = e.touches ? e.touches[0] : e;
+    marqueeGesture.current = { startClientX: p.clientX, startClientY: p.clientY, startPoint: rawP, moved: false };
+  }
+  function moveMarquee(e) {
+    const g = marqueeGesture.current;
+    if (!g) return;
+    const p = e.touches ? e.touches[0] : e;
+    if (!g.moved) {
+      if (Math.hypot(p.clientX - g.startClientX, p.clientY - g.startClientY) < 10) return;
+      g.moved = true;
+    }
+    if (e.cancelable) e.preventDefault();
+    const rawP = svgPointRaw(e);
+    setMarqueeRect({ x1: g.startPoint.x, y1: g.startPoint.y, x2: rawP.x, y2: rawP.y });
+  }
+  function endMarquee() {
+    const g = marqueeGesture.current;
+    marqueeGesture.current = null;
+    if (!g || !g.moved || !marqueeRect) { setMarqueeRect(null); return; } // a plain tap — handleTap's own single-select handles it
+    // Mouse's click fires on mouseup regardless of how far it moved (same
+    // reason justDraggedOnCanvas exists for the wall-drag gesture) — without
+    // this, that trailing click's own tool==="selecionar" branch in
+    // handleTap sees the selection this drag just made and immediately
+    // clears it again, since `selectionIds.size` reads as truthy the
+    // instant this render commits.
+    justDraggedOnCanvas.current = true;
+    setSelectedId(null);
+    setSelectionIds(new Set(elementsInRect(marqueeRect).map(el => el.id)));
+    setMarqueeRect(null);
   }
 
   // Angle (degrees) to rotate a dimension label so it runs parallel to the
@@ -2175,13 +2272,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           ...(fullscreen ? { position: "absolute", inset: 0, zIndex: 0, borderRadius: 0 } : null),
         }}
         onClick={handleTap} onWheel={onWheel}
-        onMouseDown={beginWallGesture}
-        onTouchStart={e => { onTouchStartCanvas(e); if (e.touches.length === 1) beginWallGesture(e); }}
-        onTouchMove={e => { onTouchMoveCanvas(e); if (e.touches.length === 1) moveWallGesture(e); }}
+        onMouseDown={e => { beginWallGesture(e); beginMarquee(e); }}
+        onTouchStart={e => { onTouchStartCanvas(e); if (e.touches.length === 1) { beginWallGesture(e); beginMarquee(e); } }}
+        onTouchMove={e => { onTouchMoveCanvas(e); if (e.touches.length === 1) { moveWallGesture(e); moveMarquee(e); } }}
         onTouchEnd={onTouchEndCanvas}
-        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); moveWallGesture(e); }}
-        onMouseUp={e => { onCanvasPointerUp(e); endWallGesture(); }}
-        onMouseLeave={e => { onCanvasPointerUp(e); endWallGesture(); }}>
+        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); moveWallGesture(e); moveMarquee(e); }}
+        onMouseUp={e => { onCanvasPointerUp(e); endWallGesture(); endMarquee(); }}
+        onMouseLeave={e => { onCanvasPointerUp(e); endWallGesture(); endMarquee(); }}>
         <defs>
           <pattern id={`grid-${level.id}`} width={GRID} height={GRID} patternUnits="userSpaceOnUse">
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
@@ -2539,6 +2636,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <line x1={(gestureAnchor || pending).x} y1={(gestureAnchor || pending).y} x2={hoverPos.x} y2={hoverPos.y} stroke="#1B1E1A" strokeWidth="4" strokeLinecap="square" opacity="0.6" pointerEvents="none" />
         )}
         {pending && <circle cx={pending.x} cy={pending.y} r="4.5" fill="#4A4A46" stroke="#1B1E1A" strokeWidth="1" />}
+        {marqueeRect && (
+          <rect x={Math.min(marqueeRect.x1, marqueeRect.x2)} y={Math.min(marqueeRect.y1, marqueeRect.y2)}
+            width={Math.abs(marqueeRect.x2 - marqueeRect.x1)} height={Math.abs(marqueeRect.y2 - marqueeRect.y1)}
+            fill={C.goldTint} stroke={C.gold} strokeWidth="1.5" strokeDasharray="6,4" pointerEvents="none" />
+        )}
+        {selectionIds.size > 0 && elements.filter(el => selectionIds.has(el.id)).map(el => {
+          const b = elementBounds(el);
+          if (!b) return null;
+          const pad = 8;
+          return (
+            <rect key={`sel-${el.id}`} x={b.minX - pad} y={b.minY - pad} width={(b.maxX - b.minX) + pad * 2} height={(b.maxY - b.minY) + pad * 2}
+              fill="none" stroke={C.gold} strokeWidth="2" strokeDasharray="5,3" rx="4" pointerEvents="none" />
+          );
+        })}
         </g>
       </svg>
 
@@ -2554,6 +2665,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
           paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         } : undefined}>
+      {selectionIds.size > 0 && (
+        <div className="mt-2 p-2.5 rounded-lg flex items-center justify-between gap-2" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+          <span className="text-[11px] font-medium" style={{ color: C.gold }}>{selectionIds.size} selecionado(s)</span>
+          <div className="flex items-center gap-1.5">
+            <button onClick={deleteSelectionBatch} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded" style={{ background: "rgba(193,84,63,0.16)", color: C.bad, border: `1px solid ${C.bad}` }}>
+              <Trash2 size={12} /> Apagar selecionados
+            </button>
+            <button onClick={() => setSelectionIds(new Set())} title="Cancelar seleção"><X size={14} color={C.gold} /></button>
+          </div>
+        </div>
+      )}
       {selected && (
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
