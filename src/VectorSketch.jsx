@@ -2159,24 +2159,27 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : "transparent", color: planMode === "forro" ? "#141311" : C.mute }}>Forro</button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 mb-1">
-        {TOOLS.map(({ id, label, Icon }) => {
-          const active = tool === id;
-          const activeColor = id === "apagar" ? C.bad : C.gold;
-          return (
-            <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); }} title={label}
-              className="flex items-center justify-center p-2 rounded"
-              style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
-              <Icon size={16} />
-            </button>
-          );
-        })}
-        {/* Cor das cotas + "ver [nível acima/abaixo]" stacked beside the
-            tool icons instead of on their own row below, freeing that row
-            for the grid/zoom cluster to move up onto the same line as the
-            scale (⊞/PD) fields. */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {TOOLS.map(({ id, label, Icon }) => {
+            const active = tool === id;
+            const activeColor = id === "apagar" ? C.bad : C.gold;
+            return (
+              <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); }} title={label}
+                className="flex items-center justify-center p-2 rounded"
+                style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
+                <Icon size={16} />
+              </button>
+            );
+          })}
+        </div>
+        {/* Cor das cotas + "ver [nível acima/abaixo]" — a separate flex
+            item with ml-auto, so it sits to the right of the tool icons
+            when the row has room and only drops to its own (still
+            right-aligned) line once it doesn't, instead of always
+            wrapping directly under the icons regardless of space. */}
         {planMode === "piso" && (
-          <div className="flex flex-col gap-1 text-[10px] ml-1" style={{ color: C.mute }}>
+          <div className="flex items-center flex-wrap gap-2 text-[10px] ml-auto" style={{ color: C.mute }}>
             <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
               <Ruler size={11} />
               <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
