@@ -2040,7 +2040,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function wallDimensions(w) {
     const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id && phaseVisible(e));
-    if (!opens.length) return null;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
@@ -2052,11 +2051,33 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const offset = GRID * 0.75;
     const startInset = joinedWallFaceInset(w.id, w.x1, w.y1);
     const endInset = joinedWallFaceInset(w.id, w.x2, w.y2);
-    const ivs = opens.map(o => {
+    const openIvs = opens.map(o => {
       const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
       const halfW = (toNum(o.width, 0.8) / scale) * GRID / 2;
       return { id: o.id, start: pos - halfW, end: pos + halfW };
-    }).sort((a, b) => a.start - b.start);
+    });
+    // A partition wall meeting this one partway along its own span (a
+    // T-junction) breaks the dimension chain the same way a door or
+    // window does — without this, a gap silently skips straight through
+    // it to whatever's next (a far corner, another opening), measuring
+    // "corner to door" across an interior wall instead of the "partition
+    // to door" a room actually needs. Only its own two end corners are
+    // excluded (pos near 0 or len) since those are already handled by
+    // startInset/endInset above, not by a break mid-span.
+    const joinIvs = [];
+    elements.forEach(o => {
+      if (o.type !== "wall" || o.id === w.id) return;
+      [{ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }].forEach(pt => {
+        const proj = projectPointOnSegment(pt, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
+        if (dist(pt, proj) > 3) return;
+        const pos = (proj.x - w.x1) * ux + (proj.y - w.y1) * uy;
+        if (pos < 6 || pos > len - 6) return;
+        const halfW = (wallThicknessM(o.wallType) / 2 / scale) * GRID;
+        joinIvs.push({ id: o.id, start: pos - halfW, end: pos + halfW });
+      });
+    });
+    const ivs = [...openIvs, ...joinIvs].sort((a, b) => a.start - b.start);
+    if (!ivs.length) return null;
     const gaps = [];
     let cursor = startInset;
     ivs.forEach(iv => { if (iv.start - cursor > 3) gaps.push({ start: cursor, end: iv.start, afterOpeningId: iv.id }); cursor = Math.max(cursor, iv.end); });
