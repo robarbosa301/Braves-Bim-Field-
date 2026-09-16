@@ -1060,6 +1060,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       return;
     }
 
+    if (tool === "cortar") {
+      const hit = findAt(p);
+      if (!hit || hit.type !== "wall") return;
+      const proj = projectPointOnSegment(rawP, { x: hit.x1, y: hit.y1 }, { x: hit.x2, y: hit.y2 });
+      const dx = hit.x2 - hit.x1, dy = hit.y2 - hit.y1, len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const cutPx = Math.min(len - 4, Math.max(4, proj.t * len));
+      splitWallAt(hit, snap(hit.x1 + ux * cutPx), snap(hit.y1 + uy * cutPx));
+      return;
+    }
+
     if (tool === "apagar") {
       const target = findAt(p);
       if (!target) return;
@@ -1310,25 +1321,32 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     commitElements(elements.map(e => (e.id === newA.id ? newA : e.id === newB.id ? newB : e)));
   }
 
-  function splitSelectedWallAt(distM) {
-    if (!selected || selected.type !== "wall") return;
-    const dx = selected.x2 - selected.x1, dy = selected.y2 - selected.y1, len = Math.hypot(dx, dy) || 1;
+  // Shared by the "Cortar parede..." distance field (splitSelectedWallAt)
+  // and the tap-to-cut "cortar" tool — both just need to hand it the wall
+  // and where along it to cut.
+  function splitWallAt(wall, mx, my) {
+    if ((mx === wall.x1 && my === wall.y1) || (mx === wall.x2 && my === wall.y2)) return;
+    const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
-    const cutPx = Math.min(len - 4, Math.max(4, (toNum(distM) / scale) * GRID));
-    const mx = snap(selected.x1 + ux * cutPx), my = snap(selected.y1 + uy * cutPx);
-    if ((mx === selected.x1 && my === selected.y1) || (mx === selected.x2 && my === selected.y2)) return;
     const wallCount = elements.filter(x => x.type === "wall").length;
-    const partA = { ...selected, id: uid(), x2: mx, y2: my, tag: `P-${wallCount + 1}`, length: pxToMeters(dist({ x: selected.x1, y: selected.y1 }, { x: mx, y: my })) };
-    const partB = { ...selected, id: uid(), x1: mx, y1: my, tag: `P-${wallCount + 2}`, length: pxToMeters(dist({ x: mx, y: my }, { x: selected.x2, y: selected.y2 })) };
-    const midPos = (mx - selected.x1) * ux + (my - selected.y1) * uy;
-    const next = elements.filter(e => e.id !== selected.id).map(e => {
-      if (e.wallId !== selected.id) return e;
-      const pos = (e.x - selected.x1) * ux + (e.y - selected.y1) * uy;
+    const partA = { ...wall, id: uid(), x2: mx, y2: my, tag: `P-${wallCount + 1}`, length: pxToMeters(dist({ x: wall.x1, y: wall.y1 }, { x: mx, y: my })) };
+    const partB = { ...wall, id: uid(), x1: mx, y1: my, tag: `P-${wallCount + 2}`, length: pxToMeters(dist({ x: mx, y: my }, { x: wall.x2, y: wall.y2 })) };
+    const midPos = (mx - wall.x1) * ux + (my - wall.y1) * uy;
+    const next = elements.filter(e => e.id !== wall.id).map(e => {
+      if (e.wallId !== wall.id) return e;
+      const pos = (e.x - wall.x1) * ux + (e.y - wall.y1) * uy;
       return { ...e, wallId: pos <= midPos ? partA.id : partB.id };
     });
     next.push(partA, partB);
     commitElements(next);
     setSelectedId(partA.id);
+  }
+  function splitSelectedWallAt(distM) {
+    if (!selected || selected.type !== "wall") return;
+    const dx = selected.x2 - selected.x1, dy = selected.y2 - selected.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const cutPx = Math.min(len - 4, Math.max(4, (toNum(distM) / scale) * GRID));
+    splitWallAt(selected, snap(selected.x1 + ux * cutPx), snap(selected.y1 + uy * cutPx));
     setSplittingWall(null);
   }
 
@@ -2103,6 +2121,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "porta", label: "Porta", Icon: DoorClosed },
     { id: "janela", label: "Janela", Icon: WindowIcon },
     { id: "escada", label: "Escada", Icon: StairsIcon },
+    { id: "cortar", label: "Cortar parede", Icon: Scissors },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
   const FORRO_TOOLS = [
@@ -2171,6 +2190,29 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             )}
           </div>
         )}
+      </div>
+      {/* Voltar/Avançar/Desfazer exclusão/Tudo pulled up here, right under
+          the tool icons — they act on the sketch as a whole (not on
+          whatever's currently selected below the canvas), so they belong
+          next to the other sketch-wide controls instead of scrolled all
+          the way past the canvas and the selected-element editor. */}
+      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+        <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+          <Undo2 size={13} />
+        </button>
+        <button onClick={redoLast} disabled={!redoStack.length} title="Avançar"
+          className="flex items-center justify-center px-2.5 py-1.5 rounded"
+          style={{ background: C.panelAlt, color: redoStack.length ? C.chalk : C.muteDim, border: `1px solid ${C.line}`, opacity: redoStack.length ? 1 : 0.5 }}>
+          <Redo2 size={13} />
+        </button>
+        <button onClick={restoreLast} disabled={!deletedStack.length}
+          className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded"
+          style={{ ...heading, fontWeight: 600, background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
+          <RotateCcw size={12} /> Desfazer exclusão
+        </button>
+        <button onClick={clearAll} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
+          <Eraser size={12} /> Tudo
+        </button>
       </div>
       <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
         {planMode === "piso" && (
@@ -2670,12 +2712,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </g>
       </svg>
 
-      {/* The selected-element editor and the Recente/Desfazer/Tudo row are
-          the other watermark layer, pinned to the bottom of the canvas in
-          fullscreen — same translucent backing as the top row (not a
-          near-opaque block) so the two read as one consistent treatment;
-          the controls underneath keep their own normal (already legible)
-          styling either way. */}
+      {/* The selected-element editor is the other watermark layer, pinned
+          to the bottom of the canvas in fullscreen — same translucent
+          backing as the top row (not a near-opaque block) so the two read
+          as one consistent treatment; the controls underneath keep their
+          own normal (already legible) styling either way. */}
       <div ref={belowCanvasRef} className={fullscreen ? "absolute bottom-0 left-0 right-0 z-20 pt-1.5 max-h-[60vh] overflow-y-auto" : undefined}
         style={fullscreen ? {
           background: "rgba(20,19,17,0.55)", backdropFilter: "blur(3px)",
@@ -2815,27 +2856,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           </button>
         </div>
       )}
-
-      <div className="flex items-center justify-end mt-2 flex-wrap gap-2">
-        <div className="flex gap-1.5">
-          <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-            <Undo2 size={13} />
-          </button>
-          <button onClick={redoLast} disabled={!redoStack.length} title="Avançar"
-            className="flex items-center justify-center px-2.5 py-1.5 rounded"
-            style={{ background: C.panelAlt, color: redoStack.length ? C.chalk : C.muteDim, border: `1px solid ${C.line}`, opacity: redoStack.length ? 1 : 0.5 }}>
-            <Redo2 size={13} />
-          </button>
-          <button onClick={restoreLast} disabled={!deletedStack.length}
-            className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded"
-            style={{ ...heading, fontWeight: 600, background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
-            <RotateCcw size={12} /> Desfazer exclusão
-          </button>
-          <button onClick={clearAll} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
-            <Eraser size={12} /> Tudo
-          </button>
-        </div>
-      </div>
       </div>
     </div>
   );
