@@ -81,7 +81,7 @@ function wallFaceMaterial(finish, color, segLen, segH) {
 }
 
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
-export default function ThreeDView({ buildingLevels, elevationsById, openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
+export default function ThreeDView({ buildingLevels, elevationsById, roofs = [], openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
   const mountRef = useRef(null);
   const hintRef = useRef(null);
   const [ok, setOk] = useState(true);
@@ -476,6 +476,49 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         }
       });
 
+      // Roofs (Coberturas tab): each is a handful of already-absolute 3D
+      // planes computed by computeRoofPlanes (geometry.js) — a custom
+      // BufferGeometry per plane (quads split into 2 triangles) rather
+      // than a primitive, since a sloped face isn't box/plane-shaped in
+      // any way three.js has a constructor for. Folded into the same
+      // bounding box the walls built above, so framing a building
+      // actually includes its roof instead of clipping it at eave height.
+      const TILE_COLORS = {
+        "Cerâmica": 0xB5623A, "Concreto": 0x9A8F82, "Fibrocimento": 0x8C8C86,
+        "Metálica (telha zinco)": 0xAEB4B8, "Shingle (americana)": 0x4A4038,
+      };
+      roofs.forEach(roof => {
+        const mat = new THREE.MeshStandardMaterial({ color: TILE_COLORS[roof.tileType] ?? 0xB5623A, roughness: 0.8, side: THREE.DoubleSide });
+        (roof.planes || []).forEach(plane => {
+          const tris = plane.length === 3 ? [[0, 1, 2]] : [[0, 1, 2], [0, 2, 3]];
+          const positions = [];
+          tris.forEach(t => t.forEach(idx => { const p = plane[idx]; positions.push(p.x, p.y, p.z); }));
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+          geo.computeVertexNormals();
+          scene.add(new THREE.Mesh(geo, mat));
+          plane.forEach(p => {
+            minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+            minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+            maxY = Math.max(maxY, p.y);
+          });
+        });
+        const loop = roof.eaveLoop || [];
+        if (loop.length) {
+          const gutterMat = new THREE.MeshStandardMaterial({ color: 0x707070, roughness: 0.4, metalness: 0.6 });
+          for (let i = 0; i < loop.length; i++) {
+            const a = loop[i], b = loop[(i + 1) % loop.length];
+            const len = Math.hypot(b.x - a.x, b.z - a.z);
+            if (len < 0.01) continue;
+            const angle = Math.atan2(b.z - a.z, b.x - a.x);
+            const gMesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.08), gutterMat);
+            gMesh.position.set((a.x + b.x) / 2, roof.baseElevation - 0.04, (a.z + b.z) / 2);
+            gMesh.rotation.y = -angle;
+            scene.add(gMesh);
+          }
+        }
+      });
+
       if (!isFinite(minX)) { minX = 0; maxX = 4; minZ = 0; maxZ = 4; }
       const target = new THREE.Vector3((minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2);
       let theta = Math.PI / 4, phi = Math.PI / 3.2;
@@ -663,7 +706,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
       // than leave the legend showing a wall that's no longer there.
       setSelectedWallInfo(null);
     };
-  }, [buildingLevels, openState, sectionCut, phaseView, dims]);
+  }, [buildingLevels, roofs, openState, sectionCut, phaseView, dims]);
 
   // The mount div stays in the tree always, even in an ok/empty/emptyPhase
   // state — the status text overlays it instead of replacing it. The

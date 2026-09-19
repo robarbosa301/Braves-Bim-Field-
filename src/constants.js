@@ -22,3 +22,4 @@ export const DOOR_TYPES = ["Madeira maciça", "Madeira semi-oca", "Alumínio", "
 export const WINDOW_TYPES = ["Alumínio de correr", "Vidro de correr", "Basculante", "Maxim-ar", "Vidro fixo", "Guilhotina", "Veneziana", "Pivotante"];
 export const FLOOR_TYPES = ["Porcelanato", "Cerâmica", "Contrapiso aparente", "Madeira/Laminado", "Vinílico", "A definir"];
 export const CEILING_TYPES = ["Laje aparente", "Forro de gesso", "Forro em PVC", "Forro mineral (lay-in)", "A definir"];
+export const TILE_TYPES = ["Cerâmica", "Concreto", "Fibrocimento", "Metálica (telha zinco)", "Shingle (americana)"];

@@ -16,8 +16,8 @@ import JoinScreen from "./JoinScreen.jsx";
 import VectorSketch from "./VectorSketch.jsx";
 import ElevationView from "./ElevationView.jsx";
 import SyncTab from "./SyncTab.jsx";
-import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES } from "./constants.js";
-import { GRID, pointInPolygon } from "./geometry.js";
+import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES } from "./constants.js";
+import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ } from "./geometry.js";
 import {
   Pill, StatRow,
   WallRow, DoorRow, WindowRow, FloorRow,
@@ -275,6 +275,25 @@ export function windowToM(w, toM) {
 function stairToM(s2, toM) { return { id: s2.id, tag: s2.tag || "", x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
 function luminariaToM(l, toM) { return { id: l.id, tag: l.tag || "", x: toM(l.x), y: toM(l.y) }; }
 function roomToM(r, toM) { return { id: r.id, roomId: r.roomId || null, points: r.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: r.area, ceilingFinish: r.ceilingFinish, floorFinish: r.floorFinish, floorColor: r.floorColor, name: r.name }; }
+
+// A roof has no drawn shape of its own (see addRoof/computeRoofPlanes) —
+// its geometry is auto-generated from whichever level it's assigned to's
+// own exterior walls, same conversion levelToMeters already uses.
+function roofFootprintFromLevel(level) {
+  if (!level) return null;
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  const walls = (level.sketchElements || []).filter(e => e.type === "wall");
+  if (!walls.length) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxH = 0;
+  walls.forEach(w => {
+    minX = Math.min(minX, toM(w.x1), toM(w.x2)); maxX = Math.max(maxX, toM(w.x1), toM(w.x2));
+    minY = Math.min(minY, toM(w.y1), toM(w.y2)); maxY = Math.max(maxY, toM(w.y1), toM(w.y2));
+    maxH = Math.max(maxH, toNum(w.height, 2.8));
+  });
+  return { minX, maxX, minY, maxY, baseElevation: toNum(level.elevation, 0) + maxH };
+}
+const ROOF_SHAPE_AGUA_COUNT = { "1agua": 1, "2aguas": 2, "4aguas": 4 };
 
 export function levelToMeters(level) {
   const s = toNum(level.sketchScale, 0.5);
@@ -782,10 +801,43 @@ export default function PranchetaBIM() {
     updateLevels(ls => [...ls, { id: uid(), name: `Nível ${ls.length + 1}`, elevation: "0.00", wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] }]);
   }
   function addRoof() {
-    updateRoofs(rs => [...rs, { id: uid(), name: `Cobertura ${rs.length + 1}`, level: levels[levels.length - 1]?.name || "", aguas: [{ id: uid(), inclinacao: "30", area: "" }] }]);
+    updateRoofs(rs => [...rs, {
+      id: uid(), name: `Cobertura ${rs.length + 1}`, level: levels[levels.length - 1]?.name || "",
+      shape: "2aguas", pitchDeg: "30", tileType: TILE_TYPES[0], overhangM: "0.4", ridgeAxis: "auto", highEdge: "maxY",
+      aguas: [{ id: uid(), inclinacao: "30", area: "" }, { id: uid(), inclinacao: "30", area: "" }],
+    }]);
   }
   function addAgua(roofId) { updateRoofs(rs => rs.map(r => r.id === roofId ? { ...r, aguas: [...r.aguas, { id: uid(), inclinacao: "30", area: "" }] } : r)); }
   function removeAgua(roofId, aguaId) { updateRoofs(rs => rs.map(r => r.id === roofId ? { ...r, aguas: r.aguas.filter(a => a.id !== aguaId) } : r)); }
+  // Re-derives a roof's aguas array from its own settings (shape, pitch,
+  // overhang) and its level's current wall footprint — the count always
+  // matches the shape (1/2/4), and each area is filled in from the actual
+  // generated geometry instead of staying blank until someone measures it
+  // by hand. rufo/calha (still hand-entered — the auto footprint doesn't
+  // know where a valley or a parapet needs flashing) carry over by
+  // position when the água count didn't change; a shape change resets
+  // them, since "água 1" no longer means the same face once it does.
+  function recalcRoofGeometry(roofId) {
+    updateRoofs(rs => rs.map(r => {
+      if (r.id !== roofId) return r;
+      const level = levels.find(l => l.name === r.level);
+      const footprint = roofFootprintFromLevel(level);
+      if (!footprint) return r;
+      const { planes } = computeRoofPlanes(
+        { shape: r.shape, pitchDeg: toNum(r.pitchDeg, 30), overhangM: toNum(r.overhangM, 0.4), ridgeAxis: r.ridgeAxis, highEdge: r.highEdge },
+        footprint, footprint.baseElevation
+      );
+      const aguas = planes.map((plane, i) => {
+        const prev = r.aguas[i];
+        const area = polygonAreaXZ(plane) / Math.cos((Math.max(0, Math.min(89, toNum(r.pitchDeg, 30))) * Math.PI) / 180);
+        return { id: prev?.id || uid(), inclinacao: r.pitchDeg, area: area.toFixed(1), rufo: prev?.rufo, calha: prev?.calha };
+      });
+      return { ...r, aguas };
+    }));
+  }
+  function setRoofField(roofId, patch) {
+    updateRoofs(rs => rs.map(r => r.id === roofId ? { ...r, ...patch } : r));
+  }
 
   function runSync() {
     setSyncing(true);
@@ -1598,7 +1650,17 @@ export default function PranchetaBIM() {
 
                 {view3dMode === "casa" && (
                   <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
+                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))}
+                      roofs={roofs.map(roof => {
+                        const footprint = roofFootprintFromLevel(levels.find(l => l.name === roof.level));
+                        if (!footprint) return null;
+                        const geo = computeRoofPlanes(
+                          { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM: toNum(roof.overhangM, 0.4), ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge },
+                          footprint, footprint.baseElevation
+                        );
+                        return { id: roof.id, tileType: roof.tileType || TILE_TYPES[0], baseElevation: footprint.baseElevation, ...geo };
+                      }).filter(Boolean)}
+                      openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
                   </Suspense>
                 )}
                 {view3dMode === "ambiente" && (() => {
@@ -1718,6 +1780,52 @@ export default function PranchetaBIM() {
                           {levels.map(l => <option key={l.id}>{l.name}</option>)}
                         </select>
                       </div>
+                      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                        {[{ id: "1agua", label: "1 água" }, { id: "2aguas", label: "2 águas" }, { id: "4aguas", label: "4 águas" }].map(s => (
+                          <button key={s.id} onClick={() => setRoofField(roof.id, { shape: s.id })} className="px-2 py-1 rounded text-[10px]"
+                            style={{ ...heading, fontWeight: 600, background: (roof.shape || "2aguas") === s.id ? C.goldTint : C.panelAlt, color: (roof.shape || "2aguas") === s.id ? C.gold : C.mute, border: `1px solid ${(roof.shape || "2aguas") === s.id ? C.gold : C.line}` }}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mb-2 text-[11px]">
+                        <span style={{ color: C.mute }}>Telha:</span>
+                        <select value={roof.tileType || TILE_TYPES[0]} onChange={e => setRoofField(roof.id, { tileType: e.target.value })}
+                          className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+                          {TILE_TYPES.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                        <span style={{ color: C.mute }}>Inclinação:</span>
+                        <input type="text" inputMode="decimal" value={roof.pitchDeg ?? "30"} onChange={e => setRoofField(roof.id, { pitchDeg: e.target.value })}
+                          className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                        <span style={{ color: C.mute }}>°</span>
+                        <span style={{ color: C.mute }}>Beiral:</span>
+                        <input type="text" inputMode="decimal" value={roof.overhangM ?? "0.4"} onChange={e => setRoofField(roof.id, { overhangM: e.target.value })}
+                          className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                        <span style={{ color: C.mute }}>m</span>
+                      </div>
+                      {(roof.shape === "2aguas" || roof.shape === "4aguas") && (
+                        <div className="flex items-center gap-1.5 mb-2 text-[11px] flex-wrap">
+                          <span style={{ color: C.mute }}>Cumeeira:</span>
+                          {[{ id: "auto", label: "Auto" }, { id: "x", label: "Norte-Sul" }, { id: "y", label: "Leste-Oeste" }].map(o => (
+                            <button key={o.id} onClick={() => setRoofField(roof.id, { ridgeAxis: o.id })} className="px-2 py-1 rounded text-[10px]"
+                              style={{ background: (roof.ridgeAxis || "auto") === o.id ? C.goldTint : C.panelAlt, color: (roof.ridgeAxis || "auto") === o.id ? C.gold : C.mute, border: `1px solid ${(roof.ridgeAxis || "auto") === o.id ? C.gold : C.line}` }}>
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {roof.shape === "1agua" && (
+                        <div className="flex items-center gap-2 mb-2 text-[11px]">
+                          <span style={{ color: C.mute }}>Lado alto:</span>
+                          <select value={roof.highEdge || "maxY"} onChange={e => setRoofField(roof.id, { highEdge: e.target.value })}
+                            className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+                            <option value="minX">Oeste</option><option value="maxX">Leste</option><option value="minY">Norte</option><option value="maxY">Sul</option>
+                          </select>
+                        </div>
+                      )}
+                      <button onClick={() => recalcRoofGeometry(roof.id)} className="mb-2 flex items-center gap-1 text-[11px] px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}>
+                        <RefreshCw size={11} /> Recalcular águas e áreas a partir das paredes
+                      </button>
                       <div className="text-[11px] mb-2" style={{ color: C.mute }}>{roof.aguas.length} água(s) · {totalRoofArea} m² · {totalRufo} m de rufo · {totalCalha} m de calha</div>
                       <div className="space-y-1.5">
                         {roof.aguas.map((agua, i) => (

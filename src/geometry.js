@@ -110,6 +110,122 @@ export function resyncVbAspect(v, w, h) {
   const cy = v.y + v.h / 2;
   return { ...v, h: newH, y: cy - newH / 2 };
 }
+// Shoelace area of a planar polygon given as 3D points {x, z} (y/height is
+// ignored) — used both directly (the eave loop) and for a roof plane's own
+// slanted area, which for a uniformly-pitched face equals its flat plan
+// projection divided by cos(pitch) (the standard roofing-takeoff formula —
+// true for a rectangular/trapezoidal face AND for a true 45°-hip's
+// triangular ends, since a 45° hip is exactly the construction that keeps
+// every face at the same conventional pitch).
+export function polygonAreaXZ(points) {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    area += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(area / 2);
+}
+// Builds a roof's 3D planes (each an array of 3-4 coplanar vertices, already
+// wound as a polygon) from a wall footprint (minX/maxX/minY/maxY, in the
+// same plan meters as everything else) and the roof's own settings —
+// shared by App.jsx (to fill in each água's area automatically) and
+// ThreeDView (to actually mesh it). baseElevation is where the roof's LOW
+// eave sits (a level's own elevation + its wall height).
+//
+// "1agua" (mono-pitch/lean-to): one full-footprint plane, rising from
+// whichever edge highEdge names toward the opposite one.
+// "2aguas" (gable): two equal planes meeting at a ridge line down the
+// middle, parallel to whichever axis is longer (or ridgeAxis, if set).
+// "4aguas" (hip): the same two planes, but only as wide as the ridge —
+// shortened by half the short dimension at each end (the standard 45°-hip
+// proportion when every face shares one pitch) — plus a triangular hip
+// face filling each shortened end. A footprint close to square collapses
+// the ridge to a single point (ridgeHalfLen <= 0), giving a 4-sided pyramid
+// instead of 4 trapezoids-and-triangles.
+export function computeRoofPlanes(settings, footprint, baseElevation) {
+  const overhang = Math.max(0, settings.overhangM ?? 0.4);
+  const pitch = (Math.max(0, Math.min(89, settings.pitchDeg ?? 30)) * Math.PI) / 180;
+  const minX = footprint.minX - overhang, maxX = footprint.maxX + overhang;
+  const minY = footprint.minY - overhang, maxY = footprint.maxY + overhang;
+  const W = maxX - minX, D = maxY - minY;
+  const eaveLoop = [{ x: minX, z: minY }, { x: maxX, z: minY }, { x: maxX, z: maxY }, { x: minX, z: maxY }];
+  const V = (x, z, h) => ({ x, y: baseElevation + h, z });
+  const axis = settings.ridgeAxis === "x" || settings.ridgeAxis === "y" ? settings.ridgeAxis : (W >= D ? "x" : "y");
+
+  if (settings.shape === "1agua") {
+    const highEdge = settings.highEdge || "maxY";
+    const rise = (highEdge === "minX" || highEdge === "maxX" ? W : D) * Math.tan(pitch);
+    let plane;
+    if (highEdge === "minX") plane = [V(minX, minY, rise), V(minX, maxY, rise), V(maxX, maxY, 0), V(maxX, minY, 0)];
+    else if (highEdge === "maxX") plane = [V(maxX, minY, rise), V(maxX, maxY, rise), V(minX, maxY, 0), V(minX, minY, 0)];
+    else if (highEdge === "minY") plane = [V(minX, minY, rise), V(maxX, minY, rise), V(maxX, maxY, 0), V(minX, maxY, 0)];
+    else plane = [V(minX, maxY, rise), V(maxX, maxY, rise), V(maxX, minY, 0), V(minX, minY, 0)];
+    return { planes: [plane], ridge: null, eaveLoop };
+  }
+
+  if (settings.shape === "4aguas") {
+    if (axis === "x") {
+      const rise = (D / 2) * Math.tan(pitch);
+      const ridgeHalf = (W - D) / 2, midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
+      if (ridgeHalf > 0.001) {
+        const rx1 = midX - ridgeHalf, rx2 = midX + ridgeHalf;
+        return {
+          planes: [
+            [V(minX, minY, 0), V(maxX, minY, 0), V(rx2, midY, rise), V(rx1, midY, rise)],
+            [V(maxX, maxY, 0), V(minX, maxY, 0), V(rx1, midY, rise), V(rx2, midY, rise)],
+            [V(minX, maxY, 0), V(minX, minY, 0), V(rx1, midY, rise)],
+            [V(maxX, minY, 0), V(maxX, maxY, 0), V(rx2, midY, rise)],
+          ],
+          ridge: [{ x: rx1, z: midY }, { x: rx2, z: midY }], eaveLoop,
+        };
+      }
+      const apex = V(midX, midY, rise);
+      return { planes: [
+        [V(minX, minY, 0), V(maxX, minY, 0), apex], [V(maxX, minY, 0), V(maxX, maxY, 0), apex],
+        [V(maxX, maxY, 0), V(minX, maxY, 0), apex], [V(minX, maxY, 0), V(minX, minY, 0), apex],
+      ], ridge: null, eaveLoop };
+    }
+    const rise = (W / 2) * Math.tan(pitch);
+    const ridgeHalf = (D - W) / 2, midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
+    if (ridgeHalf > 0.001) {
+      const ry1 = midY - ridgeHalf, ry2 = midY + ridgeHalf;
+      return {
+        planes: [
+          [V(minX, maxY, 0), V(minX, minY, 0), V(midX, ry1, rise), V(midX, ry2, rise)],
+          [V(maxX, minY, 0), V(maxX, maxY, 0), V(midX, ry2, rise), V(midX, ry1, rise)],
+          [V(minX, minY, 0), V(maxX, minY, 0), V(midX, ry1, rise)],
+          [V(maxX, maxY, 0), V(minX, maxY, 0), V(midX, ry2, rise)],
+        ],
+        ridge: [{ x: midX, z: ry1 }, { x: midX, z: ry2 }], eaveLoop,
+      };
+    }
+    const apex = V(midX, midY, rise);
+    return { planes: [
+      [V(minX, minY, 0), V(minX, maxY, 0), apex], [V(minX, maxY, 0), V(maxX, maxY, 0), apex],
+      [V(maxX, maxY, 0), V(maxX, minY, 0), apex], [V(maxX, minY, 0), V(minX, minY, 0), apex],
+    ], ridge: null, eaveLoop };
+  }
+
+  // "2aguas" (also the fallback for any unrecognized shape).
+  if (axis === "x") {
+    const midY = (minY + maxY) / 2, rise = (D / 2) * Math.tan(pitch);
+    return {
+      planes: [
+        [V(minX, minY, 0), V(maxX, minY, 0), V(maxX, midY, rise), V(minX, midY, rise)],
+        [V(maxX, maxY, 0), V(minX, maxY, 0), V(minX, midY, rise), V(maxX, midY, rise)],
+      ],
+      ridge: [{ x: minX, z: midY }, { x: maxX, z: midY }], eaveLoop,
+    };
+  }
+  const midX = (minX + maxX) / 2, rise = (W / 2) * Math.tan(pitch);
+  return {
+    planes: [
+      [V(minX, minY, 0), V(minX, maxY, 0), V(midX, maxY, rise), V(midX, minY, rise)],
+      [V(maxX, maxY, 0), V(maxX, minY, 0), V(midX, minY, rise), V(midX, maxY, rise)],
+    ],
+    ridge: [{ x: midX, z: minY }, { x: midX, z: maxY }], eaveLoop,
+  };
+}
 export function wrapTextLines(text, maxChars) {
   if (!text) return [""];
   const words = text.split(" ");
