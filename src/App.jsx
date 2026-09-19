@@ -276,6 +276,10 @@ export function windowToM(w, toM) {
 function stairToM(s2, toM) { return { id: s2.id, tag: s2.tag || "", x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
 function luminariaToM(l, toM) { return { id: l.id, tag: l.tag || "", x: toM(l.x), y: toM(l.y) }; }
 function roomToM(r, toM) { return { id: r.id, roomId: r.roomId || null, points: r.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: r.area, ceilingFinish: r.ceilingFinish, floorFinish: r.floorFinish, floorColor: r.floorColor, name: r.name }; }
+// "Piso" zones (independent of room boundaries — see the Croqui's own Piso
+// tool) — same shape as a room polygon, just with a floor family instead
+// of a name/ceiling.
+function floorZoneToM(f, toM) { return { id: f.id, points: f.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: f.area, floorType: f.floorType, floorColor: f.floorColor }; }
 
 // A roof has no drawn shape of its own (see addRoof/computeRoofPlanes) —
 // its geometry is auto-generated from whichever level it's assigned to's
@@ -308,6 +312,7 @@ export function levelToMeters(level) {
     stairs: els.filter(e => e.type === "stair").map(s2 => stairToM(s2, toM)),
     luminarias: els.filter(e => e.type === "luminaria").map(l => luminariaToM(l, toM)),
     rooms: els.filter(e => e.type === "room").map(r => roomToM(r, toM)),
+    floorZones: els.filter(e => e.type === "floor").map(f => floorZoneToM(f, toM)),
     nextElevation: null,
   };
 }

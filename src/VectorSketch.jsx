@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -17,6 +17,14 @@ import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRo
 // findMergeableWall/mergeWallPair) live below, unexported, since nothing
 // else in the app needs them.
 
+// 2D fill hint per floor family (Piso tool) — same base tones ThreeDView's
+// getWallTexture uses for its own procedural textures, so a floor reads as
+// roughly the same material in both views instead of an arbitrary color
+// picked independently for each.
+const FLOOR_COLOR_2D = {
+  "Porcelanato": "#E4E1D8", "Cerâmica": "#D8CFC0", "Contrapiso aparente": "#C9C4B8",
+  "Madeira/Laminado": "#B08A5C", "Vinílico": "#C9C2B4", "Korodur": "#8C9A93", "Deck": "#9C7A52", "A definir": "#B9B6AE",
+};
 // lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
 // style (currentColor, round caps/joins) as the rest so it blends in.
 function StairsIcon({ size = 16, color = "currentColor" }) {
@@ -972,6 +980,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (d < bestWD) { bestWD = d; bestWall = w; }
     });
     if (bestWall && bestWD < 16) return bestWall;
+    // Checked before rooms: a "piso" zone is drawn specifically because it
+    // doesn't just mirror the room underneath it (a wet-area-only tile
+    // zone, say), so a tap landing inside one most likely means that zone,
+    // not the room it happens to sit inside.
+    const floorPolys = elements.filter(e => e.type === "floor");
+    const hitFloor = floorPolys.find(f => pointInPolygon(p, f.points));
+    if (hitFloor) return hitFloor;
     const roomPolys = elements.filter(e => e.type === "room");
     const hitRoom = roomPolys.find(r => pointInPolygon(p, r.points));
     if (hitRoom) return hitRoom;
@@ -985,7 +1000,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
       return { minX: el.x, maxX: el.x, minY: el.y, maxY: el.y };
     }
-    if (el.type === "room") {
+    if (el.type === "room" || el.type === "floor") {
       const xs = el.points.map(p => p.x), ys = el.points.map(p => p.y);
       return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
     }
@@ -1144,11 +1159,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       return;
     }
 
-    if (tool === "ambiente") {
+    if (tool === "ambiente" || tool === "piso") {
+      // "Piso" traces the exact same way "Ambiente" does (tap-inside auto
+      // or manual corner-by-corner) but produces an independent "floor"
+      // element instead of a "room" — its own zone, not tied to a room's
+      // boundary, since real flooring often doesn't match room outlines
+      // one-to-one (continuous tile through a hallway spanning several
+      // rooms, a wet-area-only zone inside a bigger bathroom, a deck that
+      // isn't a room at all).
+      const isPiso = tool === "piso";
+      const targetType = isPiso ? "floor" : "room";
       if (polygon.length === 0) {
-        const hitExisting = elements.find(e => e.type === "room" && pointInPolygon(p, e.points));
+        const hitExisting = elements.find(e => e.type === targetType && pointInPolygon(p, e.points));
         if (hitExisting) {
-          if (planMode === "forro") { setSelectedId(hitExisting.id); return; }
+          if (isPiso || planMode === "forro") { setSelectedId(hitExisting.id); return; }
           setNamingId(hitExisting.id); setNamingValue(hitExisting.name || "");
           return;
         }
@@ -1177,13 +1201,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         }
         area = Math.abs(area / 2);
         const areaM2 = +((area / (GRID * GRID)) * scale * scale).toFixed(2);
-        const el = { id: uid(), type: "room", points: traced, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
+        const el = isPiso
+          ? { id: uid(), type: "floor", points: traced, area: areaM2, floorType: FLOOR_TYPES[0], floorColor: "#B08A5C" }
+          : { id: uid(), type: "room", points: traced, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
         commitElements([...elements, el]);
-        setNamingId(el.id); setNamingValue("");
-        // Placing a room is a one-shot action, not a mode you stay in —
-        // leaving "tool" on "ambiente" afterward silently disabled every
-        // wall dimension (editable/draggable only in "selecionar") right
-        // when the user is most likely to want to check/adjust them.
+        if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(""); }
+        // Placing a room/floor is a one-shot action, not a mode you stay in
+        // — leaving "tool" here afterward silently disabled every wall
+        // dimension (editable/draggable only in "selecionar") right when
+        // the user is most likely to want to check/adjust them.
         setTool("selecionar");
         return;
       }
@@ -1261,10 +1287,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
     area = Math.abs(area / 2);
     const areaM2 = +((area / (GRID * GRID)) * scale * scale).toFixed(2);
-    const el = { id: uid(), type: "room", points: polygon, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
+    const isPiso = tool === "piso";
+    const el = isPiso
+      ? { id: uid(), type: "floor", points: polygon, area: areaM2, floorType: FLOOR_TYPES[0], floorColor: "#B08A5C" }
+      : { id: uid(), type: "room", points: polygon, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
     commitElements([...elements, el]);
     setPolygon([]);
-    setNamingId(el.id); setNamingValue("");
+    if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(""); }
     setTool("selecionar");
   }
 
@@ -2254,6 +2283,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
     { id: "parede", label: "Parede", Icon: BrickWall },
     { id: "ambiente", label: "Ambiente", Icon: LayoutPanelTop },
+    { id: "piso", label: "Piso", Icon: SquareStack },
     { id: "porta", label: "Porta", Icon: DoorClosed },
     { id: "janela", label: "Janela", Icon: WindowIcon },
     { id: "escada", label: "Escada", Icon: StairsIcon },
@@ -2449,23 +2479,23 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       </div>
 
-      {tool === "ambiente" && planMode === "piso" && (
+      {(tool === "ambiente" || tool === "piso") && planMode === "piso" && (
         <div className="flex flex-col gap-1.5 mb-2">
           <div className="flex items-center gap-1.5">
-            <button onClick={() => { setAmbienteAuto(true); setAutoRoomMsg(""); }} title="Toque dentro de um ambiente com paredes fechadas"
+            <button onClick={() => { setAmbienteAuto(true); setAutoRoomMsg(""); }} title="Toque dentro de uma área com paredes fechadas"
               className="text-[10px] px-2 py-1 rounded" style={{ background: ambienteAuto ? C.goldTint : C.panelAlt, color: ambienteAuto ? C.gold : C.mute, border: `1px solid ${ambienteAuto ? C.gold : C.line}` }}>Automático</button>
-            <button onClick={() => { setAmbienteAuto(false); setAutoRoomMsg(""); }} title="Marque cada ponto do contorno na mão — para varandas e ambientes sem paredes fechadas"
+            <button onClick={() => { setAmbienteAuto(false); setAutoRoomMsg(""); }} title="Marque cada ponto do contorno na mão — para varandas e áreas sem paredes fechadas"
               className="text-[10px] px-2 py-1 rounded" style={{ background: !ambienteAuto ? C.goldTint : C.panelAlt, color: !ambienteAuto ? C.gold : C.mute, border: `1px solid ${!ambienteAuto ? C.gold : C.line}` }}>Manual (pontos)</button>
           </div>
           {ambienteAuto && polygon.length === 0 && !autoRoomMsg && (
-            <span className="text-[10px]" style={{ color: C.mute }}>Toque dentro de um ambiente com paredes fechadas.</span>
+            <span className="text-[10px]" style={{ color: C.mute }}>{tool === "piso" ? "Toque dentro da área do piso, com paredes fechadas." : "Toque dentro de um ambiente com paredes fechadas."}</span>
           )}
           {autoRoomMsg && <span className="text-[10px]" style={{ color: C.bad }}>{autoRoomMsg}</span>}
           {(!ambienteAuto || polygon.length > 0) && (
             <div className="flex items-center gap-2 text-[11px]" style={{ color: C.mute }}>
               <span>{polygon.length} ponto(s) marcados</span>
               <button onClick={closePolygon} disabled={polygon.length < 3}
-                className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, opacity: polygon.length < 3 ? 0.4 : 1 }}>Fechar ambiente</button>
+                className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, opacity: polygon.length < 3 ? 0.4 : 1 }}>{tool === "piso" ? "Fechar piso" : "Fechar ambiente"}</button>
             </div>
           )}
         </div>
@@ -2571,6 +2601,28 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
         {showBelow && ghostLevel(belowLevel, "#8A8880")}
         {showAbove && ghostLevel(aboveLevel, "#4A4A46")}
+
+        {/* "Piso" zones sit under everything else on purpose (drawn first)
+            — they're their own independent area, not tied to a room's own
+            boundary, so one can span across a wall opening (a continuous
+            tiled hallway) or cover only part of a room (a wet-area-only
+            zone) without fighting the room polygon's own fill for the same
+            pixels. */}
+        {planMode === "piso" && elements.filter(el => el.type === "floor" && phaseVisible(el)).map(el => {
+          const centroid = polygonCentroid(el.points);
+          const isSel = selectedId === el.id;
+          const fill = FLOOR_COLOR_2D[el.floorType] || FLOOR_COLOR_2D["A definir"];
+          return (
+            <g key={el.id}>
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={fill} fillOpacity="0.55"
+                stroke={isSel ? "#726F68" : "#8C8477"} strokeWidth={isSel ? 2.5 : 1} strokeDasharray="4,3"
+                style={{ pointerEvents: "none" }} />
+              <text x={centroid.x} y={centroid.y} fontSize={roomNameFontSize - 1} fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>
+                {el.floorType} · {el.area} m²
+              </text>
+            </g>
+          );
+        })}
 
         {planMode === "piso" && roomsForRender.map(el => {
           const centroid = polygonCentroid(el.points);
@@ -2945,7 +2997,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-medium" style={{ color: C.gold }}>
-              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "stair" ? `Escada ${selected.tag}` : "Luminária"}
+              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "stair" ? `Escada ${selected.tag}` : "Luminária"}
             </span>
             <button onClick={() => setSelectedId(null)}><X size={14} color={C.gold} /></button>
           </div>
@@ -3036,6 +3088,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 <button onClick={() => rotateRoomLabel(selected)} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
                   <RotateCcw size={11} /> Girar {planMode === "forro" ? "forro" : "nome"} 90° (arraste pra reposicionar)
                 </button>
+              </div>
+            </div>
+          )}
+          {selected.type === "floor" && (
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span style={{ color: C.mute }}>Família:</span>
+                <TypeSelect value={selected.floorType || FLOOR_TYPES[0]} options={FLOOR_TYPES} onChange={v => patchSelected({ floorType: v })} />
+                <input type="color" value={selected.floorColor || "#B08A5C"} onChange={e => patchSelected({ floorColor: e.target.value })}
+                  title="Cor de referência (usada quando a família não tem textura própria)"
+                  className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+                <span style={{ color: C.mute }}>{selected.area} m²</span>
               </div>
             </div>
           )}

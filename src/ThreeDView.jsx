@@ -16,7 +16,7 @@ function getWallTexture(finish, color) {
   canvas.width = 128; canvas.height = 128;
   const ctx = canvas.getContext("2d");
   const paintish = finish === "Pintura";
-  const base = paintish ? (color || "#E8E4DA") : (finish === "Porcelanato" ? "#E4E1D8" : finish === "Cerâmica" ? "#D8CFC0" : finish === "Madeira/Laminado" ? "#B08A5C" : finish === "Vinílico" ? "#C9C2B4" : "#D9D4C8");
+  const base = paintish ? (color || "#E8E4DA") : (finish === "Porcelanato" ? "#E4E1D8" : finish === "Cerâmica" ? "#D8CFC0" : finish === "Madeira/Laminado" ? "#B08A5C" : finish === "Vinílico" ? "#C9C2B4" : finish === "Korodur" ? "#8C9A93" : finish === "Deck" ? "#9C7A52" : "#D9D4C8");
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 128, 128);
 
@@ -40,6 +40,21 @@ function getWallTexture(finish, color) {
     for (let i = 0; i < 40; i++) { ctx.strokeStyle = "rgba(0,0,0,0.06)"; ctx.beginPath(); const y = Math.random() * 128; ctx.moveTo(Math.random() * 100, y); ctx.lineTo(Math.random() * 100 + 20, y); ctx.stroke(); }
   } else if (finish === "Vinílico") {
     for (let i = 0; i < 200; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.05})`; ctx.fillRect(Math.random() * 128, Math.random() * 128, 3, 3); }
+  } else if (finish === "Deck") {
+    // Wider, unevenly-spaced boards than Madeira/Laminado, plus a visible
+    // gap line between each — a deck's own boards read as distinct planks
+    // rather than laminate's tight continuous strips.
+    ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 2.5;
+    for (let y = 0; y < 128; y += 22) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(128, y); ctx.stroke(); }
+    for (let i = 0; i < 50; i++) { ctx.strokeStyle = "rgba(0,0,0,0.08)"; ctx.beginPath(); const y = Math.random() * 128; ctx.moveTo(Math.random() * 110, y); ctx.lineTo(Math.random() * 110 + 15, y); ctx.stroke(); }
+  } else if (finish === "Korodur") {
+    // Smooth resinous/epoxy industrial floor — a fine even speckle instead
+    // of any grout lines or grain, closer to a sprayed finish than a laid
+    // material.
+    for (let i = 0; i < 700; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.06})`;
+      ctx.fillRect(Math.random() * 128, Math.random() * 128, 1, 1);
+    }
   } else if (finish === "Textura acrílica") {
     for (let i = 0; i < 260; i++) {
       ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.15})`;
@@ -414,6 +429,21 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
             ceilMesh.position.y = elev + levelWallHeight - 0.01;
             scene.add(ceilMesh);
           }
+        });
+
+        // "Piso" zones (Croqui's own Piso tool) — independent of room
+        // boundaries, so they get their own floor plane instead of reusing
+        // a room's, and sit a hair above it (elev + 0.015 vs +0.01) to read
+        // as the actual finish where the two overlap rather than z-fighting
+        // with it.
+        (lvl.floorZones || []).forEach(f => {
+          if (f.points.length < 3 || !f.floorType || f.floorType === "A definir") return;
+          const shape = new THREE.Shape(f.points.map(p => new THREE.Vector2(p.x, -p.y)));
+          const tex = getWallTexture(f.floorType, f.floorColor).clone(); tex.needsUpdate = true; tex.repeat.set(3, 3);
+          const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, side: THREE.DoubleSide }));
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.y = elev + 0.015;
+          scene.add(mesh);
         });
 
         (lvl.stairs || []).filter(phaseVisible).forEach(st => {
