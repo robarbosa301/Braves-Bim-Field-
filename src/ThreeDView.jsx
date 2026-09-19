@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { C, matchesPhaseView } from "./theme.js";
 import { toNum } from "./utils.js";
 import { pointInPolygon } from "./geometry.js";
-import { wallThicknessM } from "./constants.js";
+import { wallThicknessM, FLOOR_TYPES } from "./constants.js";
 
 // Split out of App.jsx and lazy-loaded (see the React.lazy import there) so
 // three.js — a large dependency only ever needed once someone opens the 3D
@@ -16,7 +16,16 @@ function getWallTexture(finish, color) {
   canvas.width = 128; canvas.height = 128;
   const ctx = canvas.getContext("2d");
   const paintish = finish === "Pintura";
-  const base = paintish ? (color || "#E8E4DA") : (finish === "Porcelanato" ? "#E4E1D8" : finish === "Cerâmica" ? "#D8CFC0" : finish === "Madeira/Laminado" ? "#B08A5C" : finish === "Vinílico" ? "#C9C2B4" : finish === "Korodur" ? "#8C9A93" : finish === "Deck" ? "#9C7A52" : "#D9D4C8");
+  const floorDefault = finish === "Porcelanato" ? "#E4E1D8" : finish === "Cerâmica" ? "#D8CFC0" : finish === "Madeira/Laminado" ? "#B08A5C" : finish === "Vinílico" ? "#C9C2B4" : finish === "Korodur" ? "#8C9A93" : finish === "Deck" ? "#9C7A52" : "#D9D4C8";
+  // A floor's own family (Piso tool or a room's floorFinish) is always
+  // user-colorable, the same custom color the 2D plan already fills its
+  // polygon with — unlike a WALL finish, where "color" only ever means
+  // something for Pintura (every wall face carries a default paintColor
+  // regardless of finish, so honoring it for e.g. "Revestimento cerâmico"
+  // would silently override that finish's own tone with whatever the
+  // paint swatch happens to be set to).
+  const isFloorFamily = FLOOR_TYPES.includes(finish);
+  const base = paintish ? (color || "#E8E4DA") : isFloorFamily ? (color || floorDefault) : floorDefault;
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 128, 128);
 
@@ -718,7 +727,11 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           dimensionGroup = null;
         }
       }
-      const wireMat = () => new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.9 });
+      // A soft, translucent light blue reads as "selected" without the
+      // stark white wireframe looking like a construction/error outline —
+      // same idea a CAD/BIM viewer's own selection highlight uses.
+      const SELECT_COLOR = 0x6FC3E8;
+      const wireMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, wireframe: true, transparent: true, opacity: 0.85 });
       function trySelect(clientX, clientY) {
         const rect = el.getBoundingClientRect();
         ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -763,7 +776,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           if (pts.length) pts.push(pts[0].clone());
           highlightMesh = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(pts),
-            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+            new THREE.LineBasicMaterial({ color: SELECT_COLOR, transparent: true, opacity: 0.85 })
           );
           scene.add(highlightMesh);
         }
