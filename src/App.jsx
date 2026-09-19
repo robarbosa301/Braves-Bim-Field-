@@ -4,7 +4,7 @@ import {
   CheckCircle2, BrickWall, Building2,
   ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
-  Triangle, Rotate3d, Box, Home,
+  Triangle, TriangleAlert, Rotate3d, Box, Home,
   DoorOpen, Scissors, Table2
 } from "lucide-react";
 
@@ -744,6 +744,29 @@ export default function PranchetaBIM() {
         const adj = wallRoomAdjacency(croquiLevel, w);
         return [adj.faceA, adj.faceB];
       })))
+    : [];
+  // Roof outline (eave rectangle + ridge line) for whichever roofs target
+  // the level currently open in the Croqui — converted back from meters
+  // into this level's own drawing units so it overlays the plan at the
+  // same scale as everything else drawn there. The roof itself has no
+  // shape of its own in the sketch (see roofFootprintFromLevel), so this
+  // is the only place that projects it down onto the 2D sheet.
+  const croquiRoofOverlays = croquiLevel
+    ? roofs.filter(r => r.level === croquiLevel.name).map(roof => {
+        const footprint = roofFootprintFromLevel(croquiLevel);
+        if (!footprint) return null;
+        const { eaveLoop, ridge } = computeRoofPlanes(
+          { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM: toNum(roof.overhangM, 0.4), ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge },
+          footprint, footprint.baseElevation
+        );
+        const s = toNum(croquiLevel.sketchScale, 0.5);
+        const toPx = (m) => (m / s) * GRID;
+        return {
+          id: roof.id, name: roof.name,
+          eaveLoopPx: eaveLoop.map(p => ({ x: toPx(p.x), y: toPx(p.z) })),
+          ridgePx: ridge ? ridge.map(p => ({ x: toPx(p.x), y: toPx(p.z) })) : null,
+        };
+      }).filter(Boolean)
     : [];
   const elevationRoomWalls = croquiLevel && elevationRoomName
     ? (croquiLevel.sketchElements || []).filter(e => e.type === "wall").filter(w => {
@@ -1680,7 +1703,7 @@ export default function PranchetaBIM() {
                   onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
                   onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
                   onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)}
-                  phaseView={phaseView2D}
+                  phaseView={phaseView2D} roofOverlays={croquiRoofOverlays}
                   exportMode={pdfExporting} onOpenThreeD={() => setCroquiViewMode("3d")} />
               )}
               {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
@@ -1881,8 +1904,23 @@ export default function PranchetaBIM() {
                   const totalRoofArea = roof.aguas.reduce((s, a) => s + (toNum(a.area, 0)), 0).toFixed(1);
                   const totalRufo = roof.aguas.reduce((s, a) => s + (toNum(a.rufo, 0)), 0).toFixed(1);
                   const totalCalha = roof.aguas.reduce((s, a) => s + (toNum(a.calha, 0)), 0).toFixed(1);
+                  // A roof has no shape of its own — it's generated on the
+                  // fly from its level's own walls (roofFootprintFromLevel)
+                  // every time it's drawn, in the Croqui overlay above and
+                  // in 3D. When that level doesn't resolve (renamed/removed
+                  // since this roof was created) or has no walls yet, the
+                  // roof used to just silently render nothing everywhere,
+                  // which reads as "the roof disappeared" with no clue why.
+                  const roofLevel = levels.find(l => l.name === roof.level);
+                  const roofMissing = !roofFootprintFromLevel(roofLevel);
                   return (
                     <div key={roof.id} className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                      {roofMissing && (
+                        <div className="flex items-center gap-1.5 mb-2 p-2 rounded text-[11px]" style={{ background: "rgba(193,84,63,0.14)", color: C.bad }}>
+                          <TriangleAlert size={13} />
+                          {roofLevel ? "Esse nível ainda não tem paredes desenhadas — desenhe o contorno no Croqui para o telhado aparecer." : "O nível desta cobertura não existe mais — escolha outro nível abaixo."}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 mb-2">
                         <Triangle size={14} color={C.gold} />
                         <input value={roof.name} onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, name: e.target.value } : r))}

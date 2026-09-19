@@ -420,7 +420,7 @@ function trimWallsToCorner(a, b) {
   };
 }
 
-export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD, phaseView = "tudo" }) {
+export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD, phaseView = "tudo", roofOverlays = [] }) {
   const svgRef = useRef(null);
   const toolbarRef = useRef(null);
   const belowCanvasRef = useRef(null);
@@ -2640,6 +2640,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
         {showBelow && ghostLevel(belowLevel, "#8A8880")}
         {showAbove && ghostLevel(aboveLevel, "#4A4A46")}
+
+        {/* Roof outline (Coberturas tab) — the roof has no shape of its
+            own in the sketch, it's generated from this level's own wall
+            footprint (see roofFootprintFromLevel in App.jsx), so this is
+            just a read-only projection: the eave rectangle (including its
+            beiral/overhang) plus the ridge line, drawn as a ghost above
+            the plan the same way an upper/lower level's outline is. */}
+        {roofOverlays.map(r => (
+          <g key={r.id} style={{ pointerEvents: "none" }} opacity="0.8">
+            <polygon points={r.eaveLoopPx.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#B5623A" strokeWidth="1.5" strokeDasharray="6,3" />
+            {r.ridgePx && (
+              <line x1={r.ridgePx[0].x} y1={r.ridgePx[0].y} x2={r.ridgePx[1].x} y2={r.ridgePx[1].y} stroke="#B5623A" strokeWidth="2" />
+            )}
+            <text x={r.eaveLoopPx[0].x + 4} y={r.eaveLoopPx[0].y - 6} fontSize="9" fill="#B5623A">{r.name}</text>
+          </g>
+        ))}
 
         {/* "Piso" zones sit under everything else on purpose (drawn first)
             — they're their own independent area, not tied to a room's own
