@@ -7,6 +7,7 @@
 import { C } from "./theme.js";
 import { toNum } from "./utils.js";
 import { GRID } from "./geometry.js";
+import { fontFamilyCss } from "./constants.js";
 
 const PX_PER_M = 70;
 const MARGIN_TOP = 30;
@@ -27,6 +28,7 @@ export default function ElevationView({ level, wallId }) {
   const dimFontSize = toNum(level.dimFontSize, 7.5);
   const tagColor = level.tagColor || "#4A4A46";
   const tagFontSize = toNum(level.tagFontSize, 7);
+  const fontFamily = fontFamilyCss(level.fontFamily);
 
   const lengthM = toNum(wall.length, 1);
   const heightM = toNum(wall.height, 2.8);
@@ -67,7 +69,7 @@ export default function ElevationView({ level, wallId }) {
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ background: "#DCDCD8" }}>
-      <svg viewBox={`0 0 ${viewW} ${viewH}`} width="100%" style={{ display: "block" }}>
+      <svg viewBox={`0 0 ${viewW} ${viewH}`} width="100%" style={{ display: "block" }} fontFamily={fontFamily}>
         <rect x={wallX} y={wallTopY} width={lengthPx} height={heightPx} fill="#EDEAE2" stroke="#1B1E1A" strokeWidth="2" />
         <line x1={wallX - 14} y1={wallBottomY} x2={wallX + lengthPx + 14} y2={wallBottomY} stroke="#1B1E1A" strokeWidth="2" />
 

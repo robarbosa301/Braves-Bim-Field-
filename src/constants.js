@@ -23,3 +23,14 @@ export const WINDOW_TYPES = ["Alumínio de correr", "Vidro de correr", "Basculan
 export const FLOOR_TYPES = ["Porcelanato", "Cerâmica", "Contrapiso aparente", "Madeira/Laminado", "Vinílico", "A definir"];
 export const CEILING_TYPES = ["Laje aparente", "Forro de gesso", "Forro em PVC", "Forro mineral (lay-in)", "A definir"];
 export const TILE_TYPES = ["Cerâmica", "Concreto", "Fibrocimento", "Metálica (telha zinco)", "Shingle (americana)"];
+// Every css value here needs its own web-safe fallback chain — id "padrao"
+// mirrors theme.js's own `heading` font stack, so leaving the picker on
+// its default looks exactly like it always has.
+export const FONT_FAMILIES = [
+  { id: "padrao", label: "Padrão", css: "'Poppins',-apple-system,'SF Pro Display','Segoe UI',Roboto,sans-serif" },
+  { id: "inter", label: "Inter (limpa)", css: "'Inter',-apple-system,'Segoe UI',Roboto,sans-serif" },
+  { id: "mono", label: "Mono (técnica)", css: "'JetBrains Mono','IBM Plex Mono',monospace" },
+  { id: "condensada", label: "Condensada", css: "'Roboto Condensed',Arial,sans-serif" },
+  { id: "manuscrita", label: "Manuscrita (arquiteto)", css: "'Architects Daughter',cursive" },
+];
+export function fontFamilyCss(id) { return FONT_FAMILIES.find(f => f.id === id)?.css || FONT_FAMILIES[0].css; }

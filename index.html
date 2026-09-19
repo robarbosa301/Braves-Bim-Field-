@@ -24,6 +24,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Braves BIM" />
+    <!-- Backs the Croqui's font picker (VectorSketch's "Cores e tamanhos de
+         texto" panel) — every family it offers needs to actually be loaded
+         somewhere, or picking it silently falls through to the fallback
+         stack in constants.js's FONT_FAMILIES and looks like nothing
+         happened. Poppins/JetBrains Mono are also theme.js's own default
+         heading/mono stacks, so loading them here is what makes THOSE
+         render as intended too, not just the picker's other options. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&family=Roboto+Condensed:wght@400;700&family=Architects+Daughter&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

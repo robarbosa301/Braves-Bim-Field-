@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
-import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM } from "./constants.js";
+import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM, FONT_FAMILIES, fontFamilyCss } from "./constants.js";
 import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, resyncVbAspect, wrapTextLines, rotatePoint } from "./geometry.js";
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
 
@@ -526,6 +526,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const roomNameFontSize = toNum(level.roomNameFontSize, 10);
   const tagFontSize = toNum(level.tagFontSize, 7);
   const tagColor = level.tagColor || "#4A4A46";
+  const croquiFontFamily = fontFamilyCss(level.fontFamily);
   const elements = level.sketchElements || [];
   const wallsById = {};
   elements.filter(e => e.type === "wall").forEach(w => { wallsById[w.id] = w; });
@@ -2374,6 +2375,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               </span>
             ))}
           </div>
+          <div className="flex items-center gap-2">
+            <span style={{ color: C.mute }}>Fonte:</span>
+            <select value={level.fontFamily || "padrao"} onChange={e => onMeta({ fontFamily: e.target.value })}
+              className="text-[11px] px-1.5 py-1 rounded flex-1" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+              {FONT_FAMILIES.map(f => <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>)}
+            </select>
+          </div>
         </div>
       )}
       {/* Voltar/Avançar/Desfazer exclusão/Tudo pulled up here, right under
@@ -2550,7 +2558,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             the whole drawing — grid, walls, labels, all of it — together
             around the view's center, instead of rotating the viewport itself
             (which SVG's own viewBox can't do). */}
-        <g transform={rotationDeg ? `rotate(${rotationDeg} ${viewBox.x + viewBox.w / 2} ${viewBox.y + viewBox.h / 2})` : undefined}>
+        {/* fontFamily set once here (an inherited SVG presentation
+            attribute) reaches every <text> in the sketch — cotas, tags,
+            nomes de ambiente, tudo — without needing it repeated on each
+            one individually; none of them set their own fontFamily, so
+            nothing locally overrides it. */}
+        <g transform={rotationDeg ? `rotate(${rotationDeg} ${viewBox.x + viewBox.w / 2} ${viewBox.y + viewBox.h / 2})` : undefined} fontFamily={croquiFontFamily}>
         {/* Plain white in exportMode regardless of the interactive grid toggle
             — the PDF is meant to read as a clean executive drawing, not a
             screenshot of the editor's own drafting aid. */}
