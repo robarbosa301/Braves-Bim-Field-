@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { RectangleHorizontal, DoorClosed, Layers3, LayoutPanelTop, Trash2, Hammer, HardHat } from "lucide-react";
 import { C, mono, heading, conditionColor } from "./theme.js";
-import { WALL_TYPES, FINISH_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES } from "./constants.js";
+import { WALL_TYPES, FINISH_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, wallThicknessM } from "./constants.js";
+import { toNum } from "./utils.js";
 
 // Small presentational building blocks and the per-element edit rows (one
 // per wall/door/window/floor) used by the Elementos tab and Croqui's
@@ -102,7 +103,8 @@ export function WallRow({ el, adjacency, onPatch, onDelete }) {
     <div className="flex items-center gap-1.5 px-2.5 py-2 rounded flex-wrap" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
       <RectangleHorizontal size={14} color={C.mute} />
       <span className="text-xs font-semibold w-11" style={{ ...mono, color: C.gold }}>{el.tag}</span>
-      <TypeSelect value={el.wallType || WALL_TYPES[0]} options={WALL_TYPES} onChange={v => onPatch({ wallType: v })} />
+      <TypeSelect value={el.wallType || WALL_TYPES[0]} options={WALL_TYPES} onChange={v => onPatch({ wallType: v, wallThickness: undefined })} />
+      <NumField value={Math.round(wallThicknessM(el) * 100)} onCommit={v => onPatch({ wallThickness: Math.max(1, toNum(v, 15)) / 100 })} unit="cm" w="w-10" />
       <span className="text-[10px]" style={{ color: C.mute }}>{el.length} m ×</span>
       <NumField value={el.height} onChange={v => onPatch({ height: v })} unit="m altura" />
       <ConditionSelect value={el.condition} onChange={v => onPatch({ condition: v })} />

@@ -559,7 +559,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (!storedRooms.length) return [];
     const finalWalls = elements.filter(e => e.type === "wall" && matchesPhaseView(e, "final")).map(w => ({
       x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
-      halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
+      halfThickPx: (wallThicknessM(w) / 2 / scale) * GRID,
     }));
     const found = []; // { points, area, sourceRoomIds: Set }
     storedRooms.forEach(room => {
@@ -1157,7 +1157,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         setAutoRoomMsg("");
         const wallSegs = elements.filter(e => e.type === "wall").map(w => ({
           x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
-          halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
+          halfThickPx: (wallThicknessM(w) / 2 / scale) * GRID,
         }));
         // Use the raw tap position, not the endpoint-snapped p — snapping
         // this click onto a nearby wall corner (meant for tracing exact
@@ -1506,7 +1506,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function refreshAutoRooms(next) {
     const walls = next.filter(e => e.type === "wall").map(w => ({
       x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
-      halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
+      halfThickPx: (wallThicknessM(w) / 2 / scale) * GRID,
     }));
     let changed = false;
     const updated = next.map(el => {
@@ -1611,7 +1611,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const fmx = (fixed.x1 + fixed.x2) / 2, fmy = (fixed.y1 + fixed.y2) / 2;
     const signedDistPx = (fmx - moving.x1) * nx + (fmy - moving.y1) * ny;
     const dirSign = signedDistPx >= 0 ? 1 : -1;
-    const halfSumM = wallThicknessM(moving.wallType) / 2 + wallThicknessM(fixed.wallType) / 2;
+    const halfSumM = wallThicknessM(moving) / 2 + wallThicknessM(fixed) / 2;
     const newCenterM = Math.max(0.02, toNum(value, 0) + halfSumM);
     const newCenterPx = (newCenterM / scale) * GRID;
     const k = signedDistPx - dirSign * newCenterPx;
@@ -2137,7 +2137,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function joinedWallFaceInset(wallId, px, py) {
     const other = elements.find(e => e.type === "wall" && e.id !== wallId &&
       (dist({ x: e.x1, y: e.y1 }, { x: px, y: py }) < 3 || dist({ x: e.x2, y: e.y2 }, { x: px, y: py }) < 3));
-    return other ? (wallThicknessM(other.wallType) / 2 / scale) * GRID : 0;
+    return other ? (wallThicknessM(other) / 2 / scale) * GRID : 0;
   }
   function wallDimensions(w) {
     const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id && phaseVisible(e));
@@ -2173,7 +2173,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         if (dist(pt, proj) > 3) return;
         const pos = (proj.x - w.x1) * ux + (proj.y - w.y1) * uy;
         if (pos < 6 || pos > len - 6) return;
-        const halfW = (wallThicknessM(o.wallType) / 2 / scale) * GRID;
+        const halfW = (wallThicknessM(o) / 2 / scale) * GRID;
         joinIvs.push({ id: o.id, start: pos - halfW, end: pos + halfW });
       });
     });
@@ -2690,8 +2690,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const ux = dx / len, uy = dy / len;
           const nx = -uy, ny = ux;
           const wallA = wallsById[d.aId], wallB = wallsById[d.bId];
-          const halfThickAPx = wallA ? (wallThicknessM(wallA.wallType) / 2 / scale) * GRID : 0;
-          const halfThickBPx = wallB ? (wallThicknessM(wallB.wallType) / 2 / scale) * GRID : 0;
+          const halfThickAPx = wallA ? (wallThicknessM(wallA) / 2 / scale) * GRID : 0;
+          const halfThickBPx = wallB ? (wallThicknessM(wallB) / 2 / scale) * GRID : 0;
           // Manual nudge, free in the plane of the line: perpendicular to it
           // (nx,ny — parallel to the walls themselves) and along it (ux,uy).
           // Persisted on the wall (not local state) so it survives this
@@ -2725,7 +2725,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           // reliably landing the two labels somewhere different.
           const labelT = Math.abs(uy) > Math.abs(ux) ? 0.36 : 0.64;
           const midX = fx1 + (fx2 - fx1) * labelT, midY = fy1 + (fy2 - fy1) * labelT;
-          const halfSumM = wallA && wallB ? (wallThicknessM(wallA.wallType) / 2 + wallThicknessM(wallB.wallType) / 2) : 0;
+          const halfSumM = wallA && wallB ? (wallThicknessM(wallA) / 2 + wallThicknessM(wallB) / 2) : 0;
           const faceDistM = Math.max(0, pxToMeters(d.distPx) - halfSumM).toFixed(2);
           const faceLen = Math.hypot(fx2 - fx1, fy2 - fy1) || 1;
           // A second, smaller degree of freedom along the line itself (ux,uy)
@@ -2944,6 +2944,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 <NumField value={selected.height} onChange={v => patchSelected({ height: v })} unit="m altura" />
                 <ConditionSelect value={selected.condition} onChange={v => patchSelected({ condition: v })} />
                 <PhaseToggles demolir={selected.demolir} construir={selected.construir} onChange={patchSelected} />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: C.chalk }}>
+                <span style={{ color: C.mute }}>Tipo:</span>
+                {/* Picking a family resets any custom thickness typed below,
+                    so switching from "Concreto" back to "Alvenaria 15cm"
+                    doesn't leave a stale 20cm override behind — typing a
+                    new value in the field itself is what creates one, for
+                    a wall whose real thickness doesn't match any preset
+                    (a 19cm block wall, say). */}
+                <TypeSelect value={selected.wallType || WALL_TYPES[0]} options={WALL_TYPES} onChange={v => patchSelected({ wallType: v, wallThickness: undefined })} />
+                <NumField value={Math.round(wallThicknessM(selected) * 100)} onCommit={v => patchSelected({ wallThickness: Math.max(1, toNum(v, 15)) / 100 })} unit="cm espessura" />
               </div>
               {findMergeableWall(selected, elements) && (
                 <button onClick={tryMergeSelected} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.gold, color: "#141311" }}>
