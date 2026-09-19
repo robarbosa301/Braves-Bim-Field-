@@ -2358,25 +2358,43 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           style={{ ...heading, fontWeight: 600, background: planMode === "forro" ? C.gold : "transparent", color: planMode === "forro" ? "#141311" : C.mute }}>Forro</button>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {TOOLS.map(({ id, label, Icon }) => {
-            const active = tool === id;
-            const activeColor = id === "apagar" ? C.bad : C.gold;
-            return (
-              <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); }} title={label}
-                className="flex items-center justify-center p-2 rounded"
-                style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
-                <Icon size={16} />
-              </button>
-            );
-          })}
-        </div>
-        {/* Cor das cotas + "ver [nível acima/abaixo]" — a separate flex
-            item with ml-auto, so it sits to the right of the tool icons
-            when the row has room and only drops to its own (still
-            right-aligned) line once it doesn't, instead of always
-            wrapping directly under the icons regardless of space. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+        {TOOLS.map(({ id, label, Icon }) => {
+          const active = tool === id;
+          const activeColor = id === "apagar" ? C.bad : C.gold;
+          return (
+            <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); }} title={label}
+              className="flex items-center justify-center p-2 rounded"
+              style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
+              <Icon size={16} />
+            </button>
+          );
+        })}
+      </div>
+      {/* Voltar/Avançar/Desfazer exclusão/Apagar tudo (sketch-wide, not
+          tied to whatever's currently selected) share this one row with
+          the cor-das-cotas group instead of each getting their own —
+          two rows here just to hold a handful of small icon buttons was
+          the biggest chunk of dead space above the canvas. Cor das cotas
+          keeps its ml-auto (right side when there's room, its own
+          wrapped line once there isn't). */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+        <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+          <Undo2 size={13} />
+        </button>
+        <button onClick={redoLast} disabled={!redoStack.length} title="Avançar"
+          className="flex items-center justify-center px-2.5 py-1.5 rounded"
+          style={{ background: C.panelAlt, color: redoStack.length ? C.chalk : C.muteDim, border: `1px solid ${C.line}`, opacity: redoStack.length ? 1 : 0.5 }}>
+          <Redo2 size={13} />
+        </button>
+        <button onClick={restoreLast} disabled={!deletedStack.length} title="Desfazer exclusão"
+          className="flex items-center justify-center px-2.5 py-1.5 rounded"
+          style={{ background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
+          <RotateCcw size={13} />
+        </button>
+        <button onClick={clearAll} title="Apagar tudo" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
+          <Trash2 size={13} />
+        </button>
         {planMode === "piso" && (
           <div className="flex items-center flex-wrap gap-2 text-[10px] ml-auto" style={{ color: C.mute }}>
             <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
@@ -2446,29 +2464,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           </div>
         </div>
       )}
-      {/* Voltar/Avançar/Desfazer exclusão/Tudo pulled up here, right under
-          the tool icons — they act on the sketch as a whole (not on
-          whatever's currently selected below the canvas), so they belong
-          next to the other sketch-wide controls instead of scrolled all
-          the way past the canvas and the selected-element editor. */}
-      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-        <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-          <Undo2 size={13} />
-        </button>
-        <button onClick={redoLast} disabled={!redoStack.length} title="Avançar"
-          className="flex items-center justify-center px-2.5 py-1.5 rounded"
-          style={{ background: C.panelAlt, color: redoStack.length ? C.chalk : C.muteDim, border: `1px solid ${C.line}`, opacity: redoStack.length ? 1 : 0.5 }}>
-          <Redo2 size={13} />
-        </button>
-        <button onClick={restoreLast} disabled={!deletedStack.length} title="Desfazer exclusão"
-          className="flex items-center justify-center px-2.5 py-1.5 rounded"
-          style={{ background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
-          <RotateCcw size={13} />
-        </button>
-        <button onClick={clearAll} title="Apagar tudo" className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
-          <Eraser size={12} /> Tudo
-        </button>
-      </div>
       <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
         {planMode === "piso" && (
           <>
