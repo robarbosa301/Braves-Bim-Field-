@@ -933,19 +933,51 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // a free drag (both happen elsewhere in this file) isn't necessarily on
   // a grid line at all, so the gap or overshoot this was leaving behind
   // was persistent, not just an unlucky tap. Same screen-pixel tolerance
-  // and null-when-nothing-close contract as findNearbyEndpoint.
-  function findNearbyWallPoint(p, excludeWallId) {
+  // and null-when-nothing-close contract as findNearbyEndpoint. When a
+  // fixed anchor point is already placed (the wall's other end), prefers
+  // the point where a ray at a clean 0/45/90° angle from that anchor
+  // crosses the target wall's own line, over the plain closest-point-on-
+  // that-line to the raw tap. A
+  // T-junction tap is meant to land the new wall square against the one
+  // it's meeting — snapping only to "nearest point on that wall's line"
+  // (the old behavior) ignored the anchor entirely and left the wall a
+  // fraction of a degree off orthogonal whenever the tap wasn't pixel
+  // perfect, which on a touchscreen it never is. Falls back to the plain
+  // closest point whenever there's no anchor yet, the ray runs parallel to
+  // the target wall (no clean crossing), the crossing falls well outside
+  // the target wall's own span, or it lands far from where the user
+  // actually tapped (the wall isn't really perpendicular/parallel here,
+  // so forcing it would silently redirect the tap somewhere else on the
+  // line).
+  function findNearbyWallLineOrtho(rawP, fixedPt, excludeWallId) {
     const screenPxTolerance = 14;
     const TOL = screenPxTolerance * (viewBox.w / dims.w);
-    let best = null, bestD = TOL;
+    let best = null, bestD = TOL, bestWall = null;
     elements.forEach(e => {
       if (e.type !== "wall") return;
       if (e.id === excludeWallId) return;
-      const proj = projectPointOnSegment(p, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
-      const d = dist(p, proj);
-      if (d < bestD) { bestD = d; best = proj; }
+      const proj = projectPointOnSegment(rawP, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
+      const d = dist(rawP, proj);
+      if (d < bestD) { bestD = d; best = proj; bestWall = e; }
     });
-    return best;
+    if (!best || !fixedPt) return best;
+    const dx = best.x - fixedPt.x, dy = best.y - fixedPt.y;
+    if (Math.hypot(dx, dy) < 1e-6) return best;
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const nearest = Math.round(angle / step) * step;
+    const rdx = Math.cos(nearest), rdy = Math.sin(nearest);
+    const wdx = bestWall.x2 - bestWall.x1, wdy = bestWall.y2 - bestWall.y1;
+    const denom = rdx * wdy - rdy * wdx;
+    if (Math.abs(denom) < 1e-6) return best;
+    const t = ((bestWall.x1 - fixedPt.x) * wdy - (bestWall.y1 - fixedPt.y) * wdx) / denom;
+    if (t <= 0) return best;
+    const ix = fixedPt.x + rdx * t, iy = fixedPt.y + rdy * t;
+    const wlen = Math.hypot(wdx, wdy) || 1;
+    const s = ((ix - bestWall.x1) * wdx + (iy - bestWall.y1) * wdy) / (wlen * wlen);
+    if (s < -0.05 || s > 1.05) return best;
+    if (dist({ x: ix, y: iy }, rawP) > TOL * 3) return best;
+    return { x: ix, y: iy };
   }
   // Snaps freePt's angle relative to fixedPt to the nearest 45° step
   // whenever it's already close — the same "ortho" nudge any CAD sketch
@@ -1073,7 +1105,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     let p = rawP;
     if (tool === "parede" || tool === "escada" || tool === "ambiente") {
       const endpointHit = findNearbyEndpoint(rawP, null);
-      const wallLineHit = !endpointHit && (tool === "parede" || tool === "escada") ? findNearbyWallPoint(rawP, null) : null;
+      const wallLineHit = !endpointHit && (tool === "parede" || tool === "escada") ? findNearbyWallLineOrtho(rawP, pending, null) : null;
       p = endpointHit || wallLineHit || { x: snap(rawP.x), y: snap(rawP.y) };
       // A freehand second tap almost never lands on an exact 0/45/90°
       // angle from the first point — nudge it there when it's already
@@ -1928,10 +1960,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       // point straight back and make it impossible to ever straighten.
       const linkedIds = new Set(linked.map(l => l.id));
       const hit = w && findNearbyEndpoint(p, dragSession.id, linkedIds);
-      const wallLineHit = !hit && w && findNearbyWallPoint(p, dragSession.id);
+      const fixedPt = w ? (dragSession.which === "start" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 }) : null;
+      const wallLineHit = !hit && w && findNearbyWallLineOrtho(p, fixedPt, dragSession.id);
       let sp = hit || wallLineHit || { x: snap(p.x), y: snap(p.y) };
       if (!hit && !wallLineHit && w) {
-        const fixedPt = dragSession.which === "start" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 };
         sp = angleSnap(fixedPt, sp);
       }
       commitElements(elements.map(el => {
@@ -1976,7 +2008,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // land in exactly the same spot for the same finger/cursor position.
   function resolveDrawPoint(rawP, angleAnchor) {
     const endpointHit = findNearbyEndpoint(rawP, null);
-    const wallLineHit = !endpointHit ? findNearbyWallPoint(rawP, null) : null;
+    const wallLineHit = !endpointHit ? findNearbyWallLineOrtho(rawP, angleAnchor, null) : null;
     if (endpointHit || wallLineHit) return endpointHit || wallLineHit;
     const snapped = { x: snap(rawP.x), y: snap(rawP.y) };
     return angleAnchor ? angleSnap(angleAnchor, snapped) : snapped;
