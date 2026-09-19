@@ -14,6 +14,7 @@ import { toNum, uid } from "./utils.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import JoinScreen from "./JoinScreen.jsx";
 import VectorSketch from "./VectorSketch.jsx";
+import ElevationView from "./ElevationView.jsx";
 import SyncTab from "./SyncTab.jsx";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES } from "./constants.js";
 import { GRID, pointInPolygon } from "./geometry.js";
@@ -381,6 +382,7 @@ export default function PranchetaBIM() {
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [croquiLevelId, setCroquiLevelId] = useState(null);
   const [croquiViewMode, setCroquiViewMode] = useState("2d");
+  const [elevationWallId, setElevationWallId] = useState(null);
   const [phaseView2D, setPhaseView2D] = useState("tudo");
   // "Vistas" sits behind one button, closed by default — same pattern as
   // the Sincronização tab's DADOS DO IMÓVEL panel.
@@ -1464,6 +1466,13 @@ export default function PranchetaBIM() {
                       {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhum nível criado</span>
+                ) : croquiViewMode === "elevacao" ? (
+                  (croquiLevel?.sketchElements || []).filter(e => e.type === "wall").length > 0 ? (
+                    <select value={elevationWallId || ""} onChange={e => setElevationWallId(e.target.value)} className="text-xs px-2 py-1.5 rounded w-28 truncate"
+                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                      {croquiLevel.sketchElements.filter(e => e.type === "wall").map(w => <option key={w.id} value={w.id}>Parede {w.tag}</option>)}
+                    </select>
+                  ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
                 ) : (
                   <div className="flex gap-1 rounded p-0.5" style={{ background: C.panelAlt }}>
                     <button onClick={() => setView3dMode("casa")} className="flex items-center gap-1 px-2 py-1 rounded text-[11px]"
@@ -1487,6 +1496,14 @@ export default function PranchetaBIM() {
                   <button onClick={() => setCroquiViewMode("2d")} className="px-2.5 py-1 rounded text-[11px]"
                     style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : "transparent", color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
                     2D
+                  </button>
+                  <button onClick={() => {
+                    setCroquiViewMode("elevacao");
+                    const walls = croquiLevel?.sketchElements?.filter(e => e.type === "wall") || [];
+                    if (!elevationWallId || !walls.some(w => w.id === elevationWallId)) setElevationWallId(walls[0]?.id || null);
+                  }} className="px-2.5 py-1 rounded text-[11px]"
+                    style={{ ...heading, fontWeight: 600, background: croquiViewMode === "elevacao" ? C.gold : "transparent", color: croquiViewMode === "elevacao" ? "#141311" : C.mute }}>
+                    Elevação
                   </button>
                   <button onClick={() => setCroquiViewMode("3d")} className="px-2.5 py-1 rounded text-[11px]"
                     style={{ ...heading, fontWeight: 600, background: croquiViewMode === "3d" ? C.gold : "transparent", color: croquiViewMode === "3d" ? "#141311" : C.mute }}>
@@ -1515,6 +1532,10 @@ export default function PranchetaBIM() {
                   exportMode={pdfExporting} onOpenThreeD={() => setCroquiViewMode("3d")} />
               )}
               {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
+              {croquiViewMode === "elevacao" && croquiLevel && (
+                <ElevationView level={croquiLevel} wallId={elevationWallId} />
+              )}
+              {croquiViewMode === "elevacao" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
             </div>
 
             {croquiViewMode === "3d" && (
