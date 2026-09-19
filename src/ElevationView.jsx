@@ -10,16 +10,17 @@ import { GRID } from "./geometry.js";
 import { fontFamilyCss } from "./constants.js";
 
 const PX_PER_M = 70;
-// Extra room above the wall for two stacked label rows — the opening tags
-// (widest text) sit on their own row well clear of the gap-dimension row
-// right under them, so at the standard 7-7.5px font neither's ascenders/
-// descenders reach into the other.
-const MARGIN_TOP = 44;
+// Only the gap-dimension row sits above the wall now — the opening tag
+// moved down to just above each door/window itself (see TAG_LINE_GAP
+// below), so this only needs to clear that one row.
+const MARGIN_TOP = 26;
 const MARGIN_LEFT = 50;
 const MARGIN_RIGHT = 20;
 const MARGIN_BOTTOM = 40;
-const TAG_ROW_Y = -30;
 const GAP_DIM_ROW_Y = -10;
+// Vertical spacing for the two-line opening tag (name, then dimensions)
+// stacked just above the door/window's own top edge.
+const TAG_LINE_GAP = 10;
 
 export default function ElevationView({ level, wallId }) {
   const elements = level.sketchElements || [];
@@ -101,9 +102,14 @@ export default function ElevationView({ level, wallId }) {
             <g key={o.id}>
               <rect x={oX} y={oTopY} width={wPx} height={hPx}
                 fill={isDoor ? "rgba(74,74,70,0.35)" : "rgba(120,160,196,0.35)"} stroke="#1B1E1A" strokeWidth="1.2" />
-              <text x={oX + wPx / 2} y={wallTopY + TAG_ROW_Y} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">
-                {o.tag ? `${o.tag} · ` : ""}{o.width}×{o.height}
-              </text>
+              {/* Two lines right above the element itself — the name
+                  (tag) on top, dimensions below it — instead of one line
+                  floating up by the wall's own top edge, disconnected
+                  from whichever opening it actually labels. */}
+              {o.tag && (
+                <text x={oX + wPx / 2} y={oTopY - 4 - TAG_LINE_GAP} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">{o.tag}</text>
+              )}
+              <text x={oX + wPx / 2} y={oTopY - 4} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">{o.width}×{o.height}</text>
               {!isDoor && sillM > 0 && (
                 <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize} />
               )}
