@@ -18,7 +18,7 @@ import ElevationView from "./ElevationView.jsx";
 import TablesTab from "./TablesTab.jsx";
 import SyncTab from "./SyncTab.jsx";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES } from "./constants.js";
-import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ } from "./geometry.js";
+import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ, polygonCentroid } from "./geometry.js";
 import {
   Pill, StatRow,
   WallRow, DoorRow, WindowRow, FloorRow,
@@ -330,15 +330,29 @@ function levelToMetersForRoom(level, room) {
   const s = toNum(level.sketchScale, 0.5);
   const toM = (px) => (px / GRID) * s;
   const els = level.sketchElements || [];
+  // A room's own polygon is traced along its walls' INNER faces (the
+  // enclosed floor area), not through their centerlines — so a bounding
+  // wall's own midpoint sits just outside that polygon, on its edge or
+  // past it, and "is this wall's midpoint inside the room polygon"
+  // (the old check) came back false for every wall actually bounding the
+  // room, which is exactly why this view always came up empty. A wall
+  // belongs to this room the same way the Ambientes tab and the Croqui's
+  // own wall legend already decide it: which room sits on either face.
+  const roomWalls = els.filter(e => e.type === "wall").filter(w => {
+    const adj = wallRoomAdjacency(level, w);
+    return adj.faceA === room.name || adj.faceB === room.name;
+  });
+  const roomWallIds = new Set(roomWalls.map(w => w.id));
   const inPoly = (x, y) => pointInPolygon({ x, y }, poly.points);
   return {
     elevation: toNum(level.elevation, 0),
-    walls: els.filter(e => e.type === "wall" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(w => wallToM(w, toM)),
-    doors: els.filter(e => e.type === "door" && inPoly(e.x, e.y)).map(d => doorToM(d, toM)),
-    windows: els.filter(e => e.type === "window" && inPoly(e.x, e.y)).map(w => windowToM(w, toM)),
+    walls: roomWalls.map(w => wallToM(w, toM)),
+    doors: els.filter(e => e.type === "door" && roomWallIds.has(e.wallId)).map(d => doorToM(d, toM)),
+    windows: els.filter(e => e.type === "window" && roomWallIds.has(e.wallId)).map(w => windowToM(w, toM)),
     stairs: els.filter(e => e.type === "stair" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(s2 => stairToM(s2, toM)),
     luminarias: els.filter(e => e.type === "luminaria" && inPoly(e.x, e.y)).map(l => luminariaToM(l, toM)),
     rooms: [roomToM(poly, toM)],
+    floorZones: els.filter(e => e.type === "floor" && inPoly(polygonCentroid(e.points).x, polygonCentroid(e.points).y)).map(f => floorZoneToM(f, toM)),
     dimColor: level.dimColor || "#4A4A46",
     doorDimColor: level.doorDimColor || "#4A4A46",
     windowDimColor: level.windowDimColor || "#4A4A46",

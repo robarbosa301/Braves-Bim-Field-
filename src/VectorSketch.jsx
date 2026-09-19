@@ -2641,7 +2641,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             zone) without fighting the room polygon's own fill for the same
             pixels. */}
         {planMode === "piso" && elements.filter(el => el.type === "floor" && phaseVisible(el)).map(el => {
-          const centroid = polygonCentroid(el.points);
           const isSel = selectedId === el.id;
           // el.floorColor is the user's own pick (the color swatch on the
           // selected-piso panel) — it used to be stored but never actually
@@ -2652,15 +2651,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           // room polygon's own grayish selected outline made a selected
           // piso and a selected ambiente read as the exact same thing.
           const stroke = isSel ? "#3E7CA6" : "#8C8477";
+          // No text label on the sheet itself — the ambiente polygon
+          // underneath already prints its own name/area, so a piso zone's
+          // type+area here was just a redundant second caption sitting
+          // right on top of it. The type/area are still available by
+          // selecting the piso (its own panel below the canvas).
           return (
-            <g key={el.id}>
-              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={fill} fillOpacity={isSel ? 0.8 : 0.65}
-                stroke={stroke} strokeWidth={isSel ? 3 : 1} strokeDasharray="4,3"
-                style={{ pointerEvents: "none" }} />
-              <text x={centroid.x} y={centroid.y} fontSize={roomNameFontSize - 1} fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>
-                {el.floorType} · {el.area} m²
-              </text>
-            </g>
+            <polygon key={el.id} points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={fill} fillOpacity={isSel ? 0.8 : 0.65}
+              stroke={stroke} strokeWidth={isSel ? 3 : 1} strokeDasharray="4,3"
+              style={{ pointerEvents: "none" }} />
           );
         })}
 
