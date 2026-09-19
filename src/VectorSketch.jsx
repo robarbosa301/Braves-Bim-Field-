@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -474,6 +474,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [showBelow, setShowBelow] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [showTextSettings, setShowTextSettings] = useState(false);
+  // "Estender": tap the wall to stretch/shrink, then tap the wall it
+  // should reach — extendSourceId holds the first tap between the two.
+  const [extendSourceId, setExtendSourceId] = useState(null);
+  const [extendMsg, setExtendMsg] = useState("");
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
   // entire phone screen — the toolbar rows and the selected-element panel
@@ -1082,6 +1086,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       return;
     }
 
+    if (tool === "estender") {
+      const hit = findAt(p);
+      if (!hit || hit.type !== "wall") return;
+      if (!extendSourceId) { setExtendSourceId(hit.id); setExtendMsg(""); return; }
+      if (hit.id === extendSourceId) { setExtendSourceId(null); return; }
+      const source = wallsById[extendSourceId];
+      setExtendSourceId(null);
+      if (!source) return;
+      const err = extendWallTo(source, hit);
+      setExtendMsg(err || "");
+      return;
+    }
+
     if (tool === "apagar") {
       const target = findAt(p);
       if (!target) return;
@@ -1361,6 +1378,31 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setSplittingWall(null);
   }
 
+  // "Estender": grows or shrinks `wall` so whichever of its two ends is
+  // nearer `target` lands exactly on target's own (infinite) line —
+  // exactly a CAD extend/trim, single-target. Reuses moveWallEndAndLinked
+  // so it gets the same linked-corner carrying, room auto-refresh and
+  // history push a drag or a typed length already get. Returns a message
+  // to show the user when it can't do anything (parallel walls, or the
+  // line only crosses target's centerline well outside target's own
+  // span — not somewhere calling it "reaching that wall" would make sense).
+  function extendWallTo(wall, target) {
+    const d1x = wall.x2 - wall.x1, d1y = wall.y2 - wall.y1;
+    const d2x = target.x2 - target.x1, d2y = target.y2 - target.y1;
+    const denom = d1x * d2y - d1y * d2x;
+    if (Math.abs(denom) < 1e-6) return "Essa parede é paralela — não tem como esticar até ela.";
+    const t = ((target.x1 - wall.x1) * d2y - (target.y1 - wall.y1) * d2x) / denom;
+    const ix = wall.x1 + d1x * t, iy = wall.y1 + d1y * t;
+    const targetLenSq = d2x * d2x + d2y * d2y || 1;
+    const s = ((ix - target.x1) * d2x + (iy - target.y1) * d2y) / targetLenSq;
+    if (s < -0.05 || s > 1.05) return "Essa parede não chega até ali — o cruzamento fica fora dela.";
+    const d1sq = (ix - wall.x1) ** 2 + (iy - wall.y1) ** 2;
+    const d2sq = (ix - wall.x2) ** 2 + (iy - wall.y2) ** 2;
+    const movingEnd = d1sq < d2sq ? "start" : "end";
+    const oldMoving = movingEnd === "start" ? { x: wall.x1, y: wall.y1 } : { x: wall.x2, y: wall.y2 };
+    moveWallEndAndLinked(wall.id, movingEnd, oldMoving, { x: ix, y: iy });
+    return null;
+  }
   function moveOpeningAlongWall(el, newPosM) {
     const w = wallsById[el.wallId];
     if (!w) return;
@@ -2215,6 +2257,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "janela", label: "Janela", Icon: WindowIcon },
     { id: "escada", label: "Escada", Icon: StairsIcon },
     { id: "cortar", label: "Cortar parede", Icon: Scissors },
+    { id: "estender", label: "Estender parede", Icon: ArrowLeftRight },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
   const FORRO_TOOLS = [
@@ -2258,7 +2301,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             const active = tool === id;
             const activeColor = id === "apagar" ? C.bad : C.gold;
             return (
-              <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); }} title={label}
+              <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); }} title={label}
                 className="flex items-center justify-center p-2 rounded"
                 style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
                 <Icon size={16} />
@@ -2420,6 +2463,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       )}
 
+      {tool === "estender" && planMode === "piso" && (
+        <div className="mb-2 text-[10px]" style={{ color: extendMsg ? C.bad : C.mute }}>
+          {extendMsg || (extendSourceId ? "Agora toque na parede que ela deve alcançar." : "Toque na parede que quer esticar ou encolher.")}
+        </div>
+      )}
+
       {namingId && (
         <div className="flex items-center gap-2 mb-2 p-2 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Nome do ambiente:</span>
@@ -2571,8 +2620,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"} strokeWidth={selectedId === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={phaseStyleColor(el) ? "7,5" : undefined}
+              stroke={extendSourceId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
+              strokeWidth={selectedId === el.id || extendSourceId === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={extendSourceId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
