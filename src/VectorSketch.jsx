@@ -2319,7 +2319,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       {/* Vistas moved up to share App.jsx's own level-select row (this
           component now just reads it as the phaseView prop) — Piso/Forro
           gets the whole row to itself again. */}
-      <div className="flex items-center gap-1 rounded p-1 mb-2" style={{ background: C.panelAlt }}>
+      <div className="flex items-center gap-1 rounded p-1 mb-1.5" style={{ background: C.panelAlt }}>
         <button onClick={() => { setPlanMode("piso"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
           style={{ ...heading, fontWeight: 600, background: planMode === "piso" ? C.gold : "transparent", color: planMode === "piso" ? "#141311" : C.mute }}>Piso</button>
         <button onClick={() => { setPlanMode("forro"); setTool("selecionar"); setSelectedId(null); }} className="flex-1 py-1.5 rounded text-[11px]"
@@ -2367,7 +2367,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         )}
       </div>
       {planMode === "piso" && showTextSettings && (
-        <div className="flex flex-col gap-2 p-2.5 rounded-lg mb-2 text-[11px]" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+        <div className="flex flex-col gap-2 p-2.5 rounded-lg mb-1.5 text-[11px]" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
           <div className="flex items-center flex-wrap gap-3">
             <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
               Cota portas
@@ -2428,12 +2428,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           style={{ background: C.panelAlt, color: redoStack.length ? C.chalk : C.muteDim, border: `1px solid ${C.line}`, opacity: redoStack.length ? 1 : 0.5 }}>
           <Redo2 size={13} />
         </button>
-        <button onClick={restoreLast} disabled={!deletedStack.length}
-          className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded"
-          style={{ ...heading, fontWeight: 600, background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
-          <RotateCcw size={12} /> Desfazer exclusão
+        <button onClick={restoreLast} disabled={!deletedStack.length} title="Desfazer exclusão"
+          className="flex items-center justify-center px-2.5 py-1.5 rounded"
+          style={{ background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
+          <RotateCcw size={13} />
         </button>
-        <button onClick={clearAll} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
+        <button onClick={clearAll} title="Apagar tudo" className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
           <Eraser size={12} /> Tudo
         </button>
       </div>

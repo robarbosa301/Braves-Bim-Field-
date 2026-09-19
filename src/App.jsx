@@ -1649,31 +1649,43 @@ export default function PranchetaBIM() {
                   </div>
                 )}
 
-                <div className="flex flex-col gap-2 mb-3 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
-                  <div className="flex items-center gap-1 text-xs" style={{ color: C.mute }}>
-                    <Scissors size={12} /> Corte de seção (combine os eixos)
-                  </div>
-                  {[
-                    { key: "x", label: "Eixo X", min: -15 },
-                    { key: "y", label: "Eixo Y (altura)", min: -1 },
-                    { key: "z", label: "Eixo Z", min: -15 },
-                  ].map(({ key, label, min }) => {
-                    const axis = sectionCut[key];
-                    return (
-                      <div key={key} className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => setSectionCut(s => ({ ...s, [key]: { ...s[key], enabled: !s[key].enabled } }))}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs shrink-0"
+                <div className="flex flex-col gap-1.5 mb-2 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-1 text-[11px] shrink-0" style={{ color: C.mute }}>
+                      <Scissors size={12} /> Corte:
+                    </span>
+                    {[
+                      { key: "x", label: "Eixo X", min: -15 },
+                      { key: "y", label: "Eixo Y (altura)", min: -1 },
+                      { key: "z", label: "Eixo Z", min: -15 },
+                    ].map(({ key, label }) => {
+                      const axis = sectionCut[key];
+                      return (
+                        <button key={key} onClick={() => setSectionCut(s => ({ ...s, [key]: { ...s[key], enabled: !s[key].enabled } }))}
+                          className="px-2 py-1 rounded text-[11px] shrink-0"
                           style={{ background: axis.enabled ? C.goldTint : "transparent", color: axis.enabled ? C.gold : C.mute, border: `1px solid ${axis.enabled ? "#FFFFFF" : C.line}` }}>
                           {label}
                         </button>
-                        {axis.enabled && (
-                          <>
-                            <input type="range" min={min} max="15" step="0.1" value={axis.position}
-                              onChange={e => setSectionCut(s => ({ ...s, [key]: { ...s[key], position: toNum(e.target.value, s[key].position) } }))}
-                              className="flex-1 min-w-[100px]" />
-                            <span className="text-[10px] shrink-0" style={{ ...mono, color: C.mute }}>{axis.position.toFixed(1)} m</span>
-                          </>
-                        )}
+                      );
+                    })}
+                  </div>
+                  {/* Only an enabled axis's own slider takes a row — off by
+                      default (all three), this used to always reserve three
+                      full rows regardless, eating space the 3D view itself
+                      could use instead. */}
+                  {[
+                    { key: "x", label: "X", min: -15 },
+                    { key: "y", label: "Y", min: -1 },
+                    { key: "z", label: "Z", min: -15 },
+                  ].filter(({ key }) => sectionCut[key].enabled).map(({ key, label, min }) => {
+                    const axis = sectionCut[key];
+                    return (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-[10px] w-3 shrink-0" style={{ color: C.mute }}>{label}</span>
+                        <input type="range" min={min} max="15" step="0.1" value={axis.position}
+                          onChange={e => setSectionCut(s => ({ ...s, [key]: { ...s[key], position: toNum(e.target.value, s[key].position) } }))}
+                          className="flex-1 min-w-[100px]" />
+                        <span className="text-[10px] shrink-0" style={{ ...mono, color: C.mute }}>{axis.position.toFixed(1)} m</span>
                       </div>
                     );
                   })}
