@@ -10,10 +10,16 @@ import { GRID } from "./geometry.js";
 import { fontFamilyCss } from "./constants.js";
 
 const PX_PER_M = 70;
-const MARGIN_TOP = 30;
+// Extra room above the wall for two stacked label rows — the opening tags
+// (widest text) sit on their own row well clear of the gap-dimension row
+// right under them, so at the standard 7-7.5px font neither's ascenders/
+// descenders reach into the other.
+const MARGIN_TOP = 44;
 const MARGIN_LEFT = 50;
 const MARGIN_RIGHT = 20;
 const MARGIN_BOTTOM = 40;
+const TAG_ROW_Y = -30;
+const GAP_DIM_ROW_Y = -10;
 
 export default function ElevationView({ level, wallId }) {
   const elements = level.sketchElements || [];
@@ -74,7 +80,7 @@ export default function ElevationView({ level, wallId }) {
         <line x1={wallX - 14} y1={wallBottomY} x2={wallX + lengthPx + 14} y2={wallBottomY} stroke="#1B1E1A" strokeWidth="2" />
 
         {gaps.map((g, i) => (
-          <ElevHDim key={"gap" + i} y={wallTopY - 12} x1={wallX + g.start * PX_PER_M} x2={wallX + g.end * PX_PER_M}
+          <ElevHDim key={"gap" + i} y={wallTopY + GAP_DIM_ROW_Y} x1={wallX + g.start * PX_PER_M} x2={wallX + g.end * PX_PER_M}
             label={(g.end - g.start).toFixed(2)}
             color={g.type === "door" ? doorDimColor : g.type === "window" ? windowDimColor : dimColor}
             fontSize={dimFontSize} />
@@ -94,7 +100,7 @@ export default function ElevationView({ level, wallId }) {
             <g key={o.id}>
               <rect x={oX} y={oTopY} width={wPx} height={hPx}
                 fill={isDoor ? "rgba(74,74,70,0.35)" : "rgba(120,160,196,0.35)"} stroke="#1B1E1A" strokeWidth="1.2" />
-              <text x={oX + wPx / 2} y={wallTopY - 20} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">
+              <text x={oX + wPx / 2} y={wallTopY + TAG_ROW_Y} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">
                 {o.tag ? `${o.tag} · ` : ""}{o.width}×{o.height}
               </text>
               {!isDoor && sillM > 0 && (

@@ -408,6 +408,12 @@ export default function PranchetaBIM() {
   const [croquiLevelId, setCroquiLevelId] = useState(null);
   const [croquiViewMode, setCroquiViewMode] = useState("2d");
   const [elevationWallId, setElevationWallId] = useState(null);
+  // Walls have no direct room link of their own — which ambiente a wall
+  // belongs to is worked out the same way as everywhere else (see
+  // wallRoomAdjacency / activeRoomWallFaces), so picking the ambiente first
+  // here mirrors how the user actually thinks of a wall: as part of a room,
+  // not a bare tag in a flat list.
+  const [elevationRoomName, setElevationRoomName] = useState(null);
   const [phaseView2D, setPhaseView2D] = useState("tudo");
   // "Vistas" sits behind one button, closed by default — same pattern as
   // the Sincronização tab's DADOS DO IMÓVEL panel.
@@ -704,6 +710,22 @@ export default function PranchetaBIM() {
       })
     : [];
   const activeRoomWallAreaTotal = activeRoomWallFaces.reduce((s, f) => s + toNum(f.wall.length, 0) * toNum(f.wall.height, 0), 0);
+
+  // Ambiente options for the Elevação picker — every distinct face name any
+  // wall on this level touches, "Externo / não identificado" included so
+  // exterior walls (no room polygon on either side) stay reachable too.
+  const elevationRoomOptions = croquiLevel
+    ? Array.from(new Set((croquiLevel.sketchElements || []).filter(e => e.type === "wall").flatMap(w => {
+        const adj = wallRoomAdjacency(croquiLevel, w);
+        return [adj.faceA, adj.faceB];
+      })))
+    : [];
+  const elevationRoomWalls = croquiLevel && elevationRoomName
+    ? (croquiLevel.sketchElements || []).filter(e => e.type === "wall").filter(w => {
+        const adj = wallRoomAdjacency(croquiLevel, w);
+        return adj.faceA === elevationRoomName || adj.faceB === elevationRoomName;
+      })
+    : [];
 
   function removeRoom(id) {
     const room = rooms.find(r => r.id === id);
@@ -1550,11 +1572,26 @@ export default function PranchetaBIM() {
                     </select>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhum nível criado</span>
                 ) : croquiViewMode === "elevacao" ? (
-                  (croquiLevel?.sketchElements || []).filter(e => e.type === "wall").length > 0 ? (
-                    <select value={elevationWallId || ""} onChange={e => setElevationWallId(e.target.value)} className="text-xs px-2 py-1.5 rounded w-28 truncate"
-                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                      {croquiLevel.sketchElements.filter(e => e.type === "wall").map(w => <option key={w.id} value={w.id}>Parede {w.tag}</option>)}
-                    </select>
+                  elevationRoomOptions.length > 0 ? (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <select value={elevationRoomName || ""} onChange={e => {
+                        const name = e.target.value;
+                        setElevationRoomName(name);
+                        const walls = (croquiLevel?.sketchElements || []).filter(w => {
+                          if (w.type !== "wall") return false;
+                          const adj = wallRoomAdjacency(croquiLevel, w);
+                          return adj.faceA === name || adj.faceB === name;
+                        });
+                        setElevationWallId(walls[0]?.id || null);
+                      }} className="text-xs px-2 py-1.5 rounded w-24 truncate"
+                        style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                        {elevationRoomOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                      <select value={elevationWallId || ""} onChange={e => setElevationWallId(e.target.value)} className="text-xs px-2 py-1.5 rounded w-20 truncate"
+                        style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                        {elevationRoomWalls.map(w => <option key={w.id} value={w.id}>{w.tag}</option>)}
+                      </select>
+                    </div>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
                 ) : (
                   <div className="flex gap-1 rounded p-0.5" style={{ background: C.panelAlt }}>
@@ -1583,7 +1620,14 @@ export default function PranchetaBIM() {
                   <button onClick={() => {
                     setCroquiViewMode("elevacao");
                     const walls = croquiLevel?.sketchElements?.filter(e => e.type === "wall") || [];
-                    if (!elevationWallId || !walls.some(w => w.id === elevationWallId)) setElevationWallId(walls[0]?.id || null);
+                    const currentWall = walls.find(w => w.id === elevationWallId);
+                    const currentAdj = currentWall ? wallRoomAdjacency(croquiLevel, currentWall) : null;
+                    const roomStillValid = currentAdj && (currentAdj.faceA === elevationRoomName || currentAdj.faceB === elevationRoomName);
+                    if (currentWall && roomStillValid) return;
+                    const firstWall = walls[0] || null;
+                    const firstRoomName = firstWall ? wallRoomAdjacency(croquiLevel, firstWall).faceA : null;
+                    setElevationRoomName(firstRoomName);
+                    setElevationWallId(firstWall?.id || null);
                   }} className="px-2.5 py-1 rounded text-[11px]"
                     style={{ ...heading, fontWeight: 600, background: croquiViewMode === "elevacao" ? C.gold : "transparent", color: croquiViewMode === "elevacao" ? "#141311" : C.mute }}>
                     Elevação
