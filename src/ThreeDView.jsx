@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { C, matchesPhaseView } from "./theme.js";
 import { toNum } from "./utils.js";
 import { pointInPolygon } from "./geometry.js";
+import { wallThicknessM } from "./constants.js";
 
 // Split out of App.jsx and lazy-loaded (see the React.lazy import there) so
 // three.js — a large dependency only ever needed once someone opens the 3D
@@ -86,6 +87,10 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
   const [ok, setOk] = useState(true);
   const [empty, setEmpty] = useState(false);
   const [emptyPhase, setEmptyPhase] = useState(false);
+  // Tapped-wall legend (area/volume/room/material) — cleared whenever the
+  // scene itself rebuilds (level, phase view, section cut…) since the mesh
+  // it pointed at no longer exists once that happens.
+  const [selectedWallInfo, setSelectedWallInfo] = useState(null);
   // A fixed 340px used to leave a big band of empty space below the model
   // on any screen taller than that — same "fill whatever's actually left
   // down to the bottom nav" auto-sizing the Croqui's own 2D canvas already
@@ -165,6 +170,11 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 400);
+      // Every wall segment mesh pushed here (plus its shared userData —
+      // one entry per whole wall, not per segment, so tapping any part of
+      // a wall split by a door/window still reports the same wall) is
+      // what tap-to-select raycasts against, below.
+      const selectableMeshes = [];
       scene.add(new THREE.AmbientLight(0xffffff, 0.7));
       const dir = new THREE.DirectionalLight(0xffffff, 0.75);
       dir.position.set(10, 16, 8);
@@ -263,7 +273,25 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
           const angle = Math.atan2(dz, dx);
           const h = w.height || 2.8;
           const ux = dx / len, uz = dz / len;
-          const thickness = 0.2;
+          const thickness = wallThicknessM(w);
+
+          // Which room (by name) sits on each face — same "step off the
+          // wall's midpoint a bit and see which room polygon contains
+          // that point" App.jsx's own wallRoomAdjacency does in the 2D
+          // Croqui, just in real meters here instead of drawing pixels
+          // (this view never sees the drawing's px/GRID units at all).
+          const nx = -uz, nz = ux;
+          const wallMid = { x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 };
+          const roomAt = (p) => {
+            const room = lvl.rooms.find(r => pointInPolygon(p, r.points));
+            return room ? (room.name || "Ambiente sem nome") : "Externo / não identificado";
+          };
+          const wallInfo = {
+            kind: "wall", wallId: w.id, tag: w.tag, lengthM: len, heightM: h, thicknessM: thickness,
+            wallType: w.wallType, condition: w.condition,
+            faceA: roomAt({ x: wallMid.x + nx * 0.3, y: wallMid.y + nz * 0.3 }),
+            faceB: roomAt({ x: wallMid.x - nx * 0.3, y: wallMid.y - nz * 0.3 }),
+          };
 
           // The physical opening in the wall always exists — "open" only
           // changes how the door/window leaf itself is posed, never removes
@@ -319,7 +347,9 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
             const cz = w.y1 + uz * (seg.start + segLen / 2);
             mesh.position.set(cx, elev + seg.yBottom + segH / 2, cz);
             mesh.rotation.y = -angle;
+            mesh.userData = wallInfo;
             scene.add(mesh);
+            selectableMeshes.push(mesh);
           });
 
           // Door/window leaves: split into their real panel ("folha") count,
@@ -473,25 +503,99 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
       }
       updateCamera();
 
-      let dragging = false, lastX = 0, lastY = 0, pinchDist = null;
+      // Tap-to-select: raycasts against selectableMeshes and reports the
+      // whole wall (area/volume/room/material) via setSelectedWallInfo,
+      // read by the HTML legend in the component's own return below.
+      const raycaster = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      let highlightMesh = null;
+      function clearHighlight() {
+        if (!highlightMesh) return;
+        scene.remove(highlightMesh);
+        highlightMesh.geometry.dispose();
+        highlightMesh.material.dispose();
+        highlightMesh = null;
+      }
+      function trySelect(clientX, clientY) {
+        const rect = el.getBoundingClientRect();
+        ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(ndc, camera);
+        const hits = raycaster.intersectObjects(selectableMeshes);
+        clearHighlight();
+        if (!hits.length) { setSelectedWallInfo(null); return; }
+        const mesh = hits[0].object;
+        setSelectedWallInfo(mesh.userData);
+        // A wireframe box, fit to the exact segment tapped (not the
+        // wall's full span, when a door/window split it into several) and
+        // copying its position/rotation exactly, so the outline hugs it.
+        const { width: bw, height: bh, depth: bd } = mesh.geometry.parameters;
+        highlightMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(bw + 0.02, bh + 0.02, bd + 0.02),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.9 })
+        );
+        highlightMesh.position.copy(mesh.position);
+        highlightMesh.rotation.copy(mesh.rotation);
+        scene.add(highlightMesh);
+      }
+
+      // Moves the look-at point opposite a screen-space drag, along the
+      // camera's own current right/up (not world X/Z) so pan always tracks
+      // the finger regardless of which way the model is currently orbited
+      // — and scaled by camDist so a fixed screen-pixel drag covers the
+      // same apparent ground whether zoomed in tight or pulled back far.
+      function panBy(dxScreen, dyScreen) {
+        const dir = new THREE.Vector3().subVectors(camera.position, target).normalize();
+        const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize();
+        const up = new THREE.Vector3().crossVectors(dir, right).normalize();
+        const panScale = camDist * 0.0016;
+        target.addScaledVector(right, -dxScreen * panScale);
+        target.addScaledVector(up, dyScreen * panScale);
+      }
+
+      let dragging = false, lastX = 0, lastY = 0, pinchDist = null, panMid = null, vPanY = null, tapStart = null;
+      const TAP_MOVE_TOL = 8;
       const touchDist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const touchMid = (a, b) => ({ x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 });
       function onDown(e) {
-        if (e.touches && e.touches.length === 2) {
-          dragging = false;
-          pinchDist = touchDist(e.touches[0], e.touches[1]);
+        if (e.touches && e.touches.length === 3) {
+          // Three fingers: vertical-only pan (walk up/down through floors)
+          // — kept separate from the two-finger pinch/pan below so a third
+          // finger landing mid-gesture never gets read as a sideways pan.
+          dragging = false; pinchDist = null; panMid = null; tapStart = null;
+          const ys = Array.from(e.touches).map(t => t.clientY);
+          vPanY = ys.reduce((a, b) => a + b, 0) / ys.length;
           return;
         }
-        dragging = true; const p = e.touches ? e.touches[0] : e; lastX = p.clientX; lastY = p.clientY;
+        if (e.touches && e.touches.length === 2) {
+          dragging = false; vPanY = null; tapStart = null;
+          pinchDist = touchDist(e.touches[0], e.touches[1]);
+          panMid = touchMid(e.touches[0], e.touches[1]);
+          return;
+        }
+        dragging = true; vPanY = null; panMid = null;
+        const p = e.touches ? e.touches[0] : e;
+        lastX = p.clientX; lastY = p.clientY;
+        tapStart = { x: p.clientX, y: p.clientY, moved: false };
       }
       function onMove(e) {
+        if (e.touches && e.touches.length === 3 && vPanY != null) {
+          if (e.cancelable) e.preventDefault();
+          const ys = Array.from(e.touches).map(t => t.clientY);
+          const midY = ys.reduce((a, b) => a + b, 0) / ys.length;
+          panBy(0, midY - vPanY);
+          vPanY = midY;
+          updateCamera();
+          return;
+        }
         if (e.touches && e.touches.length === 2) {
           if (e.cancelable) e.preventDefault();
-          const d = touchDist(e.touches[0], e.touches[1]);
-          if (pinchDist != null) {
-            camDist = Math.min(80, Math.max(3, camDist - (d - pinchDist) * 0.02));
-            updateCamera();
-          }
-          pinchDist = d;
+          const [a, b] = e.touches;
+          const d = touchDist(a, b), mid = touchMid(a, b);
+          if (pinchDist != null) camDist = Math.min(80, Math.max(3, camDist - (d - pinchDist) * 0.02));
+          if (panMid != null) panBy(mid.x - panMid.x, mid.y - panMid.y);
+          pinchDist = d; panMid = mid;
+          updateCamera();
           return;
         }
         if (!dragging) return;
@@ -499,11 +603,18 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         const p = e.touches ? e.touches[0] : e;
         const dx = p.clientX - lastX, dy = p.clientY - lastY;
         lastX = p.clientX; lastY = p.clientY;
+        if (tapStart && Math.hypot(p.clientX - tapStart.x, p.clientY - tapStart.y) > TAP_MOVE_TOL) tapStart.moved = true;
         theta -= dx * 0.008;
         phi = Math.min(Math.PI - 0.15, Math.max(0.2, phi - dy * 0.008));
         updateCamera();
       }
-      function onUp(e) { dragging = false; if (!e.touches || e.touches.length < 2) pinchDist = null; }
+      function onUp(e) {
+        dragging = false;
+        if (!e.touches || e.touches.length < 2) { pinchDist = null; panMid = null; }
+        if (!e.touches || e.touches.length < 3) vPanY = null;
+        if (tapStart && !tapStart.moved) trySelect(tapStart.x, tapStart.y);
+        tapStart = null;
+      }
       function onWheel(e) { e.preventDefault(); camDist = Math.min(80, Math.max(3, camDist + e.deltaY * 0.01)); updateCamera(); }
 
       const el = renderer.domElement;
@@ -547,6 +658,10 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         renderer.dispose();
         if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
       }
+      // The mesh a stale selection points at won't exist once the scene
+      // rebuilds (new level, phase view, section cut…) — drop it rather
+      // than leave the legend showing a wall that's no longer there.
+      setSelectedWallInfo(null);
     };
   }, [buildingLevels, openState, sectionCut, phaseView, dims]);
 
@@ -579,8 +694,26 @@ export default function ThreeDView({ buildingLevels, elevationsById, openState =
         {statusMsg && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-center p-6" style={{ color: C.mute }}>{statusMsg}</div>
         )}
+        {!statusMsg && selectedWallInfo && (
+          <div className="absolute top-2 right-2 left-2 sm:left-auto sm:w-60 rounded-lg p-2.5 text-[11px]"
+            style={{ background: "rgba(20,19,17,0.92)", border: `1px solid ${C.line}`, color: C.chalk, backdropFilter: "blur(4px)" }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-semibold" style={{ color: C.gold }}>Parede {selectedWallInfo.tag}</span>
+              <button onClick={() => setSelectedWallInfo(null)} style={{ color: C.mute, fontSize: 16, lineHeight: 1 }}>×</button>
+            </div>
+            <div className="space-y-1" style={{ color: C.mute }}>
+              <div>Material: <span style={{ color: C.chalk }}>{selectedWallInfo.wallType}</span></div>
+              <div>Dimensões: <span style={{ color: C.chalk }}>{selectedWallInfo.lengthM.toFixed(2)} × {selectedWallInfo.heightM.toFixed(2)} m · {(selectedWallInfo.thicknessM * 100).toFixed(0)} cm</span></div>
+              <div>Área: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM).toFixed(2)} m²</span></div>
+              <div>Volume: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM * selectedWallInfo.thicknessM).toFixed(3)} m³</span></div>
+              <div>Ambiente: <span style={{ color: C.chalk }}>
+                {selectedWallInfo.faceA === selectedWallInfo.faceB ? selectedWallInfo.faceA : `${selectedWallInfo.faceA} / ${selectedWallInfo.faceB}`}
+              </span></div>
+            </div>
+          </div>
+        )}
       </div>
-      {!statusMsg && <p ref={hintRef} className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste para girar · roda do mouse (ou pinça) para zoom</p>}
+      {!statusMsg && <p ref={hintRef} className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste: girar · pinça: zoom · 2 dedos: mover · 3 dedos: subir/descer · toque numa parede: ver detalhes</p>}
     </div>
   );
 }
