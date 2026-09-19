@@ -229,7 +229,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       // through or poke out of it. Sliding ("Correr") panels slide sideways
       // in the wall plane when open; hinged panels swing on a vertical
       // hinge into the room.
-      function addOpeningLeaves(o, w, ux, uz, angle, elev) {
+      function addOpeningLeaves(o, w, ux, uz, angle, elev, ctx = {}) {
         const panels = Math.max(1, o.panels || 1);
         const panelWidth = o.width / panels;
         const gap = Math.min(0.03, panelWidth * 0.08);
@@ -243,6 +243,19 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           : isDoorKind
             ? { roughness: 0.5 }
             : { roughness: 0.2, transparent: true, opacity: 0.75 };
+
+        // Shared by every panel this opening splits into — same idea as a
+        // wall's own wallInfo, so tapping any one leaf of a multi-folha
+        // door/window still selects (and dimensions) the WHOLE opening.
+        const openingInfo = {
+          kind: o.kind, tag: o.tag, wallTag: w.tag,
+          widthM: o.width, heightM: o.height, thicknessM: ctx.thickness ?? wallThicknessM(w),
+          doorType: o.doorType, windowType: o.windowType, panels: o.panels, condition: o.condition,
+          cx: w.x1 + ux * o.pos, cz: w.y1 + uz * o.pos, ux, uz, elev,
+          yBottom: o.yBottom, yTop: o.yTop,
+          faceA: ctx.faceA, faceB: ctx.faceB,
+          dimColor: ctx.dimColor || "#4A4A46",
+        };
 
         for (let i = 0; i < panels; i++) {
           const segStart = o.pos - o.width / 2 + i * panelWidth;
@@ -271,7 +284,9 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           );
           mesh.position.set(cx, elev + o.yBottom + o.height / 2, cz);
           mesh.rotation.y = -leafAngle;
+          mesh.userData = openingInfo;
           scene.add(mesh);
+          selectableMeshes.push(mesh);
         }
       }
 
@@ -306,6 +321,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
             wallType: w.wallType, condition: w.condition,
             faceA: roomAt({ x: wallMid.x + nx * 0.3, y: wallMid.y + nz * 0.3 }),
             faceB: roomAt({ x: wallMid.x - nx * 0.3, y: wallMid.y - nz * 0.3 }),
+            // The wall's own full centerline/rotation — every segment a
+            // door/window splits it into shares this one wallInfo object,
+            // so a tap on any of them can still highlight (and dimension)
+            // the WHOLE wall instead of just the segment actually hit.
+            x1: w.x1, z1: w.y1, x2: w.x2, z2: w.y2, elev, angle,
+            centerX: (w.x1 + w.x2) / 2, centerZ: (w.y1 + w.y2) / 2, centerY: elev + h / 2,
+            dimColor: lvl.dimColor,
           };
 
           // The physical opening in the wall always exists — "open" only
@@ -370,7 +392,10 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           // Door/window leaves: split into their real panel ("folha") count,
           // always rotated flush with this wall's own angle so they never
           // clip through or poke out of it.
-          openings.forEach(o => addOpeningLeaves(o, w, ux, uz, angle, elev));
+          openings.forEach(o => addOpeningLeaves(o, w, ux, uz, angle, elev, {
+            thickness, faceA: wallInfo.faceA, faceB: wallInfo.faceB,
+            dimColor: o.kind === "door" ? lvl.doorDimColor : lvl.windowDimColor,
+          }));
 
           minX = Math.min(minX, w.x1, w.x2); maxX = Math.max(maxX, w.x1, w.x2);
           minZ = Math.min(minZ, w.y1, w.y2); maxZ = Math.max(maxZ, w.y1, w.y2);
@@ -397,7 +422,10 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           const len = Math.max(0.05, Math.hypot(dx, dz));
           const angle = Math.atan2(dz, dx);
           const ux = dx / len, uz = dz / len;
-          addOpeningLeaves(mapOpening(el, kind, w, ux, uz, len), w, ux, uz, angle, elev);
+          addOpeningLeaves(mapOpening(el, kind, w, ux, uz, len), w, ux, uz, angle, elev, {
+            thickness: wallThicknessM(w),
+            dimColor: kind === "door" ? lvl.doorDimColor : lvl.windowDimColor,
+          });
         });
 
         (lvl.rooms || []).forEach(r => {
@@ -443,7 +471,9 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, side: THREE.DoubleSide }));
           mesh.rotation.x = -Math.PI / 2;
           mesh.position.y = elev + 0.015;
+          mesh.userData = { kind: "floor", floorType: f.floorType, areaM2: f.area, points: f.points, elev };
           scene.add(mesh);
+          selectableMeshes.push(mesh);
         });
 
         (lvl.stairs || []).filter(phaseVisible).forEach(st => {
@@ -576,19 +606,119 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       }
       updateCamera();
 
-      // Tap-to-select: raycasts against selectableMeshes and reports the
-      // whole wall (area/volume/room/material) via setSelectedWallInfo,
-      // read by the HTML legend in the component's own return below.
+      // A small canvas-texture label, always facing the camera (Sprite),
+      // used for the on-element dimension numbers below — same idea as
+      // getWallTexture's canvas approach, just for text instead of a
+      // tiled material. depthTest is off so a dimension drawn right on
+      // top of a wall/door never gets hidden behind its own geometry.
+      function makeTextSprite(text, color) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const fontSize = 48;
+        ctx.font = `700 ${fontSize}px sans-serif`;
+        const textW = ctx.measureText(text).width;
+        canvas.width = Math.ceil(textW) + 24;
+        canvas.height = fontSize + 20;
+        ctx.font = `700 ${fontSize}px sans-serif`;
+        ctx.fillStyle = "rgba(20,19,17,0.82)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = color;
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, 12, canvas.height / 2);
+        const tex = new THREE.CanvasTexture(canvas);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false }));
+        const worldH = 0.32;
+        sprite.scale.set((canvas.width / canvas.height) * worldH, worldH, 1);
+        sprite.renderOrder = 999;
+        return sprite;
+      }
+      function makeDimensionLine(p1, p2, color) {
+        const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+        const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, depthTest: false }));
+        line.renderOrder = 998;
+        return line;
+      }
+      // Length/height/thickness right on the wall itself — offset just off
+      // its front face (along its own normal) so the line doesn't z-fight
+      // with the wall mesh, colored with the same dimColor the 2D plan and
+      // Elevação already use for this level.
+      function buildWallDimensionGroup(info) {
+        const dx = info.x2 - info.x1, dz = info.z2 - info.z1;
+        const len = Math.max(0.05, Math.hypot(dx, dz));
+        const ux = dx / len, uz = dz / len;
+        const nx = -uz, nz = ux;
+        const offset = info.thicknessM / 2 + 0.12;
+        const baseY = info.elev + 0.04;
+        const group = new THREE.Group();
+        const p1 = new THREE.Vector3(info.x1 + nx * offset, baseY, info.z1 + nz * offset);
+        const p2 = new THREE.Vector3(info.x2 + nx * offset, baseY, info.z2 + nz * offset);
+        group.add(makeDimensionLine(p1, p2, info.dimColor));
+        const lenLabel = makeTextSprite(`${info.lengthM.toFixed(2)} m`, info.dimColor);
+        lenLabel.position.copy(p1).lerp(p2, 0.5).add(new THREE.Vector3(0, 0.2, 0));
+        group.add(lenLabel);
+
+        const hp1 = new THREE.Vector3(info.x1 + nx * offset, info.elev, info.z1 + nz * offset);
+        const hp2 = new THREE.Vector3(info.x1 + nx * offset, info.elev + info.heightM, info.z1 + nz * offset);
+        group.add(makeDimensionLine(hp1, hp2, info.dimColor));
+        const heightLabel = makeTextSprite(`${info.heightM.toFixed(2)} m`, info.dimColor);
+        heightLabel.position.copy(hp1).lerp(hp2, 0.5).add(new THREE.Vector3(nx * 0.25, 0, nz * 0.25));
+        group.add(heightLabel);
+
+        const tp1 = new THREE.Vector3(info.x1 - nx * (info.thicknessM / 2), info.elev + 0.04, info.z1 - nz * (info.thicknessM / 2));
+        const tp2 = new THREE.Vector3(info.x1 + nx * (info.thicknessM / 2), info.elev + 0.04, info.z1 + nz * (info.thicknessM / 2));
+        group.add(makeDimensionLine(tp1, tp2, info.dimColor));
+        const thickLabel = makeTextSprite(`${(info.thicknessM * 100).toFixed(0)} cm`, info.dimColor);
+        thickLabel.position.copy(tp1).lerp(tp2, 0.5).add(new THREE.Vector3(-ux * 0.35, 0.14, -uz * 0.35));
+        group.add(thickLabel);
+        return group;
+      }
+      // Width/height right on the door/window leaf itself, in the same
+      // doorDimColor/windowDimColor the plan and Elevação already use.
+      function buildOpeningDimensionGroup(info) {
+        const { ux, uz } = info;
+        const halfW = info.widthM / 2;
+        const group = new THREE.Group();
+        const p1 = new THREE.Vector3(info.cx - ux * halfW, info.elev + info.yBottom - 0.12, info.cz - uz * halfW);
+        const p2 = new THREE.Vector3(info.cx + ux * halfW, info.elev + info.yBottom - 0.12, info.cz + uz * halfW);
+        group.add(makeDimensionLine(p1, p2, info.dimColor));
+        const widthLabel = makeTextSprite(`${info.widthM.toFixed(2)} m`, info.dimColor);
+        widthLabel.position.copy(p1).lerp(p2, 0.5).add(new THREE.Vector3(0, -0.05, 0));
+        group.add(widthLabel);
+
+        const nx = -uz, nz = ux;
+        const hp1 = new THREE.Vector3(info.cx + nx * (info.thicknessM / 2 + 0.1), info.elev + info.yBottom, info.cz + nz * (info.thicknessM / 2 + 0.1));
+        const hp2 = new THREE.Vector3(info.cx + nx * (info.thicknessM / 2 + 0.1), info.elev + info.yTop, info.cz + nz * (info.thicknessM / 2 + 0.1));
+        group.add(makeDimensionLine(hp1, hp2, info.dimColor));
+        const heightLabel = makeTextSprite(`${info.heightM.toFixed(2)} m`, info.dimColor);
+        heightLabel.position.copy(hp1).lerp(hp2, 0.5).add(new THREE.Vector3(nx * 0.2, 0, nz * 0.2));
+        group.add(heightLabel);
+        return group;
+      }
+
+      // Tap-to-select: raycasts against selectableMeshes (wall segments,
+      // door/window leaves, and piso zones) and reports the whole element
+      // (area/volume/room/material) via setSelectedWallInfo, read by the
+      // HTML legend in the component's own return below.
       const raycaster = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
-      let highlightMesh = null;
+      let highlightMesh = null, dimensionGroup = null;
       function clearHighlight() {
-        if (!highlightMesh) return;
-        scene.remove(highlightMesh);
-        highlightMesh.geometry.dispose();
-        highlightMesh.material.dispose();
-        highlightMesh = null;
+        if (highlightMesh) {
+          scene.remove(highlightMesh);
+          highlightMesh.geometry.dispose();
+          highlightMesh.material.dispose();
+          highlightMesh = null;
+        }
+        if (dimensionGroup) {
+          dimensionGroup.traverse(obj => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) { if (obj.material.map) obj.material.map.dispose(); obj.material.dispose(); }
+          });
+          scene.remove(dimensionGroup);
+          dimensionGroup = null;
+        }
       }
+      const wireMat = () => new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.9 });
       function trySelect(clientX, clientY) {
         const rect = el.getBoundingClientRect();
         ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -598,18 +728,46 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
         clearHighlight();
         if (!hits.length) { setSelectedWallInfo(null); return; }
         const mesh = hits[0].object;
-        setSelectedWallInfo(mesh.userData);
-        // A wireframe box, fit to the exact segment tapped (not the
-        // wall's full span, when a door/window split it into several) and
-        // copying its position/rotation exactly, so the outline hugs it.
-        const { width: bw, height: bh, depth: bd } = mesh.geometry.parameters;
-        highlightMesh = new THREE.Mesh(
-          new THREE.BoxGeometry(bw + 0.02, bh + 0.02, bd + 0.02),
-          new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.9 })
-        );
-        highlightMesh.position.copy(mesh.position);
-        highlightMesh.rotation.copy(mesh.rotation);
-        scene.add(highlightMesh);
+        const info = mesh.userData;
+        setSelectedWallInfo(info);
+        dimensionGroup = new THREE.Group();
+        if (info.kind === "wall") {
+          // A wireframe box spanning the WHOLE wall's own centerline (not
+          // just the one segment actually hit — a door/window splits a
+          // wall into several segment meshes that all share this same
+          // userData, so the highlight has to be rebuilt from the wall's
+          // own geometry rather than reused from whichever segment the
+          // ray happened to land on).
+          highlightMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(info.lengthM + 0.02, info.heightM + 0.02, info.thicknessM + 0.02),
+            wireMat()
+          );
+          highlightMesh.position.set(info.centerX, info.centerY, info.centerZ);
+          highlightMesh.rotation.y = -info.angle;
+          scene.add(highlightMesh);
+          dimensionGroup.add(buildWallDimensionGroup(info));
+        } else if (info.kind === "door" || info.kind === "window") {
+          const midY = info.elev + (info.yBottom + info.yTop) / 2;
+          highlightMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(info.widthM + 0.02, (info.yTop - info.yBottom) + 0.02, info.thicknessM + 0.04),
+            wireMat()
+          );
+          highlightMesh.position.set(info.cx, midY, info.cz);
+          highlightMesh.rotation.y = -Math.atan2(info.uz, info.ux);
+          scene.add(highlightMesh);
+          dimensionGroup.add(buildOpeningDimensionGroup(info));
+        } else if (info.kind === "floor") {
+          // No box makes sense for an arbitrary polygon — trace its own
+          // outline instead, just above the floor plane it belongs to.
+          const pts = info.points.map(p => new THREE.Vector3(p.x, info.elev + 0.02, p.y));
+          if (pts.length) pts.push(pts[0].clone());
+          highlightMesh = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(pts),
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+          );
+          scene.add(highlightMesh);
+        }
+        scene.add(dimensionGroup);
       }
 
       // Moves the look-at point opposite a screen-space drag, along the
@@ -771,22 +929,47 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           <div className="absolute top-2 right-2 left-2 sm:left-auto sm:w-60 rounded-lg p-2.5 text-[11px]"
             style={{ background: "rgba(20,19,17,0.92)", border: `1px solid ${C.line}`, color: C.chalk, backdropFilter: "blur(4px)" }}>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="font-semibold" style={{ color: C.gold }}>Parede {selectedWallInfo.tag}</span>
+              <span className="font-semibold" style={{ color: C.gold }}>
+                {selectedWallInfo.kind === "wall" ? `Parede ${selectedWallInfo.tag}`
+                  : selectedWallInfo.kind === "door" ? `Porta ${selectedWallInfo.tag}`
+                    : selectedWallInfo.kind === "window" ? `Janela ${selectedWallInfo.tag}`
+                      : `Piso · ${selectedWallInfo.floorType}`}
+              </span>
               <button onClick={() => setSelectedWallInfo(null)} style={{ color: C.mute, fontSize: 16, lineHeight: 1 }}>×</button>
             </div>
-            <div className="space-y-1" style={{ color: C.mute }}>
-              <div>Material: <span style={{ color: C.chalk }}>{selectedWallInfo.wallType}</span></div>
-              <div>Dimensões: <span style={{ color: C.chalk }}>{selectedWallInfo.lengthM.toFixed(2)} × {selectedWallInfo.heightM.toFixed(2)} m · {(selectedWallInfo.thicknessM * 100).toFixed(0)} cm</span></div>
-              <div>Área: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM).toFixed(2)} m²</span></div>
-              <div>Volume: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM * selectedWallInfo.thicknessM).toFixed(3)} m³</span></div>
-              <div>Ambiente: <span style={{ color: C.chalk }}>
-                {selectedWallInfo.faceA === selectedWallInfo.faceB ? selectedWallInfo.faceA : `${selectedWallInfo.faceA} / ${selectedWallInfo.faceB}`}
-              </span></div>
-            </div>
+            {selectedWallInfo.kind === "wall" && (
+              <div className="space-y-1" style={{ color: C.mute }}>
+                <div>Material: <span style={{ color: C.chalk }}>{selectedWallInfo.wallType}</span></div>
+                <div>Dimensões: <span style={{ color: C.chalk }}>{selectedWallInfo.lengthM.toFixed(2)} × {selectedWallInfo.heightM.toFixed(2)} m · {(selectedWallInfo.thicknessM * 100).toFixed(0)} cm</span></div>
+                <div>Área: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM).toFixed(2)} m²</span></div>
+                <div>Volume: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM * selectedWallInfo.thicknessM).toFixed(3)} m³</span></div>
+                <div>Ambiente: <span style={{ color: C.chalk }}>
+                  {selectedWallInfo.faceA === selectedWallInfo.faceB ? selectedWallInfo.faceA : `${selectedWallInfo.faceA} / ${selectedWallInfo.faceB}`}
+                </span></div>
+              </div>
+            )}
+            {(selectedWallInfo.kind === "door" || selectedWallInfo.kind === "window") && (
+              <div className="space-y-1" style={{ color: C.mute }}>
+                <div>Parede: <span style={{ color: C.chalk }}>{selectedWallInfo.wallTag}</span></div>
+                <div>Material: <span style={{ color: C.chalk }}>{selectedWallInfo.kind === "door" ? selectedWallInfo.doorType : selectedWallInfo.windowType}</span></div>
+                <div>Dimensões: <span style={{ color: C.chalk }}>{selectedWallInfo.widthM.toFixed(2)} × {selectedWallInfo.heightM.toFixed(2)} m</span></div>
+                <div>Folhas: <span style={{ color: C.chalk }}>{selectedWallInfo.panels}</span></div>
+                {(selectedWallInfo.faceA || selectedWallInfo.faceB) && (
+                  <div>Ambiente: <span style={{ color: C.chalk }}>
+                    {selectedWallInfo.faceA === selectedWallInfo.faceB ? selectedWallInfo.faceA : `${selectedWallInfo.faceA} / ${selectedWallInfo.faceB}`}
+                  </span></div>
+                )}
+              </div>
+            )}
+            {selectedWallInfo.kind === "floor" && (
+              <div className="space-y-1" style={{ color: C.mute }}>
+                <div>Área: <span style={{ color: C.chalk }}>{selectedWallInfo.areaM2} m²</span></div>
+              </div>
+            )}
           </div>
         )}
       </div>
-      {!statusMsg && <p ref={hintRef} className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste: girar · pinça: zoom · 2 dedos: mover · 3 dedos: subir/descer · toque numa parede: ver detalhes</p>}
+      {!statusMsg && <p ref={hintRef} className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste: girar · pinça: zoom · 2 dedos: mover · 3 dedos: subir/descer · toque num elemento: ver detalhes</p>}
     </div>
   );
 }

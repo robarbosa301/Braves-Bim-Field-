@@ -313,6 +313,14 @@ export function levelToMeters(level) {
     luminarias: els.filter(e => e.type === "luminaria").map(l => luminariaToM(l, toM)),
     rooms: els.filter(e => e.type === "room").map(r => roomToM(r, toM)),
     floorZones: els.filter(e => e.type === "floor").map(f => floorZoneToM(f, toM)),
+    // Same dimension/tag colors the Croqui's "Cores e tamanhos de texto"
+    // panel already applies to the 2D plan and the Elevação — carried
+    // through here so the 3D view's own on-element dimensions (drawn when
+    // a wall/door/window is tapped) read as the same drawing, not a
+    // separately-colored one.
+    dimColor: level.dimColor || "#4A4A46",
+    doorDimColor: level.doorDimColor || "#4A4A46",
+    windowDimColor: level.windowDimColor || "#4A4A46",
     nextElevation: null,
   };
 }
@@ -331,6 +339,9 @@ function levelToMetersForRoom(level, room) {
     stairs: els.filter(e => e.type === "stair" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(s2 => stairToM(s2, toM)),
     luminarias: els.filter(e => e.type === "luminaria" && inPoly(e.x, e.y)).map(l => luminariaToM(l, toM)),
     rooms: [roomToM(poly, toM)],
+    dimColor: level.dimColor || "#4A4A46",
+    doorDimColor: level.doorDimColor || "#4A4A46",
+    windowDimColor: level.windowDimColor || "#4A4A46",
   };
 }
 

@@ -2643,11 +2643,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {planMode === "piso" && elements.filter(el => el.type === "floor" && phaseVisible(el)).map(el => {
           const centroid = polygonCentroid(el.points);
           const isSel = selectedId === el.id;
-          const fill = FLOOR_COLOR_2D[el.floorType] || FLOOR_COLOR_2D["A definir"];
+          // el.floorColor is the user's own pick (the color swatch on the
+          // selected-piso panel) — it used to be stored but never actually
+          // drawn here, so changing it visibly did nothing. Falling back to
+          // the family's own hint only when no custom color was set yet.
+          const fill = el.floorColor || FLOOR_COLOR_2D[el.floorType] || FLOOR_COLOR_2D["A definir"];
+          // A distinct blueprint-blue accent when selected — reusing the
+          // room polygon's own grayish selected outline made a selected
+          // piso and a selected ambiente read as the exact same thing.
+          const stroke = isSel ? "#3E7CA6" : "#8C8477";
           return (
             <g key={el.id}>
-              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={fill} fillOpacity="0.55"
-                stroke={isSel ? "#726F68" : "#8C8477"} strokeWidth={isSel ? 2.5 : 1} strokeDasharray="4,3"
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={fill} fillOpacity={isSel ? 0.8 : 0.65}
+                stroke={stroke} strokeWidth={isSel ? 3 : 1} strokeDasharray="4,3"
                 style={{ pointerEvents: "none" }} />
               <text x={centroid.x} y={centroid.y} fontSize={roomNameFontSize - 1} fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>
                 {el.floorType} · {el.area} m²
