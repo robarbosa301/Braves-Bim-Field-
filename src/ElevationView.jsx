@@ -32,6 +32,7 @@ export default function ElevationView({ level, wallId }) {
   const doorDimColor = level.doorDimColor || "#4A4A46";
   const windowDimColor = level.windowDimColor || "#4A4A46";
   const dimFontSize = toNum(level.dimFontSize, 7.5);
+  const doorWindowDimFontSize = toNum(level.doorWindowDimFontSize, dimFontSize);
   const tagColor = level.tagColor || "#4A4A46";
   const tagFontSize = toNum(level.tagFontSize, 7);
   const fontFamily = fontFamilyCss(level.fontFamily);
@@ -83,7 +84,7 @@ export default function ElevationView({ level, wallId }) {
           <ElevHDim key={"gap" + i} y={wallTopY + GAP_DIM_ROW_Y} x1={wallX + g.start * PX_PER_M} x2={wallX + g.end * PX_PER_M}
             label={(g.end - g.start).toFixed(2)}
             color={g.type === "door" ? doorDimColor : g.type === "window" ? windowDimColor : dimColor}
-            fontSize={dimFontSize} />
+            fontSize={g.type ? doorWindowDimFontSize : dimFontSize} />
         ))}
 
         {opens.map(o => {
@@ -104,9 +105,9 @@ export default function ElevationView({ level, wallId }) {
                 {o.tag ? `${o.tag} · ` : ""}{o.width}×{o.height}
               </text>
               {!isDoor && sillM > 0 && (
-                <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={dimFontSize} />
+                <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize} />
               )}
-              <ElevVDim x={oX + wPx + 8} y1={oBottomY} y2={oTopY} label={oHeightM.toFixed(2)} color={color} fontSize={dimFontSize} />
+              <ElevVDim x={oX + wPx + 8} y1={oBottomY} y2={oTopY} label={oHeightM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize} />
             </g>
           );
         })}

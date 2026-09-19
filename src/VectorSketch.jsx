@@ -531,6 +531,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const doorDimColor = level.doorDimColor || "#4A4A46";
   const windowDimColor = level.windowDimColor || "#4A4A46";
   const dimFontSize = toNum(level.dimFontSize, 7.5);
+  // Same idea as the door/window dim colors above: a separate size for
+  // the door/window-adjacent gap numbers, so they can be made bigger (or
+  // smaller) than the plain corner-to-corner wall dimensions without
+  // resizing every dimension on the sheet. Defaults to dimFontSize itself
+  // (no visible change) until set.
+  const doorWindowDimFontSize = toNum(level.doorWindowDimFontSize, dimFontSize);
   const roomNameFontSize = toNum(level.roomNameFontSize, 10);
   const tagFontSize = toNum(level.tagFontSize, 7);
   const tagColor = level.tagColor || "#4A4A46";
@@ -2250,6 +2256,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const t = openingTypeById[afterId] || openingTypeById[beforeId];
       return t === "door" ? doorDimColor : t === "window" ? windowDimColor : "#4A4A46";
     };
+    const gapFontSize = (afterId, beforeId) => {
+      const t = openingTypeById[afterId] || openingTypeById[beforeId];
+      return (t === "door" || t === "window") ? doorWindowDimFontSize : dimFontSize;
+    };
     const gaps = [];
     let cursor = startInset, prevId = null;
     ivs.forEach(iv => {
@@ -2280,6 +2290,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const startEdit = () => setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy });
       const angleDeg = labelAngleDeg(w);
       const gc = gapColor(g.afterOpeningId, g.beforeOpeningId);
+      const gfs = gapFontSize(g.afterOpeningId, g.beforeOpeningId);
       return (
         <g key={w.id + "-dim-" + i}>
           <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={gc} strokeWidth="0.75" />
@@ -2292,7 +2303,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 onMouseDown={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)}
                 onTouchStart={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)} />
             )}
-            <text x={midX} y={midY - 3} fontSize={dimFontSize} fill={gc} textAnchor="middle"
+            <text x={midX} y={midY - 3} fontSize={gfs} fill={gc} textAnchor="middle"
               style={{ pointerEvents: "none" }}>{lenM}</text>
           </g>
         </g>
@@ -2438,6 +2449,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <div className="flex items-center flex-wrap gap-3">
             {[
               { label: "Tam. cota", value: dimFontSize, key: "dimFontSize", step: 0.5, min: 5, max: 12 },
+              { label: "Tam. cota porta/janela", value: doorWindowDimFontSize, key: "doorWindowDimFontSize", step: 0.5, min: 5, max: 12 },
               { label: "Tam. nome do ambiente", value: roomNameFontSize, key: "roomNameFontSize", step: 1, min: 7, max: 18 },
               { label: "Tam. etiqueta porta/janela", value: tagFontSize, key: "tagFontSize", step: 0.5, min: 6, max: 11 },
             ].map(f => (
