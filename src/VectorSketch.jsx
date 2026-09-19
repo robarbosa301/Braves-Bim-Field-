@@ -1438,6 +1438,41 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setEditingDim(null);
   }
 
+  // An auto-traced room (the "Ambiente" tool's tap-once-inside mode) is
+  // only ever computed at the moment it's traced — dragging, stretching or
+  // straightening a wall that borders it afterward doesn't move the
+  // room's own stored edges to match, so it silently goes stale: its area
+  // stops matching reality and its fill visibly stops short of (or
+  // overshoots) the wall's new position. Re-running each room's own trace
+  // from its current centroid — using it as the "tap inside" point against
+  // the wall set as it stands NOW — keeps it locked to whatever currently
+  // encloses it instead of drifting out of sync with a wall move. Returns
+  // the same array reference when nothing actually changed, so a caller
+  // can skip committing (and thus skip pushing a needless history entry)
+  // on the common case where no room bordered the wall that moved.
+  function refreshAutoRooms(next) {
+    const walls = next.filter(e => e.type === "wall").map(w => ({
+      x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
+      halfThickPx: (wallThicknessM(w.wallType) / 2 / scale) * GRID,
+    }));
+    let changed = false;
+    const updated = next.map(el => {
+      if (el.type !== "room" || !el.points || el.points.length < 3) return el;
+      const centroid = polygonCentroid(el.points);
+      const traced = traceEnclosedRoomNear(walls, centroid, GRID, scale);
+      if (!traced) return el;
+      let area = 0;
+      for (let i = 0; i < traced.length; i++) {
+        const a = traced[i], b = traced[(i + 1) % traced.length];
+        area += a.x * b.y - b.x * a.y;
+      }
+      const areaM2 = +((Math.abs(area / 2) / (GRID * GRID)) * scale * scale).toFixed(2);
+      if (areaM2 === el.area && traced.length === el.points.length && traced.every((p, i) => Math.abs(p.x - el.points[i].x) < 0.5 && Math.abs(p.y - el.points[i].y) < 0.5)) return el;
+      changed = true;
+      return { ...el, points: traced, area: areaM2 };
+    });
+    return changed ? updated : next;
+  }
   // movingEnd picks which endpoint moves to hit the new length — "end"
   // (default) keeps the start fixed and stretches from x2/y2, exactly the
   // old behavior; "start" keeps the end fixed and stretches from x1/y1, so
@@ -1455,18 +1490,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (dist(oldMoving, { x: e.x2, y: e.y2 }) < 3) linked.push({ id: e.id, which: "end" });
     });
     const patch = movingEnd === "end" ? { x2: newMoving.x, y2: newMoving.y } : { x1: newMoving.x, y1: newMoving.y };
-    commitElements(elements.map(e => {
+    const next = elements.map(e => {
       if (e.id === wallId) {
-        const next = { ...e, ...patch };
-        next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
-        return next;
+        const n = { ...e, ...patch };
+        n.length = pxToMeters(dist({ x: n.x1, y: n.y1 }, { x: n.x2, y: n.y2 }));
+        return n;
       }
       const link = linked.find(l => l.id === e.id);
       if (!link) return e;
-      const next = link.which === "start" ? { ...e, x1: newMoving.x, y1: newMoving.y } : { ...e, x2: newMoving.x, y2: newMoving.y };
-      next.length = pxToMeters(dist({ x: next.x1, y: next.y1 }, { x: next.x2, y: next.y2 }));
-      return next;
-    }));
+      const n = link.which === "start" ? { ...e, x1: newMoving.x, y1: newMoving.y } : { ...e, x2: newMoving.x, y2: newMoving.y };
+      n.length = pxToMeters(dist({ x: n.x1, y: n.y1 }, { x: n.x2, y: n.y2 }));
+      return n;
+    });
+    commitElements(refreshAutoRooms(next));
     ensureVisible(newMoving.x, newMoving.y);
   }
   function setWallLengthDirect(wallId, newLenM, movingEnd = "end") {
@@ -1836,7 +1872,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       commitElements(elements.map(el => el.id === dragSession.id ? { ...el, x: proj.x, y: proj.y } : el));
     }
   }
-  function onCanvasPointerUp() { onLabelDragEnd(); onDimLabelDragEnd(); onGapDimLabelDragEnd(); setDragSession(null); }
+  function onCanvasPointerUp() {
+    onLabelDragEnd(); onDimLabelDragEnd(); onGapDimLabelDragEnd();
+    // Dragging a wall or one of its endpoints commits on every move frame
+    // (isDraggingRef suppresses the history push, not the commit itself),
+    // so by the time the pointer lifts, `elements` already holds the
+    // wall's final settled position — the right moment to re-check any
+    // room it might have pulled stale, once, instead of on every frame.
+    if (dragSession && (dragSession.kind === "wall-move" || dragSession.kind === "wall-endpoint")) {
+      const refreshed = refreshAutoRooms(elements);
+      if (refreshed !== elements) commitElements(refreshed);
+    }
+    setDragSession(null);
+  }
 
   // Same endpoint/wall-line snap (and, given an anchor, angle-snap) a real
   // tap resolves to — shared by the hover preview, the tap-chain itself
