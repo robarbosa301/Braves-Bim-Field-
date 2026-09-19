@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box,
+  Expand, Shrink, Box, Type, Minus, Plus,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -473,6 +473,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const marqueeGesture = useRef(null);
   const [showBelow, setShowBelow] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
+  const [showTextSettings, setShowTextSettings] = useState(false);
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
   // entire phone screen — the toolbar rows and the selected-element panel
@@ -511,6 +512,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
   const dimColor = level.dimColor || "#4A4A46";
+  // Door/window gap dimensions (wallDimensions, below) get their own pair
+  // of colors instead of sharing dimColor (that one's for the OTHER
+  // dimension kind — the parallel-wall distances), so a door-adjacent
+  // measurement and a window-adjacent one can be told apart at a glance.
+  const doorDimColor = level.doorDimColor || "#4A4A46";
+  const windowDimColor = level.windowDimColor || "#4A4A46";
+  const dimFontSize = toNum(level.dimFontSize, 7.5);
+  const roomNameFontSize = toNum(level.roomNameFontSize, 10);
+  const tagFontSize = toNum(level.tagFontSize, 7);
+  const tagColor = level.tagColor || "#4A4A46";
   const elements = level.sketchElements || [];
   const wallsById = {};
   elements.filter(e => e.type === "wall").forEach(w => { wallsById[w.id] = w; });
@@ -2126,10 +2137,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     });
     const ivs = [...openIvs, ...joinIvs].sort((a, b) => a.start - b.start);
     if (!ivs.length) return null;
+    // A gap bounded by a door on one side and a window on the other is rare
+    // enough (and ambiguous enough) that it isn't worth resolving — the
+    // "after" opening (already tracked for the nudge key) wins ties.
+    const openingTypeById = {};
+    opens.forEach(o => { openingTypeById[o.id] = o.type; });
+    const gapColor = (afterId, beforeId) => {
+      const t = openingTypeById[afterId] || openingTypeById[beforeId];
+      return t === "door" ? doorDimColor : t === "window" ? windowDimColor : "#4A4A46";
+    };
     const gaps = [];
-    let cursor = startInset;
-    ivs.forEach(iv => { if (iv.start - cursor > 3) gaps.push({ start: cursor, end: iv.start, afterOpeningId: iv.id }); cursor = Math.max(cursor, iv.end); });
-    if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null });
+    let cursor = startInset, prevId = null;
+    ivs.forEach(iv => {
+      if (iv.start - cursor > 3) gaps.push({ start: cursor, end: iv.start, afterOpeningId: iv.id, beforeOpeningId: prevId });
+      if (iv.end > cursor) { cursor = iv.end; prevId = iv.id; }
+    });
+    if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null, beforeOpeningId: prevId });
     return gaps.map((g, i) => {
       const { start: s, end: e2 } = g;
       const key = g.afterOpeningId || "end";
@@ -2152,19 +2175,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const editable = tool === "selecionar" && selectedId === w.id;
       const startEdit = () => setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy });
       const angleDeg = labelAngleDeg(w);
+      const gc = gapColor(g.afterOpeningId, g.beforeOpeningId);
       return (
         <g key={w.id + "-dim-" + i}>
-          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#4A4A46" strokeWidth="0.75" />
-          <line x1={p1.x - nx * 4} y1={p1.y - ny * 4} x2={p1.x + nx * 4} y2={p1.y + ny * 4} stroke="#4A4A46" strokeWidth="0.75" />
-          <line x1={p2.x - nx * 4} y1={p2.y - ny * 4} x2={p2.x + nx * 4} y2={p2.y + ny * 4} stroke="#4A4A46" strokeWidth="0.75" />
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={gc} strokeWidth="0.75" />
+          <line x1={p1.x - nx * 4} y1={p1.y - ny * 4} x2={p1.x + nx * 4} y2={p1.y + ny * 4} stroke={gc} strokeWidth="0.75" />
+          <line x1={p2.x - nx * 4} y1={p2.y - ny * 4} x2={p2.x + nx * 4} y2={p2.y + ny * 4} stroke={gc} strokeWidth="0.75" />
           <g transform={`rotate(${angleDeg} ${midX} ${midY - 3})`}>
             {editable && (
-              <rect x={midX - 12} y={midY - 12} width="24" height="12" fill={isEditing ? "#4A4A46" : "transparent"} opacity={isEditing ? 0.3 : 1}
+              <rect x={midX - 12} y={midY - 12} width="24" height="12" fill={isEditing ? gc : "transparent"} opacity={isEditing ? 0.3 : 1}
                 style={{ cursor: "move" }}
                 onMouseDown={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)}
                 onTouchStart={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)} />
             )}
-            <text x={midX} y={midY - 3} fontSize="7.5" fill="#4A4A46" textAnchor="middle"
+            <text x={midX} y={midY - 3} fontSize={dimFontSize} fill={gc} textAnchor="middle"
               style={{ pointerEvents: "none" }}>{lenM}</text>
           </g>
         </g>
@@ -2254,6 +2278,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
                 className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
             </span>
+            <button onClick={() => setShowTextSettings(s => !s)} title="Cores e tamanhos de texto"
+              className="flex items-center justify-center p-1.5 rounded"
+              style={{ background: showTextSettings ? C.goldTint : C.panelAlt, border: `1px solid ${showTextSettings ? C.gold : C.line}` }}>
+              <Type size={13} color={showTextSettings ? C.gold : C.chalk} />
+            </button>
             {belowLevel && (
               <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
             )}
@@ -2263,6 +2292,47 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           </div>
         )}
       </div>
+      {planMode === "piso" && showTextSettings && (
+        <div className="flex flex-col gap-2 p-2.5 rounded-lg mb-2 text-[11px]" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+          <div className="flex items-center flex-wrap gap-3">
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Cota portas
+              <input type="color" value={doorDimColor} onChange={e => onMeta({ doorDimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Cota janelas
+              <input type="color" value={windowDimColor} onChange={e => onMeta({ windowDimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Etiqueta porta/janela
+              <input type="color" value={tagColor} onChange={e => onMeta({ tagColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+          </div>
+          <div className="flex items-center flex-wrap gap-3">
+            {[
+              { label: "Tam. cota", value: dimFontSize, key: "dimFontSize", step: 0.5, min: 5, max: 12 },
+              { label: "Tam. nome do ambiente", value: roomNameFontSize, key: "roomNameFontSize", step: 1, min: 7, max: 18 },
+              { label: "Tam. etiqueta porta/janela", value: tagFontSize, key: "tagFontSize", step: 0.5, min: 6, max: 11 },
+            ].map(f => (
+              <span key={f.key} className="flex items-center gap-1" style={{ color: C.mute }}>
+                {f.label}
+                <button onClick={() => onMeta({ [f.key]: Math.max(f.min, +(f.value - f.step).toFixed(1)) })}
+                  className="w-5 h-5 flex items-center justify-center rounded" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                  <Minus size={10} color={C.chalk} />
+                </button>
+                <span className="w-6 text-center" style={{ ...mono, color: C.chalk }}>{f.value}</span>
+                <button onClick={() => onMeta({ [f.key]: Math.min(f.max, +(f.value + f.step).toFixed(1)) })}
+                  className="w-5 h-5 flex items-center justify-center rounded" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                  <Plus size={10} color={C.chalk} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Voltar/Avançar/Desfazer exclusão/Tudo pulled up here, right under
           the tool icons — they act on the sketch as a whole (not on
           whatever's currently selected below the canvas), so they belong
@@ -2444,14 +2514,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const centroid = polygonCentroid(el.points);
           const lines = wrapTextLines(el.name || "Ambiente sem nome", 14);
           const totalLines = lines.length + 1;
-          const lineHeight = 11;
+          const lineHeight = roomNameFontSize + 1;
           const lx = centroid.x + (el.labelOffset?.dx ?? 0);
           const ly = centroid.y + (el.labelOffset?.dy ?? 0);
           const topY = ly - ((totalLines - 1) * lineHeight) / 2;
           const rot = el.labelRotation || 0;
           const isSel = selectedId === el.id;
           const longest = Math.max(...lines.map(l => l.length), String(el.area).length + 3);
-          const hitW = longest * 5.6 + 10, hitH = totalLines * lineHeight + 8;
+          const hitW = longest * roomNameFontSize * 0.56 + 10, hitH = totalLines * lineHeight + 8;
           // Demolição/Nova show every room already scoped to that phase
           // (roomsForRender), so tinting the fill and outline to match the
           // wall's own red/green needs no extra per-room check here.
@@ -2470,8 +2540,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 onTouchStart={phaseView === "final" ? undefined : (e => startLabelDrag(el, e))}
                 transform={rot ? `rotate(${rot} ${lx} ${ly})` : undefined}>
                 <rect x={lx - hitW / 2} y={ly - hitH / 2} width={hitW} height={hitH} fill="rgba(255,255,255,0.001)" />
-                {lines.map((ln, i) => <text key={i} x={lx} y={topY + i * lineHeight} fontSize="10" fontWeight="600" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>{ln}</text>)}
-                <text x={lx} y={topY + lines.length * lineHeight} fontSize="9" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>{el.area} m²</text>
+                {lines.map((ln, i) => <text key={i} x={lx} y={topY + i * lineHeight} fontSize={roomNameFontSize} fontWeight="600" fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>{ln}</text>)}
+                <text x={lx} y={topY + lines.length * lineHeight} fontSize={roomNameFontSize - 1} fill="#4A4A46" textAnchor="middle" style={{ pointerEvents: "none" }}>{el.area} m²</text>
               </g>
             </g>
           );
@@ -2729,7 +2799,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   x2={el.x - widthPx / 2 + panelWidthPx * (i + 1)} y2={el.y + 3.5}
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
-              <text x={el.x} y={el.y - 14} fontSize="9" fill={phaseStyleColor(el) || "#6b6660"} textAnchor="middle">{el.tag ? `${el.tag} · ` : ""}{el.width}×{el.height} · {panels}f</text>
+              <g transform={el.tagRotation ? `rotate(${el.tagRotation} ${el.x} ${el.y - 14})` : undefined}>
+                <text x={el.x} y={el.y - 14} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.tag ? `${el.tag} · ` : ""}{el.width}×{el.height} · {panels}f</text>
+              </g>
             </g>
           );
         })}
@@ -2858,6 +2930,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 : <TypeSelect value={selected.windowType || WINDOW_TYPES[0]} options={WINDOW_TYPES} onChange={v => patchSelected({ windowType: v })} />}
               <NumField value={selected.panels || 1} onChange={v => patchSelected({ panels: v })} unit="folhas" w="w-10" />
               <PhaseToggles demolir={selected.demolir} construir={selected.construir} onChange={patchSelected} />
+              <button onClick={() => patchSelected({ tagRotation: ((selected.tagRotation || 0) + 90) % 360 })}
+                className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                <RotateCcw size={11} /> Girar etiqueta 90°
+              </button>
             </div>
           )}
           {(selected.type === "door" || selected.type === "window") && (
