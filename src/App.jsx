@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, Rotate3d, Box, Home,
-  DoorOpen, Scissors
+  DoorOpen, Scissors, Table2
 } from "lucide-react";
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
@@ -15,6 +15,7 @@ import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import JoinScreen from "./JoinScreen.jsx";
 import VectorSketch from "./VectorSketch.jsx";
 import ElevationView from "./ElevationView.jsx";
+import TablesTab from "./TablesTab.jsx";
 import SyncTab from "./SyncTab.jsx";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES } from "./constants.js";
 import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ } from "./geometry.js";
@@ -774,6 +775,30 @@ export default function PranchetaBIM() {
   function removeLevelElement(levelId, elementId) {
     updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.filter(e => e.id !== elementId) }));
   }
+  // A wall's length isn't its own stored field — it's the distance between
+  // x1/y1 and x2/y2, with `length` just a cached label of that (same as
+  // VectorSketch's own setWallLengthDirect). Editing it from the Tabelas
+  // tab has to move x2/y2 the same way, keeping x1/y1 and the wall's
+  // existing direction fixed, or the number in the table would change
+  // while the wall drawn in the Croqui and the 3D view stayed exactly the
+  // size it was — the table's whole point is that editing here IS editing
+  // the model, not a second copy of it.
+  function resizeWallLength(levelId, wallId, newLenM) {
+    updateLevels(ls => ls.map(l => {
+      if (l.id !== levelId) return l;
+      const scale = toNum(l.sketchScale, 0.5);
+      return {
+        ...l, sketchElements: l.sketchElements.map(e => {
+          if (e.id !== wallId || e.type !== "wall") return e;
+          const dx = e.x2 - e.x1, dy = e.y2 - e.y1, len = Math.hypot(dx, dy) || 1;
+          const ux = dx / len, uy = dy / len;
+          const newLenPx = Math.max(4, (toNum(newLenM) / scale) * GRID);
+          const x2 = e.x1 + ux * newLenPx, y2 = e.y1 + uy * newLenPx;
+          return { ...e, x2, y2, length: +(((newLenPx) / GRID) * scale).toFixed(2) };
+        }),
+      };
+    }));
+  }
 
   function markLocation(roomId) {
     if (!navigator.geolocation) { pushLog("Dispositivo sem GPS disponível.", "info"); return; }
@@ -1264,6 +1289,7 @@ export default function PranchetaBIM() {
     { id: "croqui", label: "Croqui", Icon: Pencil },
     { id: "modelo", label: "Elementos", Icon: Rotate3d },
     { id: "ambientes", label: "Ambientes", Icon: LayoutGrid },
+    { id: "tabelas", label: "Tabelas", Icon: Table2 },
     { id: "sync", label: "Sincronização", Icon: RefreshCw },
   ];
 
@@ -1889,6 +1915,12 @@ export default function PranchetaBIM() {
             )}
 
           </div>
+        )}
+
+        {tab === "tabelas" && (
+          <TablesTab levels={levels} rooms={rooms}
+            updateLevelElement={updateLevelElement} removeLevelElement={removeLevelElement}
+            resizeWallLength={resizeWallLength} nameRoomPolygon={nameRoomPolygon} />
         )}
 
         {tab === "sync" && (
