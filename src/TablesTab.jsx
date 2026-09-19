@@ -13,10 +13,12 @@ import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallT
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
 
 const SUBS = [
+  { id: "resumo", label: "Resumo" },
   { id: "paredes", label: "Paredes" },
   { id: "portas", label: "Portas" },
   { id: "janelas", label: "Janelas" },
   { id: "ambientes", label: "Ambientes" },
+  { id: "pisos", label: "Pisos" },
 ];
 
 function Th({ children, className = "" }) {
@@ -53,8 +55,64 @@ function NameField({ value, onCommit, w = "w-28" }) {
   );
 }
 
+// Groups items by a field (or by levelName), summing valueFn(item) and
+// counting entries per group — shared by every "Por X" breakdown in the
+// Resumo tab so paredes/pisos/ambientes/portas/janelas all read the same
+// way instead of each rolling its own reduce.
+function groupBy(items, keyFn, valueFn) {
+  const map = {};
+  items.forEach(it => {
+    const k = keyFn(it) || "A definir";
+    if (!map[k]) map[k] = { key: k, count: 0, value: 0 };
+    map[k].count += 1;
+    map[k].value += valueFn(it);
+  });
+  return Object.values(map).sort((a, b) => b.value - a.value);
+}
+function SummaryBlock({ title, unit, items, valueFn, groupField, groupLabel }) {
+  const total = items.reduce((s, it) => s + valueFn(it), 0);
+  const byLevel = groupBy(items, it => it.levelName, valueFn);
+  const byGroup = groupBy(items, it => it[groupField], valueFn);
+  return (
+    <div className="p-3 rounded-lg mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium" style={{ color: C.chalk }}>{title}</span>
+        <span className="text-sm font-semibold" style={{ ...mono, color: C.gold }}>{total.toFixed(1)} {unit}</span>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-[11px] italic" style={{ color: C.mute }}>Nada lançado ainda.</div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-[10px] mb-1" style={{ ...heading, color: C.mute }}>Por nível</div>
+            <div className="space-y-1">
+              {byLevel.map(g => (
+                <div key={g.key} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="truncate" style={{ color: C.chalk }}>{g.key}</span>
+                  <span className="shrink-0" style={{ ...mono, color: C.mute }}>{g.value.toFixed(1)} {unit}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] mb-1" style={{ ...heading, color: C.mute }}>Por {groupLabel}</div>
+            <div className="space-y-1">
+              {byGroup.map(g => (
+                <div key={g.key} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="truncate" style={{ color: C.chalk }}>{g.key}</span>
+                  <span className="shrink-0" style={{ ...mono, color: C.mute }}>{g.count}× · {g.value.toFixed(1)} {unit}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TablesTab({ levels, rooms, updateLevelElement, removeLevelElement, resizeWallLength, nameRoomPolygon }) {
-  const [sub, setSub] = useState("paredes");
+  const [sub, setSub] = useState("resumo");
 
   const rowsOf = (type) => {
     const out = [];
@@ -64,18 +122,27 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
   const walls = sub === "paredes" ? rowsOf("wall") : null;
   const doors = sub === "portas" ? rowsOf("door") : null;
   const windows = sub === "janelas" ? rowsOf("window") : null;
+  const floors = sub === "pisos" ? rowsOf("floor") : null;
 
   // Each room's editable bits (name, area, floor/ceiling finish) actually
   // live on its polygon in sketchElements, not on the rooms[] entry itself
   // (that array just mirrors name/area for the Ambientes tab's own use) —
   // so every edit here needs the polygon's own element+level id, found by
-  // matching roomId back to whichever polygon points at it.
+  // matching roomId back to whichever polygon points at it. The Resumo
+  // tab's own "Ambientes" block needs the same lookup, just read-only, to
+  // pull each room's real area/acabamento instead of the rooms[] mirror.
   const roomPolyByRoomId = {};
-  if (sub === "ambientes") {
+  if (sub === "ambientes" || sub === "resumo") {
     levels.forEach(l => (l.sketchElements || []).forEach(e => {
       if (e.type === "room" && e.roomId) roomPolyByRoomId[e.roomId] = { ...e, levelId: l.id };
     }));
   }
+  const roomSummaryItems = sub === "resumo"
+    ? rooms.map(r => {
+        const poly = roomPolyByRoomId[r.id];
+        return { levelName: r.level, area: toNum(poly?.area ?? r.area, 0), floorFinish: poly?.floorFinish || "A definir" };
+      })
+    : null;
 
   return (
     <div>
@@ -87,6 +154,21 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
           </button>
         ))}
       </div>
+
+      {sub === "resumo" && (
+        <div>
+          <SummaryBlock title="Paredes" unit="m²" items={rowsOf("wall")}
+            valueFn={w => toNum(w.length, 0) * toNum(w.height, 0)} groupField="wallType" groupLabel="tipo" />
+          <SummaryBlock title="Pisos" unit="m²" items={rowsOf("floor")}
+            valueFn={f => toNum(f.area, 0)} groupField="floorType" groupLabel="material" />
+          <SummaryBlock title="Ambientes" unit="m²" items={roomSummaryItems}
+            valueFn={r => r.area} groupField="floorFinish" groupLabel="acabamento de piso" />
+          <SummaryBlock title="Portas" unit="m²" items={rowsOf("door")}
+            valueFn={d => toNum(d.width, 0) * toNum(d.height, 0)} groupField="doorType" groupLabel="família" />
+          <SummaryBlock title="Janelas" unit="m²" items={rowsOf("window")}
+            valueFn={w => toNum(w.width, 0) * toNum(w.height, 0)} groupField="windowType" groupLabel="família" />
+        </div>
+      )}
 
       {sub === "paredes" && (
         <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${C.line}` }}>
@@ -189,6 +271,29 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {sub === "pisos" && (
+        <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${C.line}` }}>
+          <table className="w-full border-collapse">
+            <thead><tr>
+              <Th>Nível</Th><Th>Material</Th><Th>Área (m²)</Th><Th>Cor</Th><Th></Th>
+            </tr></thead>
+            <tbody>
+              {floors.length === 0 && <EmptyRow span={5} msg="Nenhum piso lançado ainda." />}
+              {floors.map(f => (
+                <tr key={f.id}>
+                  <Td>{f.levelName}</Td>
+                  <Td><TypeSelect value={f.floorType || FLOOR_TYPES[0]} options={FLOOR_TYPES} onChange={v => updateLevelElement(f.levelId, f.id, { floorType: v })} /></Td>
+                  <Td>{toNum(f.area, 0).toFixed(1)}</Td>
+                  <Td><input type="color" value={f.floorColor || "#B08A5C"} onChange={e => updateLevelElement(f.levelId, f.id, { floorColor: e.target.value })}
+                    className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} /></Td>
+                  <Td><button onClick={() => removeLevelElement(f.levelId, f.id)}><Trash2 size={12} color={C.mute} /></button></Td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
