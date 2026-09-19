@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -486,6 +486,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // should reach — extendSourceId holds the first tap between the two.
   const [extendSourceId, setExtendSourceId] = useState(null);
   const [extendMsg, setExtendMsg] = useState("");
+  // "Alinhar": tap the wall to align TO (reference, stays put), then tap
+  // the wall that should move to line up with it — same two-tap pattern
+  // as Estender, just a parallel-offset correction instead of a
+  // stretch/shrink to a meeting point.
+  const [alignRefId, setAlignRefId] = useState(null);
+  const [alignMsg, setAlignMsg] = useState("");
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
   // entire phone screen — the toolbar rows and the selected-element panel
@@ -1153,6 +1159,21 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       return;
     }
 
+    if (tool === "alinhar") {
+      const hit = findAt(p);
+      if (!hit || hit.type !== "wall") return;
+      // First tap: the wall to align TO (the reference, stays put).
+      // Second tap: the wall to MOVE so it lines up with the reference.
+      if (!alignRefId) { setAlignRefId(hit.id); setAlignMsg(""); return; }
+      if (hit.id === alignRefId) { setAlignRefId(null); return; }
+      const ref = wallsById[alignRefId];
+      setAlignRefId(null);
+      if (!ref) return;
+      const err = alignWallTo(hit, ref);
+      setAlignMsg(err || "");
+      return;
+    }
+
     if (tool === "apagar") {
       const target = findAt(p);
       if (!target) return;
@@ -1469,6 +1490,34 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const movingEnd = d1sq < d2sq ? "start" : "end";
     const oldMoving = movingEnd === "start" ? { x: wall.x1, y: wall.y1 } : { x: wall.x2, y: wall.y2 };
     moveWallEndAndLinked(wall.id, movingEnd, oldMoving, { x: ix, y: iy });
+    return null;
+  }
+  // "Alinhar": shifts `target` sideways (perpendicular to its own line) by
+  // exactly the offset needed to make it collinear with `ref` — same
+  // simple "move the whole wall" semantics as dragging it by hand (its
+  // own doors/windows carried along, no attempt to drag along whatever
+  // else was touching its old corners), just computed instead of eyeballed.
+  // Only makes sense between two roughly parallel walls — a corridor wall
+  // continued in a separate segment that ended up a hair off the same
+  // line, not two walls meeting at a corner (that's what Estender/the
+  // endpoint snap are for).
+  function alignWallTo(target, ref) {
+    const tdx = target.x2 - target.x1, tdy = target.y2 - target.y1;
+    const rdx = ref.x2 - ref.x1, rdy = ref.y2 - ref.y1;
+    const tlen = Math.hypot(tdx, tdy) || 1, rlen = Math.hypot(rdx, rdy) || 1;
+    const tux = tdx / tlen, tuy = tdy / tlen, rux = rdx / rlen, ruy = rdy / rlen;
+    const cross = tux * ruy - tuy * rux;
+    if (Math.abs(cross) > 0.05) return "Essas paredes não são paralelas — não dá para alinhar.";
+    const nx = -ruy, ny = rux;
+    const offset = (target.x1 - ref.x1) * nx + (target.y1 - ref.y1) * ny;
+    if (Math.abs(offset) < 1) return "Essas paredes já estão alinhadas.";
+    const nx1 = target.x1 - nx * offset, ny1 = target.y1 - ny * offset;
+    const nx2 = target.x2 - nx * offset, ny2 = target.y2 - ny * offset;
+    commitElements(elements.map(el => {
+      if (el.id === target.id) return { ...el, x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
+      if (el.wallId === target.id) return { ...el, x: el.x - nx * offset, y: el.y - ny * offset };
+      return el;
+    }));
     return null;
   }
   function moveOpeningAlongWall(el, newPosM) {
@@ -2332,6 +2381,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "escada", label: "Escada", Icon: StairsIcon },
     { id: "cortar", label: "Cortar parede", Icon: Scissors },
     { id: "estender", label: "Estender parede", Icon: ArrowLeftRight },
+    { id: "alinhar", label: "Alinhar paredes", Icon: AlignCenterVertical },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
   const FORRO_TOOLS = [
@@ -2341,6 +2391,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
   const TOOLS = planMode === "forro" ? FORRO_TOOLS : PISO_TOOLS;
+  // "Apagar tudo" is injected into the tools row itself right before the
+  // single-element eraser tool (always the last entry in both lists) —
+  // works the same in Piso ("...cortar, estender, apagar") and Forro
+  // ("...luminária, apagar") instead of hardcoding one tool's id.
+  const clearAllAfterId = TOOLS[TOOLS.length - 2]?.id;
 
   const content = (
     <div>
@@ -2374,21 +2429,34 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const active = tool === id;
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
-            <button key={id} onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); }} title={label}
-              className="flex items-center justify-center p-2 rounded"
-              style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
-              <Icon size={16} />
-            </button>
+            <span key={id} className="contents">
+              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRefId(null); setAlignMsg(""); }} title={label}
+                className="flex items-center justify-center p-2 rounded"
+                style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
+                <Icon size={16} />
+              </button>
+              {/* "Apagar tudo" (clear the whole sketch) sits right here,
+                  beside Estender — it used to have its own separate row
+                  below with Voltar/Avançar/Desfazer exclusão, which was
+                  the biggest remaining chunk of dead space above the
+                  canvas since a tool-icon-sized button fits right into
+                  this row's own wrap instead. */}
+              {id === clearAllAfterId && (
+                <button onClick={clearAll} title="Apagar tudo" className="flex items-center justify-center p-2 rounded" style={{ background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </span>
           );
         })}
       </div>
-      {/* Voltar/Avançar/Desfazer exclusão/Apagar tudo (sketch-wide, not
-          tied to whatever's currently selected) share this one row with
-          the cor-das-cotas group instead of each getting their own —
-          two rows here just to hold a handful of small icon buttons was
-          the biggest chunk of dead space above the canvas. Cor das cotas
-          keeps its ml-auto (right side when there's room, its own
-          wrapped line once there isn't). */}
+      {/* Voltar/Avançar/Desfazer exclusão (sketch-wide, not tied to
+          whatever's currently selected) share this one row with the
+          cor-das-cotas group instead of each getting their own — a row
+          just to hold a handful of small icon buttons was a big chunk of
+          dead space above the canvas. Cor das cotas keeps its ml-auto
+          (right side when there's room, its own wrapped line once there
+          isn't). */}
       <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
         <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
           <Undo2 size={13} />
@@ -2403,20 +2471,23 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           style={{ background: deletedStack.length ? C.goldTint : C.panelAlt, color: deletedStack.length ? C.gold : C.muteDim, border: `1px solid ${deletedStack.length ? C.gold : C.line}`, opacity: deletedStack.length ? 1 : 0.5 }}>
           <RotateCcw size={13} />
         </button>
-        <button onClick={clearAll} title="Apagar tudo" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.bad, border: `1px solid ${C.line}` }}>
-          <Trash2 size={13} />
-        </button>
         {planMode === "piso" && (
           <div className="flex items-center flex-wrap gap-2 text-[10px] ml-auto" style={{ color: C.mute }}>
             <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
-              <Ruler size={11} />
+              <Ruler size={11} /> Cotas
               <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
                 className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
             </span>
+            {/* This is also where the door/window dimension COLORS, the
+                door/window dimension FONT SIZE, the room-name font size,
+                the door/window tag font size and the sketch's FONT FAMILY
+                all live — easy to miss as a bare "T" icon, so it gets its
+                own short label instead of relying on the title tooltip
+                alone (a tooltip a touchscreen never shows). */}
             <button onClick={() => setShowTextSettings(s => !s)} title="Cores e tamanhos de texto"
-              className="flex items-center justify-center p-1.5 rounded"
-              style={{ background: showTextSettings ? C.goldTint : C.panelAlt, border: `1px solid ${showTextSettings ? C.gold : C.line}` }}>
-              <Type size={13} color={showTextSettings ? C.gold : C.chalk} />
+              className="flex items-center gap-1 px-1.5 py-1 rounded"
+              style={{ background: showTextSettings ? C.goldTint : C.panelAlt, border: `1px solid ${showTextSettings ? C.gold : C.line}`, color: showTextSettings ? C.gold : C.chalk }}>
+              <Type size={13} /> Cores/fontes
             </button>
             {belowLevel && (
               <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
@@ -2543,6 +2614,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       {tool === "estender" && planMode === "piso" && (
         <div className="mb-2 text-[10px]" style={{ color: extendMsg ? C.bad : C.mute }}>
           {extendMsg || (extendSourceId ? "Agora toque na parede que ela deve alcançar." : "Toque na parede que quer esticar ou encolher.")}
+        </div>
+      )}
+
+      {tool === "alinhar" && planMode === "piso" && (
+        <div className="mb-2 text-[10px]" style={{ color: alignMsg ? C.bad : C.mute }}>
+          {alignMsg || (alignRefId ? "Agora toque na parede que deve se mover para alinhar." : "Toque na parede de referência (a que fica parada).")}
         </div>
       )}
 
@@ -2747,9 +2824,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={extendSourceId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
-              strokeWidth={selectedId === el.id || extendSourceId === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={extendSourceId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
+              stroke={extendSourceId === el.id || alignRefId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
+              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRefId === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={extendSourceId === el.id || alignRefId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
