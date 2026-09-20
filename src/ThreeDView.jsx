@@ -732,17 +732,47 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       // same idea a CAD/BIM viewer's own selection highlight uses.
       const SELECT_COLOR = 0x6FC3E8;
       const wireMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, wireframe: true, transparent: true, opacity: 0.85 });
+      // Distinct id for whatever a mesh actually represents (a wall, a
+      // door/window, or a floor zone) — used to collapse a ray's several
+      // hits down to one per real element, so tap-cycling below (see
+      // lastTapScreen) never re-lands on two segments of the same wall in
+      // a row.
+      function elementKey(mesh) {
+        const info = mesh.userData;
+        if (info.kind === "wall") return "wall:" + info.wallId;
+        if (info.kind === "door" || info.kind === "window") return info.kind + ":" + info.wallTag + ":" + info.tag;
+        return "obj:" + mesh.uuid;
+      }
+      // A tap only ever raycasts to whatever's NEAREST the camera — with a
+      // building modeled as solid boxes, that's always the outer wall
+      // facing the viewer, so there was no way to reach a wall behind it
+      // or anything inside the building at all. Tapping again at (roughly)
+      // the same screen spot instead steps to the next hit further along
+      // that same ray, same "click again to go deeper" pattern other
+      // BIM/CAD viewers use for occluded geometry.
+      let lastTapScreen = null, lastHitIndex = -1;
       function trySelect(clientX, clientY) {
         const rect = el.getBoundingClientRect();
         ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
         ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(ndc, camera);
-        const hits = raycaster.intersectObjects(selectableMeshes);
+        const rawHits = raycaster.intersectObjects(selectableMeshes);
+        const seen = new Set();
+        const hits = rawHits.filter(h => {
+          const key = elementKey(h.object);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         clearHighlight();
-        if (!hits.length) { setSelectedWallInfo(null); return; }
-        const mesh = hits[0].object;
+        if (!hits.length) { setSelectedWallInfo(null); lastTapScreen = null; lastHitIndex = -1; return; }
+        const sameSpot = lastTapScreen && Math.hypot(clientX - lastTapScreen.x, clientY - lastTapScreen.y) < 20;
+        const hitIndex = sameSpot ? (lastHitIndex + 1) % hits.length : 0;
+        lastTapScreen = { x: clientX, y: clientY };
+        lastHitIndex = hitIndex;
+        const mesh = hits[hitIndex].object;
         const info = mesh.userData;
-        setSelectedWallInfo(info);
+        setSelectedWallInfo({ ...info, _hitIndex: hitIndex, _hitTotal: hits.length });
         dimensionGroup = new THREE.Group();
         if (info.kind === "wall") {
           // A wireframe box spanning the WHOLE wall's own centerline (not
@@ -977,6 +1007,11 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
             {selectedWallInfo.kind === "floor" && (
               <div className="space-y-1" style={{ color: C.mute }}>
                 <div>Área: <span style={{ color: C.chalk }}>{selectedWallInfo.areaM2} m²</span></div>
+              </div>
+            )}
+            {selectedWallInfo._hitTotal > 1 && (
+              <div className="mt-1.5 pt-1.5" style={{ color: C.gold, borderTop: `1px solid ${C.line}` }}>
+                {selectedWallInfo._hitIndex + 1} de {selectedWallInfo._hitTotal} neste ponto — toque de novo no mesmo lugar para ver o próximo (atrás/dentro).
               </div>
             )}
           </div>
