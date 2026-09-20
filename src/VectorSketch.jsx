@@ -257,6 +257,117 @@ const COTA_MODE_LABEL = {
   face: "Face a face", eixo: "Eixo a eixo", faceExt: "Face ext. a face ext.",
   espessura: "Espessura da parede", opening: "Largura (porta/janela)",
 };
+// Same room-membership test App.jsx's own wallSpanForRoom/isWallExterior
+// use, duplicated here (VectorSketch never imports from App.jsx) so the
+// automatic perimeter dimensioning below can tell an exterior wall from an
+// interior partition on its own. Kept minimal: only what this file needs.
+function wallSpanForRoomLocal(wall, room, scale) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  const halfThickPx = (wallThicknessM(wall) / 2 / scale) * GRID;
+  const tolerance = halfThickPx + GRID * 0.6;
+  const along = room.points
+    .map(p => {
+      const relX = p.x - wall.x1, relY = p.y - wall.y1;
+      return { pos: relX * ux + relY * uy, perp: Math.abs(relX * nx + relY * ny) };
+    })
+    .filter(p => p.perp <= tolerance)
+    .map(p => p.pos);
+  if (!along.length) return null;
+  return { startPx: Math.max(0, Math.min(...along)), endPx: Math.min(len, Math.max(...along)) };
+}
+function isWallExteriorLocal(wall, rooms, scale) {
+  if (!rooms.length) return true;
+  const spans = rooms.map(r => wallSpanForRoomLocal(wall, r, scale)).filter(Boolean);
+  if (spans.length <= 1) return true;
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const fullLen = Math.hypot(dx, dy) || 1;
+  const overallStart = Math.min(...spans.map(s => s.startPx));
+  const overallEnd = Math.max(...spans.map(s => s.endPx));
+  const points = Array.from(new Set([overallStart, overallEnd, ...spans.flatMap(s => [s.startPx, s.endPx])])).sort((a, b) => a - b);
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    if (b - a < 1) continue;
+    const mid = (a + b) / 2;
+    const coverCount = spans.filter(s => mid >= s.startPx && mid <= s.endPx).length;
+    if (coverCount <= 1) return true;
+  }
+  return false;
+}
+// Which perpendicular direction actually points OUT of the building, for a
+// wall run whose other side has no traced room to anchor against (or none
+// at all) — probes both sides for "is this inside some room", and falls
+// back to whichever side sits farther from the whole drawing's own
+// centroid so an untraced building still gets a sane outward direction.
+function outwardNormalForRun(run, elements) {
+  const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  const mid = { x: (run.x1 + run.x2) / 2, y: (run.y1 + run.y2) / 2 };
+  const rooms = elements.filter(e => e.type === "room");
+  const insideAt = (p) => rooms.some(r => pointInPolygon(p, r.points));
+  const TEST_D = 20;
+  const posSide = { x: mid.x + nx * TEST_D, y: mid.y + ny * TEST_D };
+  const negSide = { x: mid.x - nx * TEST_D, y: mid.y - ny * TEST_D };
+  const posIn = insideAt(posSide), negIn = insideAt(negSide);
+  if (posIn && !negIn) return { nx: -nx, ny: -ny };
+  if (negIn && !posIn) return { nx, ny };
+  const wallPts = elements.filter(e => e.type === "wall").flatMap(w => [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }]);
+  if (!wallPts.length) return { nx, ny };
+  const cx = wallPts.reduce((s, p) => s + p.x, 0) / wallPts.length, cy = wallPts.reduce((s, p) => s + p.y, 0) / wallPts.length;
+  const dPos = Math.hypot(posSide.x - cx, posSide.y - cy), dNeg = Math.hypot(negSide.x - cx, negSide.y - cy);
+  return dPos > dNeg ? { nx, ny } : { nx: -nx, ny: -ny };
+}
+// Every door/window whose center sits on (or very near) this merged run's
+// own centerline, positioned along the run's own axis — used to break the
+// run into the corner/opening chain a construction drawing always cotas
+// along a building's own perimeter. Matched by proximity rather than
+// wallId, since a run merges several original wall segments into one.
+function wallRunOpenings(run, elements) {
+  const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  return elements
+    .filter(e => e.type === "door" || e.type === "window")
+    .map(o => {
+      const relX = o.x - run.x1, relY = o.y - run.y1;
+      return { o, pos: relX * ux + relY * uy, perp: Math.abs(relX * nx + relY * ny) };
+    })
+    .filter(x => x.perp < GRID * 0.35 && x.pos > -GRID && x.pos < len + GRID);
+}
+// The two automatic dimension rows a real construction drawing always
+// carries around a building's own perimeter — nearestParallelWallDims only
+// ever measures BETWEEN two facing walls (a room's own span), never a
+// single exterior wall's own run broken into its corners and openings, so
+// this is the piece that was actually missing. For every exterior wall
+// run: a close "chain" (corner→opening→opening→corner, matching every
+// tick a real drawing places along the wall) plus one further-out
+// "overall" dimension spanning the whole run.
+function exteriorPerimeterChains(elements, scale) {
+  const rooms = elements.filter(e => e.type === "room");
+  const exteriorWalls = elements.filter(e => e.type === "wall").filter(w => isWallExteriorLocal(w, rooms, scale));
+  if (!exteriorWalls.length) return [];
+  const runs = mergeCollinearWallRuns(exteriorWalls);
+  return runs.map(run => {
+    const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
+    if (len < GRID) return null;
+    const ux = dx / len, uy = dy / len;
+    const halfThickPx = (wallThicknessM(run) / 2 / scale) * GRID;
+    const points = new Set([0, len]);
+    wallRunOpenings(run, elements).forEach(({ o, pos }) => {
+      const halfW = (toNum(o.width, 0.8) / 2 / scale) * GRID;
+      points.add(Math.max(0, pos - halfW));
+      points.add(Math.min(len, pos + halfW));
+    });
+    const sorted = Array.from(points).sort((a, b) => a - b);
+    const segs = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i], b = sorted[i + 1];
+      if (b - a < GRID * 0.15) continue;
+      segs.push({ a, b });
+    }
+    const { nx, ny } = outwardNormalForRun(run, elements);
+    return { id: run.id, tag: run.tag, x1: run.x1, y1: run.y1, ux, uy, nx, ny, halfThickPx, len, segs };
+  }).filter(Boolean);
+}
 // Auto-traces a room polygon by flood-filling the open floor area starting
 // from a clicked point, stopping at wall faces — the "click inside" room
 // tool, as opposed to tracing each corner by hand. Works on a grid finer
@@ -3198,6 +3309,52 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 {dimLabelOpaqueBg && <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                 <text x={labelX} y={labelY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
                   style={{ pointerEvents: "none" }}>{faceDistM} m</text>
+              </g>
+            </g>
+          );
+        })}
+        {planMode === "piso" && exteriorPerimeterChains(
+          elements.filter(e => (e.type !== "wall" && e.type !== "door" && e.type !== "window") || phaseVisible(e)), scale
+        ).map(run => {
+          const CHAIN_GAP = 16, OVERALL_GAP = 30;
+          const chainOffset = run.halfThickPx + CHAIN_GAP;
+          const overallOffset = chainOffset + OVERALL_GAP;
+          let dimDeg = Math.atan2(run.uy, run.ux) * 180 / Math.PI;
+          if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
+          const at = (t, offset) => ({ x: run.x1 + run.ux * t + run.nx * offset, y: run.y1 + run.uy * t + run.ny * offset });
+          const overallP1 = at(0, overallOffset), overallP2 = at(run.len, overallOffset), overallMid = at(run.len / 2, overallOffset);
+          const totalM = (run.len / GRID) * scale;
+          return (
+            <g key={`ext-${run.id}`} opacity="0.9" pointerEvents="none">
+              {/* Chain row: every corner-to-opening/opening-to-opening gap
+                  along this exterior run — the "blue" annotations, hugging
+                  right outside the wall. */}
+              {run.segs.map((seg, i) => {
+                const p1 = at(seg.a, chainOffset), p2 = at(seg.b, chainOffset);
+                const mid = at((seg.a + seg.b) / 2, chainOffset);
+                const segM = ((seg.b - seg.a) / GRID) * scale;
+                return (
+                  <g key={i}>
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={dimColor} strokeWidth="0.75" />
+                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" />
+                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" />
+                    <g transform={dimDeg ? `rotate(${dimDeg} ${mid.x} ${mid.y})` : undefined}>
+                      {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" />}
+                      <text x={mid.x} y={mid.y + 1} fontSize={Math.max(6, dimFontSize - 1.5)} fill={dimColor} textAnchor="middle">{segM.toFixed(2)}</text>
+                    </g>
+                  </g>
+                );
+              })}
+              {/* Overall row: this run's whole length, corner to corner —
+                  the "red" annotation, further out past the chain. */}
+              <g>
+                <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={dimColor} strokeWidth="1" />
+                <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={dimColor} strokeWidth="1" />
+                <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={dimColor} strokeWidth="1" />
+                <g transform={dimDeg ? `rotate(${dimDeg} ${overallMid.x} ${overallMid.y})` : undefined}>
+                  {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" />}
+                  <text x={overallMid.x} y={overallMid.y + 1} fontSize={dimFontSize} fill={dimColor} textAnchor="middle" fontWeight="700">{totalM.toFixed(2)} m</text>
+                </g>
               </g>
             </g>
           );
