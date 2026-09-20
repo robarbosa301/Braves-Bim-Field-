@@ -351,18 +351,25 @@ function exteriorPerimeterChains(elements, scale) {
     if (len < GRID) return null;
     const ux = dx / len, uy = dy / len;
     const halfThickPx = (wallThicknessM(run) / 2 / scale) * GRID;
-    const points = new Set([0, len]);
-    wallRunOpenings(run, elements).forEach(({ o, pos }) => {
+    // Each opening contributes its own [start,end] edges as breakpoints —
+    // kept alongside the corners so a segment that exactly reproduces one
+    // opening's own span can be tagged "door"/"window" below, instead of
+    // every segment reading as a generic wall gap (a door's own width row
+    // needs the door's own cota color/size, same as everywhere else in the
+    // app that dimensions an opening — Elevação, the manual Cota tool).
+    const openingSpans = wallRunOpenings(run, elements).map(({ o, pos }) => {
       const halfW = (toNum(o.width, 0.8) / 2 / scale) * GRID;
-      points.add(Math.max(0, pos - halfW));
-      points.add(Math.min(len, pos + halfW));
+      return { kind: o.type, start: Math.max(0, pos - halfW), end: Math.min(len, pos + halfW) };
     });
+    const points = new Set([0, len]);
+    openingSpans.forEach(s => { points.add(s.start); points.add(s.end); });
     const sorted = Array.from(points).sort((a, b) => a - b);
     const segs = [];
     for (let i = 0; i < sorted.length - 1; i++) {
       const a = sorted[i], b = sorted[i + 1];
       if (b - a < GRID * 0.15) continue;
-      segs.push({ a, b });
+      const match = openingSpans.find(s => Math.abs(s.start - a) < 1 && Math.abs(s.end - b) < 1);
+      segs.push({ a, b, kind: match ? match.kind : "gap" });
     }
     const { nx, ny } = outwardNormalForRun(run, elements);
     return { id: run.id, tag: run.tag, x1: run.x1, y1: run.y1, ux, uy, nx, ny, halfThickPx, len, segs };
@@ -3385,17 +3392,27 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 const p1 = at(seg.a, chainOffset), p2 = at(seg.b, chainOffset);
                 const mid = at((seg.a + seg.b) / 2, chainOffset);
                 const segM = ((seg.b - seg.a) / GRID) * scale;
+                // A segment that IS a door or window's own width uses that
+                // family's own cota color/size (doorDimColor/windowDimColor,
+                // doorWindowDimFontSize) — the same distinction Elevação and
+                // the manual Cota tool already make — instead of every gap
+                // and every opening reading as one flat "cotas" color, which
+                // made it look like changing one swatch should recolor
+                // everything and never actually did.
+                const segColor = seg.kind === "door" ? doorDimColor : seg.kind === "window" ? windowDimColor : dimColor;
+                const segFontSize = seg.kind === "gap" ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
+                const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : "vão";
                 return (
                   <g key={i}>
-                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={dimColor} strokeWidth="0.75" pointerEvents="none" />
-                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" pointerEvents="none" />
-                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
                     <g transform={dimDeg ? `rotate(${dimDeg} ${mid.x} ${mid.y})` : undefined}>
                       {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
-                      <text x={mid.x} y={mid.y + 1} fontSize={Math.max(6, dimFontSize - 1.5)} fill={dimColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
+                      <text x={mid.x} y={mid.y + 1} fontSize={segFontSize} fill={segColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
                       {tool === "selecionar" && (
                         <rect x={mid.x - 18} y={mid.y - 11} width="36" height="22" fill="transparent" style={{ cursor: "pointer" }}
-                          onMouseDown={pick(segKey, `Cota do vão · ${segM.toFixed(2)} m`)} onTouchStart={pick(segKey, `Cota do vão · ${segM.toFixed(2)} m`)} />
+                          onMouseDown={pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`)} onTouchStart={pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`)} />
                       )}
                     </g>
                   </g>
@@ -3425,8 +3442,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const g = cotaGeometry(el, elements, scale);
           if (!g) return null;
           const nx = -Math.sin(g.lineAngleDeg * Math.PI / 180), ny = Math.cos(g.lineAngleDeg * Math.PI / 180);
-          const color = el.color || dimColor;
-          const fontSize = toNum(el.fontSize, dimFontSize);
+          // A "Porta/janela" cota defaults to that family's own cota color
+          // and size (doorDimColor/windowDimColor, doorWindowDimFontSize —
+          // same ones Elevação and the automatic perimeter chain use for an
+          // opening), not the generic wall-to-wall "Cotas" color, unless the
+          // user picked a color/size of their own for this one cota.
+          const refEl = el.mode === "opening" ? elements.find(e => e.id === el.refId) : null;
+          const defaultColor = refEl?.type === "window" ? windowDimColor : refEl?.type === "door" ? doorDimColor : dimColor;
+          const defaultFontSize = refEl ? doorWindowDimFontSize : dimFontSize;
+          const color = el.color || defaultColor;
+          const fontSize = toNum(el.fontSize, defaultFontSize);
           const isSel = selectedId === el.id;
           return (
             <g key={el.id} opacity={isSel ? 1 : 0.9}>
@@ -3748,6 +3773,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           )}
           {selected.type === "cota" && (() => {
             const g = cotaGeometry(selected, elements, scale);
+            const refEl = selected.mode === "opening" ? elements.find(e => e.id === selected.refId) : null;
+            const defaultColor = refEl?.type === "window" ? windowDimColor : refEl?.type === "door" ? doorDimColor : dimColor;
+            const defaultFontSize = refEl ? doorWindowDimFontSize : dimFontSize;
             return (
               <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: C.chalk }}>
                 <span style={{ color: C.mute }}>Valor:</span>
@@ -3755,12 +3783,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   {g ? (selected.mode === "espessura" ? `${Math.round(g.valueM * 100)} cm` : `${g.valueM.toFixed(2)} m`) : "— (referência apagada)"}
                 </span>
                 <span style={{ color: C.mute }}>Cor:</span>
-                <input type="color" value={selected.color || dimColor} onChange={e => patchSelected({ color: e.target.value })}
+                <input type="color" value={selected.color || defaultColor} onChange={e => patchSelected({ color: e.target.value })}
                   className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
                 {selected.color && (
-                  <button onClick={() => patchSelected({ color: undefined })} className="text-[10px] underline" style={{ color: C.mute }}>usar cor padrão</button>
+                  <button onClick={() => patchSelected({ color: undefined })} className="text-[10px] underline" style={{ color: C.mute }}>usar cor padrão{refEl ? ` (${refEl.type === "window" ? "janela" : "porta"})` : ""}</button>
                 )}
-                <NumField value={toNum(selected.fontSize, dimFontSize)} onChange={v => patchSelected({ fontSize: v })} unit="tam. fonte" w="w-10" />
+                <NumField value={toNum(selected.fontSize, defaultFontSize)} onChange={v => patchSelected({ fontSize: v })} unit="tam. fonte" w="w-10" />
                 <span style={{ color: C.mute }}>Fonte:</span>
                 <select value={selected.fontFamily || level.fontFamily || "padrao"} onChange={e => patchSelected({ fontFamily: e.target.value })}
                   className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>

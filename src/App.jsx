@@ -429,7 +429,7 @@ export function levelToMeters(level) {
     nextElevation: null,
   };
 }
-function levelToMetersForRoom(level, room) {
+export function levelToMetersForRoom(level, room) {
   const poly = (level.sketchElements || []).find(e => e.type === "room" && e.roomId === room.id);
   if (!poly) return null;
   const s = toNum(level.sketchScale, 0.5);
@@ -443,14 +443,45 @@ function levelToMetersForRoom(level, room) {
   // room, which is exactly why this view always came up empty. A wall
   // belongs to this room the same way the Ambientes tab and the Croqui's
   // own wall legend already decide it: which room sits on either face.
-  const roomWalls = els.filter(e => e.type === "wall").filter(w => wallSpanForRoom(level, w, poly.name) !== null);
-  const roomWallIds = new Set(roomWalls.map(w => w.id));
+  // A wall shared with a T-junction/partition doesn't just belong to this
+  // room or not — its own run can run right past a partition into a
+  // completely different room. Standing inside THIS room, only the
+  // sub-span whose face actually borders it is visible, so its two
+  // endpoints get pulled in to that span (same span Elevação already
+  // clips to) before anything downstream sees them — otherwise the whole
+  // wall's full corner-to-corner run reaches into the neighboring room,
+  // and any door/window sitting on that far portion would wrongly tag
+  // along as if it opened into this room too.
+  const roomWallSpans = els.filter(e => e.type === "wall")
+    .map(w => ({ w, span: wallSpanForRoom(level, w, poly.name) }))
+    .filter(x => x.span !== null);
+  const clippedWalls = roomWallSpans.map(({ w, span }) => {
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    return {
+      ...w,
+      x1: w.x1 + ux * span.startPx, y1: w.y1 + uy * span.startPx,
+      x2: w.x1 + ux * span.endPx, y2: w.y1 + uy * span.endPx,
+      _origin: w, _span: span,
+    };
+  });
+  const roomWallIds = new Set(clippedWalls.map(w => w.id));
+  const spanByWallId = new Map(clippedWalls.map(cw => [cw.id, cw]));
+  const openingInSpan = (o) => {
+    const cw = spanByWallId.get(o.wallId);
+    if (!cw) return false;
+    const w = cw._origin, span = cw._span;
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
+    return pos >= span.startPx - 1 && pos <= span.endPx + 1;
+  };
   const inPoly = (x, y) => pointInPolygon({ x, y }, poly.points);
   return {
     elevation: toNum(level.elevation, 0),
-    walls: roomWalls.map(w => wallToM(w, toM)),
-    doors: els.filter(e => e.type === "door" && roomWallIds.has(e.wallId)).map(d => doorToM(d, toM)),
-    windows: els.filter(e => e.type === "window" && roomWallIds.has(e.wallId)).map(w => windowToM(w, toM)),
+    walls: clippedWalls.map(w => wallToM(w, toM)),
+    doors: els.filter(e => e.type === "door" && roomWallIds.has(e.wallId) && openingInSpan(e)).map(d => doorToM(d, toM)),
+    windows: els.filter(e => e.type === "window" && roomWallIds.has(e.wallId) && openingInSpan(e)).map(w => windowToM(w, toM)),
     stairs: els.filter(e => e.type === "stair" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(s2 => stairToM(s2, toM)),
     luminarias: els.filter(e => e.type === "luminaria" && inPoly(e.x, e.y)).map(l => luminariaToM(l, toM)),
     rooms: [roomToM(poly, toM)],

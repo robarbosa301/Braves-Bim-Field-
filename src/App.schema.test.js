@@ -10,6 +10,7 @@ import {
   wallsForRoom,
   isWallExterior,
   buildingElevationStack,
+  levelToMetersForRoom,
 } from "./App.jsx";
 import { conditionColor, phaseColor } from "./theme.js";
 import { wallThicknessM } from "./constants.js";
@@ -143,6 +144,49 @@ describe("buildingElevationStack", () => {
     const onlyLevel = { id: "L1", elevation: 0, sketchScale: "0.5", sketchElements: [{ id: "w1", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0 }] };
     const stack = buildingElevationStack([onlyLevel], onlyLevel, onlyLevel.sketchElements[0]);
     expect(stack).toEqual([{ level: onlyLevel, wall: onlyLevel.sketchElements[0] }]);
+  });
+});
+
+describe("levelToMetersForRoom", () => {
+  // Same T-junction layout used above: the "top" wall runs past the
+  // partition into a completely different room. Before the 3D "Ambiente"
+  // view clipped a member wall's own endpoints to its span for the room
+  // actually being viewed, this always came back with the wall's FULL
+  // corner-to-corner run (and any door/window sitting anywhere on it,
+  // including ones that actually open into the OTHER room) — exactly the
+  // "pegando a parede toda" bug reported for the isolated 3D ambiente view.
+  const level = {
+    sketchScale: "0.5",
+    elevation: 0,
+    sketchElements: [
+      { id: "top", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0, wallType: "Alvenaria 15cm" },
+      { id: "left", type: "wall", x1: 0, y1: 0, x2: 0, y2: 300, wallType: "Alvenaria 15cm" },
+      { id: "partition", type: "wall", x1: 200, y1: 0, x2: 200, y2: 300, wallType: "Alvenaria 15cm" },
+      { id: "right", type: "wall", x1: 400, y1: 0, x2: 400, y2: 300, wallType: "Alvenaria 15cm" },
+      { id: "door-sala", type: "door", wallId: "top", x: 100, y: 0, width: 0.8 },
+      { id: "door-cozinha", type: "door", wallId: "top", x: 300, y: 0, width: 0.8 },
+      { type: "room", roomId: "r-sala", name: "Sala", points: [{ x: 3, y: 3 }, { x: 197, y: 3 }, { x: 197, y: 297 }, { x: 3, y: 297 }] },
+      { type: "room", roomId: "r-cozinha", name: "Cozinha", points: [{ x: 203, y: 3 }, { x: 397, y: 3 }, { x: 397, y: 297 }, { x: 203, y: 297 }] },
+    ],
+  };
+  it("clips the shared T-junction wall to just this room's own span (not its full corner-to-corner run)", () => {
+    const sala = levelToMetersForRoom(level, { id: "r-sala", name: "Sala" });
+    const topInSala = sala.walls.find(w => w.id === "top");
+    expect(topInSala.x1).toBeCloseTo(0.075, 2);
+    expect(topInSala.x2).toBeCloseTo(4.925, 2);
+    expect(topInSala.x2).toBeLessThan(10); // never the wall's own full 10m length
+
+    const cozinha = levelToMetersForRoom(level, { id: "r-cozinha", name: "Cozinha" });
+    const topInCozinha = cozinha.walls.find(w => w.id === "top");
+    expect(topInCozinha.x1).toBeCloseTo(5.075, 2);
+    expect(topInCozinha.x2).toBeCloseTo(9.925, 2);
+  });
+  it("only includes a door/window that actually falls within this room's own clipped span", () => {
+    const sala = levelToMetersForRoom(level, { id: "r-sala", name: "Sala" });
+    expect(sala.doors.map(d => d.id)).toEqual(["door-sala"]);
+
+    const cozinha = levelToMetersForRoom(level, { id: "r-cozinha", name: "Cozinha" });
+    expect(cozinha.doors.map(d => d.id)).toEqual(["door-cozinha"]);
   });
 });
 
