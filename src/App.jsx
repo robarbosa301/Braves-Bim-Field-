@@ -21,7 +21,7 @@ import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES } from ".
 import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ, polygonCentroid } from "./geometry.js";
 import {
   Pill, StatRow,
-  WallRow, DoorRow, WindowRow, FloorRow,
+  WallRow, DoorRow, WindowRow, FloorRow, TypeSelect,
 } from "./ElementRows.jsx";
 
 // Lazy-loaded: three.js (ThreeDView's only real dependency) is one of the
@@ -1884,7 +1884,44 @@ export default function PranchetaBIM() {
 
             {modeloSub === "pisos" && (
               <div className="space-y-4">
-                <p className="text-[11px]" style={{ color: C.mute }}>Lance o piso de cada ambiente aqui — tipo de revestimento, área e condição.</p>
+                {/* Two separate "piso" ideas share this tab: the zones
+                    actually traced in the Croqui with the "Piso" tool
+                    (their own polygon, material, color and area — the
+                    ones that show up in 2D/3D) come first, since those
+                    are what someone drawing in the Croqui expects to find
+                    here; the per-ambiente manual record below (no
+                    geometry of its own, just a material/condição entry
+                    for quantities) is a separate, older piece of data. */}
+                <div>
+                  <p className="text-[11px] mb-2" style={{ color: C.mute }}>Pisos traçados no Croqui (ferramenta "Piso"):</p>
+                  {levels.every(l => !(l.sketchElements || []).some(e => e.type === "floor")) && (
+                    <div className="text-[11px] italic p-3 rounded-lg" style={{ color: C.mute, background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                      Nenhum piso traçado ainda. Vá ao Croqui, escolha a ferramenta "Piso" e trace a área.
+                    </div>
+                  )}
+                  {levels.map(l => {
+                    const floorZones = (l.sketchElements || []).filter(e => e.type === "floor");
+                    if (!floorZones.length) return null;
+                    return (
+                      <div key={l.id} className="mb-3">
+                        <div className="text-xs font-semibold mb-1.5" style={{ color: C.gold }}>{l.name.toUpperCase()}</div>
+                        <div className="space-y-1.5">
+                          {floorZones.map(f => (
+                            <div key={f.id} className="flex items-center gap-2 px-2.5 py-2 rounded flex-wrap" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                              <TypeSelect value={f.floorType || FLOOR_TYPES[0]} options={FLOOR_TYPES} onChange={v => updateLevelElement(l.id, f.id, { floorType: v })} />
+                              <input type="color" value={f.floorColor || "#B08A5C"} onChange={e => updateLevelElement(l.id, f.id, { floorColor: e.target.value })}
+                                title="Cor de referência" className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+                              <span className="text-[11px]" style={{ color: C.chalk }}>{f.area} m²</span>
+                              <button onClick={() => removeLevelElement(l.id, f.id)} className="ml-auto"><Trash2 size={12} color={C.mute} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[11px]" style={{ color: C.mute }}>Registro manual por ambiente (tipo de revestimento, área e condição — sem geometria própria):</p>
                 {rooms.length === 0 && (
                   <div className="text-[11px] italic p-3 rounded-lg" style={{ color: C.mute, background: C.panelAlt, border: `1px solid ${C.line}` }}>
                     Ainda não há ambientes nomeados. Vá ao Croqui, feche um contorno com a ferramenta "Ambiente" e dê um nome — ele aparece aqui na sequência.
