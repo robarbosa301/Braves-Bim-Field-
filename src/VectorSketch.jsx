@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat, CheckSquare,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -539,6 +539,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [selectionIds, setSelectionIds] = useState(() => new Set());
   const [marqueeRect, setMarqueeRect] = useState(null);
   const marqueeGesture = useRef(null);
+  // "Selecionar vários" toggle: with it on, tapping a wall/door/window/
+  // ambiente/piso one at a time ADDS or REMOVES it from selectionIds
+  // instead of moving it or opening its single-element panel — the touch
+  // equivalent of the marquee box above, for elements that aren't
+  // conveniently boxable (scattered doors, non-adjacent ambientes).
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  function toggleSelectionMember(id) {
+    setSelectionIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
   const [showBelow, setShowBelow] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [showTextSettings, setShowTextSettings] = useState(false);
@@ -1255,6 +1268,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
     if (tool === "selecionar") {
       const hit = findAt(p);
+      if (multiSelectMode) {
+        if (hit) toggleSelectionMember(hit.id);
+        return;
+      }
       setSelectedId(hit ? hit.id : null);
       if (selectionIds.size) setSelectionIds(new Set());
       return;
@@ -1982,6 +1999,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     // it, leaving pinch-to-zoom completely dead on selected elements.
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
+    if (multiSelectMode) { toggleSelectionMember(w.id); return; }
     pushHistory();
     isDraggingRef.current = true;
     setSelectedId(w.id);
@@ -2011,6 +2029,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (tool !== "selecionar") return;
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
+    if (multiSelectMode) { toggleSelectionMember(el.id); return; }
     pushHistory();
     isDraggingRef.current = true;
     setSelectedId(el.id);
@@ -2187,7 +2206,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     // instant this render commits.
     justDraggedOnCanvas.current = true;
     setSelectedId(null);
-    setSelectionIds(new Set(elementsInRect(marqueeRect).map(el => el.id)));
+    const boxed = elementsInRect(marqueeRect).map(el => el.id);
+    // In "Selecionar vários" a box drag ADDS to whatever was already
+    // tap-toggled on, instead of replacing it — the two ways of building
+    // the same selection shouldn't fight each other.
+    setSelectionIds(prev => multiSelectMode ? new Set([...prev, ...boxed]) : new Set(boxed));
     setMarqueeRect(null);
   }
 
@@ -2417,6 +2440,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </span>
           );
         })}
+        {tool === "selecionar" && (
+          <button onClick={() => { setMultiSelectMode(m => !m); setSelectedId(null); }} title="Selecionar vários (toque em cada parede, porta, janela, ambiente ou piso)"
+            className="flex items-center gap-1 px-2.5 py-2 rounded text-[11px]"
+            style={{ ...heading, fontWeight: 600, background: multiSelectMode ? C.gold : C.panelAlt, color: multiSelectMode ? "#141311" : C.mute, border: `1px solid ${multiSelectMode ? C.gold : C.line}` }}>
+            <CheckSquare size={14} /> Selecionar vários
+          </button>
+        )}
       </div>
       {/* Voltar/Avançar/Desfazer exclusão (sketch-wide, not tied to
           whatever's currently selected) share this one row with the
@@ -3103,6 +3133,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           paddingLeft: "max(8px, env(safe-area-inset-left))", paddingRight: "max(8px, env(safe-area-inset-right))",
           paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         } : undefined}>
+      {multiSelectMode && selectionIds.size === 0 && (
+        <div className="mt-2 p-2.5 rounded-lg text-[11px]" style={{ background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>
+          Toque em cada parede, porta, janela, ambiente ou piso que quer selecionar.
+        </div>
+      )}
       {selectionIds.size > 0 && (
         <div className="mt-2 p-2.5 rounded-lg flex items-center justify-between gap-2" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <span className="text-[11px] font-medium" style={{ color: C.gold }}>{selectionIds.size} selecionado(s)</span>
