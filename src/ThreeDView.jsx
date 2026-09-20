@@ -710,13 +710,19 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       // HTML legend in the component's own return below.
       const raycaster = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
-      let highlightMesh = null, dimensionGroup = null;
+      let highlightMesh = null, highlightFill = null, dimensionGroup = null;
       function clearHighlight() {
         if (highlightMesh) {
           scene.remove(highlightMesh);
           highlightMesh.geometry.dispose();
           highlightMesh.material.dispose();
           highlightMesh = null;
+        }
+        if (highlightFill) {
+          scene.remove(highlightFill);
+          highlightFill.geometry.dispose();
+          highlightFill.material.dispose();
+          highlightFill = null;
         }
         if (dimensionGroup) {
           dimensionGroup.traverse(obj => {
@@ -733,6 +739,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       // might be sitting on top of.
       const SELECT_COLOR = 0x4DD9C7;
       const wireMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, wireframe: true, transparent: true, opacity: 0.85 });
+      // A solid, translucent wash over the WHOLE element — the wireframe
+      // outline alone left the actual wall/door/floor looking untouched,
+      // so "this is selected" only showed up as thin edge lines instead
+      // of the element itself visibly changing. depthWrite is off so this
+      // (and the coincident wireframe) never z-fight with the real mesh
+      // sitting at almost the same surface.
+      const fillMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide });
       // Distinct id for whatever a mesh actually represents (a wall, a
       // door/window, or a floor zone) — used to collapse a ray's several
       // hits down to one per real element, so tap-cycling below (see
@@ -789,6 +802,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           highlightMesh.position.set(info.centerX, info.centerY, info.centerZ);
           highlightMesh.rotation.y = -info.angle;
           scene.add(highlightMesh);
+          highlightFill = new THREE.Mesh(
+            new THREE.BoxGeometry(info.lengthM + 0.02, info.heightM + 0.02, info.thicknessM + 0.02),
+            fillMat()
+          );
+          highlightFill.position.copy(highlightMesh.position);
+          highlightFill.rotation.copy(highlightMesh.rotation);
+          scene.add(highlightFill);
           dimensionGroup.add(buildWallDimensionGroup(info));
         } else if (info.kind === "door" || info.kind === "window") {
           const midY = info.elev + (info.yBottom + info.yTop) / 2;
@@ -799,6 +819,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           highlightMesh.position.set(info.cx, midY, info.cz);
           highlightMesh.rotation.y = -Math.atan2(info.uz, info.ux);
           scene.add(highlightMesh);
+          highlightFill = new THREE.Mesh(
+            new THREE.BoxGeometry(info.widthM + 0.02, (info.yTop - info.yBottom) + 0.02, info.thicknessM + 0.04),
+            fillMat()
+          );
+          highlightFill.position.copy(highlightMesh.position);
+          highlightFill.rotation.copy(highlightMesh.rotation);
+          scene.add(highlightFill);
           dimensionGroup.add(buildOpeningDimensionGroup(info));
         } else if (info.kind === "floor") {
           // No box makes sense for an arbitrary polygon — trace its own
@@ -810,6 +837,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
             new THREE.LineBasicMaterial({ color: SELECT_COLOR, transparent: true, opacity: 0.85 })
           );
           scene.add(highlightMesh);
+          // Same polygon, filled this time — a plain outline on a floor
+          // is easy to miss entirely from a steep viewing angle.
+          const shape = new THREE.Shape(info.points.map(p => new THREE.Vector2(p.x, -p.y)));
+          highlightFill = new THREE.Mesh(new THREE.ShapeGeometry(shape), fillMat());
+          highlightFill.rotation.x = -Math.PI / 2;
+          highlightFill.position.y = info.elev + 0.025;
+          scene.add(highlightFill);
         }
         scene.add(dimensionGroup);
       }
