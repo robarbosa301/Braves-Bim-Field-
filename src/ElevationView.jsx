@@ -4,6 +4,7 @@
 // per-level dimension/tag colors and font sizes set in VectorSketch's own
 // "Cores e tamanhos de texto" panel, so an elevation reads as the same
 // drawing as the floor plan it comes from, not a separate style.
+import { useRef, useState } from "react";
 import { C } from "./theme.js";
 import { toNum } from "./utils.js";
 import { GRID } from "./geometry.js";
@@ -22,9 +23,20 @@ const GAP_DIM_ROW_Y = -10;
 // stacked just above the door/window's own top edge.
 const TAG_LINE_GAP = 10;
 
-export default function ElevationView({ level, wallId, spanStartM, spanEndM }) {
+// onPatchOpening(openingId, patch) and onPatchDimStyle(key, patch) are how a
+// drag here gets persisted — both optional, so a caller that hasn't wired
+// them up yet (or a read-only context) just renders the same static view
+// this always was, with no drag handles shown.
+export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle }) {
   const elements = level.sketchElements || [];
   const wall = elements.find(e => e.id === wallId && e.type === "wall");
+  const svgRef = useRef(null);
+  // Which one thing (a dimension row, or an opening's own tag) is being
+  // dragged right now, and where the drag started — kept as component
+  // state (not a ref) since ElevHDim/ElevVDim below need to re-render with
+  // the live offset on every move frame, the same way VectorSketch commits
+  // an auto-dim's offset on every frame of its own drag.
+  const [dragState, setDragState] = useState(null);
   if (!wall) {
     return <div className="text-center text-sm py-10" style={{ color: C.mute }}>Selecione uma parede para ver a elevação.</div>;
   }
@@ -87,18 +99,57 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM }) {
     if (lengthM - cursor > 0.03) gaps.push({ start: cursor, end: lengthM, type: null });
   }
 
+  // Every dimension row's own offset lives in level.elevDimStyles, keyed by
+  // this wall's id (the same level's meta is shared by every wall's own
+  // elevation, so two different walls dragging their own "wallHeight" row
+  // must never collide) plus a name for which row it is.
+  const elevDimStyles = level.elevDimStyles || {};
+  function dimOffset(key) {
+    const s = elevDimStyles[wall.id + ":" + key];
+    return s ? { dx: toNum(s.dx, 0), dy: toNum(s.dy, 0) } : { dx: 0, dy: 0 };
+  }
+  function svgUnitsPerClientPx() {
+    const rect = svgRef.current?.getBoundingClientRect();
+    return rect && rect.width ? viewW / rect.width : 1;
+  }
+  function beginDrag(kind, key, startDx, startDy, e) {
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+    const p = e.touches ? e.touches[0] : e;
+    setDragState({ kind, key, startClientX: p.clientX, startClientY: p.clientY, startDx, startDy });
+  }
+  function onSvgMove(e) {
+    if (!dragState) return;
+    if (e.cancelable) e.preventDefault();
+    const p = e.touches ? e.touches[0] : e;
+    const f = svgUnitsPerClientPx();
+    const ndx = dragState.startDx + (p.clientX - dragState.startClientX) * f;
+    const ndy = dragState.startDy + (p.clientY - dragState.startClientY) * f;
+    if (dragState.kind === "tag") onPatchOpening?.(dragState.key, { elevTagDx: ndx, elevTagDy: ndy });
+    else onPatchDimStyle?.(wall.id + ":" + dragState.key, { dx: ndx, dy: ndy });
+  }
+  function endDrag() { setDragState(null); }
+
   return (
     <div className="rounded-lg overflow-hidden" style={{ background: "#DCDCD8" }}>
-      <svg viewBox={`0 0 ${viewW} ${viewH}`} width="100%" style={{ display: "block" }} fontFamily={fontFamily}>
+      <svg ref={svgRef} viewBox={`0 0 ${viewW} ${viewH}`} width="100%" style={{ display: "block", touchAction: dragState ? "none" : undefined }} fontFamily={fontFamily}
+        onMouseMove={onSvgMove} onMouseUp={endDrag} onMouseLeave={endDrag}
+        onTouchMove={onSvgMove} onTouchEnd={endDrag} onTouchCancel={endDrag}>
         <rect x={wallX} y={wallTopY} width={lengthPx} height={heightPx} fill="#EDEAE2" stroke="#1B1E1A" strokeWidth="2" />
         <line x1={wallX - 14} y1={wallBottomY} x2={wallX + lengthPx + 14} y2={wallBottomY} stroke="#1B1E1A" strokeWidth="2" />
 
-        {gaps.map((g, i) => (
-          <ElevHDim key={"gap" + i} y={wallTopY + GAP_DIM_ROW_Y} x1={wallX + g.start * PX_PER_M} x2={wallX + g.end * PX_PER_M}
-            label={(g.end - g.start).toFixed(2)}
-            color={g.type === "door" ? doorDimColor : g.type === "window" ? windowDimColor : dimColor}
-            fontSize={g.type ? doorWindowDimFontSize : dimFontSize} />
-        ))}
+        {gaps.map((g, i) => {
+          const key = "gap" + i;
+          const off = dimOffset(key);
+          return (
+            <ElevHDim key={key} y={wallTopY + GAP_DIM_ROW_Y} x1={wallX + g.start * PX_PER_M} x2={wallX + g.end * PX_PER_M}
+              label={(g.end - g.start).toFixed(2)}
+              color={g.type === "door" ? doorDimColor : g.type === "window" ? windowDimColor : dimColor}
+              fontSize={g.type ? doorWindowDimFontSize : dimFontSize}
+              dx={off.dx} dy={off.dy}
+              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", key, off.dx, off.dy, e)) : undefined} />
+          );
+        })}
 
         {opens.map(o => {
           const isDoor = o.type === "door";
@@ -110,6 +161,8 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM }) {
           const oBottomY = wallBottomY - sillM * PX_PER_M;
           const oTopY = oBottomY - hPx;
           const color = isDoor ? doorDimColor : windowDimColor;
+          const tagDx = toNum(o.elevTagDx, 0), tagDy = toNum(o.elevTagDy, 0);
+          const sillOff = dimOffset("sill:" + o.id), heightOff = dimOffset("height:" + o.id);
           return (
             <g key={o.id}>
               <rect x={oX} y={oTopY} width={wPx} height={hPx}
@@ -117,46 +170,80 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM }) {
               {/* Two lines right above the element itself — the name
                   (tag) on top, dimensions below it — instead of one line
                   floating up by the wall's own top edge, disconnected
-                  from whichever opening it actually labels. */}
+                  from whichever opening it actually labels. Dragged as one
+                  unit (elevTagDx/elevTagDy, stored on the opening itself)
+                  so the name and its dimensions never drift apart. */}
               {o.tag && (
-                <text x={oX + wPx / 2} y={oTopY - 4 - TAG_LINE_GAP} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">{o.tag}</text>
+                <text x={oX + wPx / 2 + tagDx} y={oTopY - 4 - TAG_LINE_GAP + tagDy} fontSize={tagFontSize} fill={tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{o.tag}</text>
               )}
-              <text x={oX + wPx / 2} y={oTopY - 4} fontSize={tagFontSize} fill={tagColor} textAnchor="middle">{o.width}×{o.height}</text>
+              <text x={oX + wPx / 2 + tagDx} y={oTopY - 4 + tagDy} fontSize={tagFontSize} fill={tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{o.width}×{o.height}</text>
+              {onPatchOpening && (
+                <rect x={oX + wPx / 2 + tagDx - 24} y={oTopY - 4 - TAG_LINE_GAP + tagDy - 10} width="48" height="26" fill="transparent" style={{ cursor: "move" }}
+                  onMouseDown={e => beginDrag("tag", o.id, tagDx, tagDy, e)} onTouchStart={e => beginDrag("tag", o.id, tagDx, tagDy, e)} />
+              )}
               {!isDoor && sillM > 0 && (
-                <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize} />
+                <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize}
+                  dx={sillOff.dx} dy={sillOff.dy}
+                  onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "sill:" + o.id, sillOff.dx, sillOff.dy, e)) : undefined} />
               )}
-              <ElevVDim x={oX + wPx + 8} y1={oBottomY} y2={oTopY} label={oHeightM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize} />
+              <ElevVDim x={oX + wPx + 8} y1={oBottomY} y2={oTopY} label={oHeightM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize}
+                dx={heightOff.dx} dy={heightOff.dy}
+                onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "height:" + o.id, heightOff.dx, heightOff.dy, e)) : undefined} />
             </g>
           );
         })}
 
-        <ElevVDim x={wallX - 30} y1={wallBottomY} y2={wallTopY} label={heightM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold />
-        <ElevHDim y={wallBottomY + 24} x1={wallX} x2={wallX + lengthPx} label={lengthM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold />
+        {(() => {
+          const off = dimOffset("wallHeight");
+          return (
+            <ElevVDim x={wallX - 30} y1={wallBottomY} y2={wallTopY} label={heightM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold
+              dx={off.dx} dy={off.dy}
+              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallHeight", off.dx, off.dy, e)) : undefined} />
+          );
+        })()}
+        {(() => {
+          const off = dimOffset("wallLength");
+          return (
+            <ElevHDim y={wallBottomY + 24} x1={wallX} x2={wallX + lengthPx} label={lengthM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold
+              dx={off.dx} dy={off.dy}
+              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallLength", off.dx, off.dy, e)) : undefined} />
+          );
+        })()}
       </svg>
     </div>
   );
 }
 
-function ElevVDim({ x, y1, y2, label, color, fontSize, bold }) {
-  const midY = (y1 + y2) / 2;
+function ElevVDim({ x, y1, y2, label, color, fontSize, bold, dx = 0, dy = 0, onDragStart }) {
+  const midY = (y1 + y2) / 2 + dy;
+  const lx = x + dx;
   return (
     <g>
-      <line x1={x} y1={y1} x2={x} y2={y2} stroke={color} strokeWidth="0.75" />
-      <line x1={x - 3} y1={y1} x2={x + 3} y2={y1} stroke={color} strokeWidth="0.75" />
-      <line x1={x - 3} y1={y2} x2={x + 3} y2={y2} stroke={color} strokeWidth="0.75" />
-      <text x={x - 3} y={midY} fontSize={fontSize} fontWeight={bold ? 700 : 400} fill={color} textAnchor="middle"
-        transform={`rotate(-90 ${x - 3} ${midY})`}>{label}</text>
+      <line x1={lx} y1={y1 + dy} x2={lx} y2={y2 + dy} stroke={color} strokeWidth="0.75" pointerEvents="none" />
+      <line x1={lx - 3} y1={y1 + dy} x2={lx + 3} y2={y1 + dy} stroke={color} strokeWidth="0.75" pointerEvents="none" />
+      <line x1={lx - 3} y1={y2 + dy} x2={lx + 3} y2={y2 + dy} stroke={color} strokeWidth="0.75" pointerEvents="none" />
+      <text x={lx - 3} y={midY} fontSize={fontSize} fontWeight={bold ? 700 : 400} fill={color} textAnchor="middle"
+        transform={`rotate(-90 ${lx - 3} ${midY})`} style={{ pointerEvents: "none" }}>{label}</text>
+      {onDragStart && (
+        <rect x={lx - 15} y={midY - 15} width="30" height="30" fill="transparent" style={{ cursor: "move" }}
+          onMouseDown={onDragStart} onTouchStart={onDragStart} />
+      )}
     </g>
   );
 }
-function ElevHDim({ y, x1, x2, label, color, fontSize, bold }) {
-  const midX = (x1 + x2) / 2;
+function ElevHDim({ y, x1, x2, label, color, fontSize, bold, dx = 0, dy = 0, onDragStart }) {
+  const midX = (x1 + x2) / 2 + dx;
+  const ly = y + dy;
   return (
     <g>
-      <line x1={x1} y1={y} x2={x2} y2={y} stroke={color} strokeWidth="0.75" />
-      <line x1={x1} y1={y - 3} x2={x1} y2={y + 3} stroke={color} strokeWidth="0.75" />
-      <line x1={x2} y1={y - 3} x2={x2} y2={y + 3} stroke={color} strokeWidth="0.75" />
-      <text x={midX} y={y - 3} fontSize={fontSize} fontWeight={bold ? 700 : 400} fill={color} textAnchor="middle">{label}</text>
+      <line x1={x1 + dx} y1={ly} x2={x2 + dx} y2={ly} stroke={color} strokeWidth="0.75" pointerEvents="none" />
+      <line x1={x1 + dx} y1={ly - 3} x2={x1 + dx} y2={ly + 3} stroke={color} strokeWidth="0.75" pointerEvents="none" />
+      <line x1={x2 + dx} y1={ly - 3} x2={x2 + dx} y2={ly + 3} stroke={color} strokeWidth="0.75" pointerEvents="none" />
+      <text x={midX} y={ly - 3} fontSize={fontSize} fontWeight={bold ? 700 : 400} fill={color} textAnchor="middle" style={{ pointerEvents: "none" }}>{label}</text>
+      {onDragStart && (
+        <rect x={midX - 18} y={ly - 18} width="36" height="24" fill="transparent" style={{ cursor: "move" }}
+          onMouseDown={onDragStart} onTouchStart={onDragStart} />
+      )}
     </g>
   );
 }

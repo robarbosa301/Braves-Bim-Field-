@@ -97,6 +97,25 @@ describe("wallSpanForRoom", () => {
     expect(span.endPx).toBeCloseTo(200, 0);
     expect(span.endPx).toBeLessThan(300); // never stretched out to the stray finger vertex at 350
   });
+
+  it("ignores a short, disconnected wall elsewhere on the sheet that's merely collinear within tolerance — not this room's own bounding wall", () => {
+    // "Sala" is bounded by a wall from x=0..300 (y=0). A completely
+    // separate, unrelated wall sits on that exact same line but far off to
+    // the side (x=500..600) — same perpendicular offset (0, well within
+    // tolerance), but its own [0,len] physical span never actually
+    // overlaps the room edge's projected range at all. It must read as
+    // "doesn't border this room", not get pulled in as a bogus
+    // near-zero-length span just because it's on the same infinite line.
+    const level = {
+      sketchScale: "0.5",
+      sketchElements: [{
+        type: "room", name: "Sala",
+        points: [{ x: 3, y: 3 }, { x: 297, y: 3 }, { x: 297, y: 150 }, { x: 3, y: 150 }],
+      }],
+    };
+    const strayWall = { x1: 500, y1: 0, x2: 600, y2: 0, wallType: "Alvenaria 15cm" };
+    expect(wallSpanForRoom(level, strayWall, "Sala")).toBeNull();
+  });
 });
 
 describe("wallsForRoom", () => {

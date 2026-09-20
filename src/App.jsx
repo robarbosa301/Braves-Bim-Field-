@@ -242,7 +242,20 @@ function wallRoomAdjacency(level, wall) {
   const nx = -uy, ny = ux;
   const mid = { x: (wall.x1 + wall.x2) / 2, y: (wall.y1 + wall.y2) / 2 };
   const polys = (level.sketchElements || []).filter(e => e.type === "room");
-  const roomAt = (p) => { const poly = polys.find(r => pointInPolygon(p, r.points)); return poly ? (poly.name || "Ambiente sem nome") : "Externo"; };
+  const roomAt = (p) => {
+    const poly = polys.find(r => pointInPolygon(p, r.points));
+    if (!poly) return "Externo";
+    const name = poly.name || "Ambiente sem nome";
+    // A point-in-polygon hit at this ±12px offset alone isn't enough — this
+    // wall must also have a real, overlap-validated edge actually running
+    // alongside that room (wallSpanForRoom), or a short/stray wall whose
+    // offset test point merely happens to land inside some OTHER room's
+    // polygon (without truly bordering it) gets wrongly claimed by that
+    // room instead of staying "Externo" — this is what let a wall that
+    // doesn't belong to a room show up floating in its isolated 3D view
+    // and in Elevação.
+    return wallSpanForRoom(level, wall, name) ? name : "Externo";
+  };
   return {
     faceA: roomAt({ x: mid.x + nx * 12, y: mid.y + ny * 12 }),
     faceB: roomAt({ x: mid.x - nx * 12, y: mid.y - ny * 12 }),
@@ -283,6 +296,14 @@ export function wallSpanForRoom(level, wall, roomName) {
     const perpA = relAx * nx + relAy * ny, perpB = relBx * nx + relBy * ny;
     if (Math.abs(perpA) > tolerance || Math.abs(perpB) > tolerance) continue;
     const posA = relAx * ux + relAy * uy, posB = relBx * ux + relBy * uy;
+    // The edge must actually fall somewhere along THIS wall's own physical
+    // [0, len] span, not just lie near its infinite extended centerline —
+    // otherwise a short, completely disconnected wall elsewhere on the
+    // sheet that merely happens to be collinear/parallel within tolerance
+    // (no shared corner, nowhere near this room) gets wrongly counted as
+    // one of its bounding walls, which is exactly what let a stray wall
+    // show up floating in the isolated 3D Ambiente view and in Elevação.
+    if (Math.max(posA, posB) < 0 || Math.min(posA, posB) > len) continue;
     minAlong = Math.min(minAlong, posA, posB);
     maxAlong = Math.max(maxAlong, posA, posB);
     found = true;
@@ -1041,6 +1062,13 @@ export default function PranchetaBIM() {
   }
   function updateLevelElement(levelId, elementId, patch) {
     updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.map(e => e.id === elementId ? { ...e, ...patch } : e) }));
+  }
+  // A dragged Elevação dimension's own offset — keyed by wall id (see
+  // ElevationView), merged into whichever style that key already had so
+  // dragging one dimension never clobbers another's.
+  function patchElevDimStyle(levelObj, key, patch) {
+    const existing = levelObj.elevDimStyles || {};
+    updateLevelMeta(levelObj.id, { elevDimStyles: { ...existing, [key]: { ...(existing[key] || {}), ...patch } } });
   }
   function removeLevelElement(levelId, elementId) {
     updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.filter(e => e.id !== elementId) }));
@@ -1909,7 +1937,9 @@ export default function PranchetaBIM() {
                             <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
                             <div className="flex flex-col-reverse">
                               {stack.map(({ level: lvl, wall: sw }) => (
-                                <ElevationView key={lvl.id + ":" + sw.id} level={lvl} wallId={sw.id} />
+                                <ElevationView key={lvl.id + ":" + sw.id} level={lvl} wallId={sw.id}
+                                  onPatchOpening={(id, patch) => updateLevelElement(lvl.id, id, patch)}
+                                  onPatchDimStyle={(key, patch) => patchElevDimStyle(lvl, key, patch)} />
                               ))}
                             </div>
                           </div>
@@ -1922,7 +1952,9 @@ export default function PranchetaBIM() {
                       return (
                         <div key={w.id}>
                           <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
-                          <ElevationView level={croquiLevel} wallId={w.id} spanStartM={toM(span.startPx)} spanEndM={toM(span.endPx)} />
+                          <ElevationView level={croquiLevel} wallId={w.id} spanStartM={toM(span.startPx)} spanEndM={toM(span.endPx)}
+                            onPatchOpening={(id, patch) => updateLevelElement(croquiLevel.id, id, patch)}
+                            onPatchDimStyle={(key, patch) => patchElevDimStyle(croquiLevel, key, patch)} />
                         </div>
                       );
                     })}
