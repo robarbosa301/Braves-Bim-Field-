@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat, CheckSquare,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat, CheckSquare, Hand,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -356,6 +356,40 @@ function wallRunOpenings(run, elements) {
     })
     .filter(x => x.perp < GRID * 0.35 && x.pos > -GRID && x.pos < len + GRID);
 }
+// Breaks one wall run into the corner→opening→opening→corner chain a real
+// construction drawing always cotas along a wall — shared by the exterior
+// perimeter run below and its interior counterpart, since the breakpoint
+// logic (every opening's own [start,end] edges, plus the run's own two
+// ends) is identical either way, only WHERE the run itself comes from
+// differs. A "gap" segment immediately next to a door/window (its start or
+// end lands exactly on that opening's own edge) is tagged with that
+// opening's kind too — not as its own segment ("door"/"window" is reserved
+// for the segment that IS the opening's own width), but as `adjacentKind`,
+// so "distância até a parede"/"entre portas"-style gaps can still read in
+// that same family's color instead of the generic partial-run one.
+function buildChainSegs(run, elements, scale) {
+  const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
+  if (len < GRID) return null;
+  const ux = dx / len, uy = dy / len;
+  const openingSpans = wallRunOpenings(run, elements).map(({ o, pos }) => {
+    const halfW = (toNum(o.width, 0.8) / 2 / scale) * GRID;
+    return { kind: o.type, start: Math.max(0, pos - halfW), end: Math.min(len, pos + halfW) };
+  });
+  const points = new Set([0, len]);
+  openingSpans.forEach(s => { points.add(s.start); points.add(s.end); });
+  const sorted = Array.from(points).sort((a, b) => a - b);
+  const segs = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i], b = sorted[i + 1];
+    if (b - a < GRID * 0.15) continue;
+    const match = openingSpans.find(s => Math.abs(s.start - a) < 1 && Math.abs(s.end - b) < 1);
+    if (match) { segs.push({ a, b, kind: match.kind }); continue; }
+    const before = openingSpans.find(s => Math.abs(s.end - a) < 1);
+    const after = openingSpans.find(s => Math.abs(s.start - b) < 1);
+    segs.push({ a, b, kind: "gap", adjacentKind: before?.kind || after?.kind || null });
+  }
+  return { ux, uy, len, segs };
+}
 // The two automatic dimension rows a real construction drawing always
 // carries around a building's own perimeter — nearestParallelWallDims only
 // ever measures BETWEEN two facing walls (a room's own span), never a
@@ -370,33 +404,70 @@ function exteriorPerimeterChains(elements, scale) {
   if (!exteriorWalls.length) return [];
   const runs = mergeCollinearWallRuns(exteriorWalls);
   return runs.map(run => {
-    const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
-    if (len < GRID) return null;
-    const ux = dx / len, uy = dy / len;
+    const built = buildChainSegs(run, elements, scale);
+    if (!built) return null;
+    const { ux, uy, len, segs } = built;
     const halfThickPx = (wallThicknessM(run) / 2 / scale) * GRID;
-    // Each opening contributes its own [start,end] edges as breakpoints —
-    // kept alongside the corners so a segment that exactly reproduces one
-    // opening's own span can be tagged "door"/"window" below, instead of
-    // every segment reading as a generic wall gap (a door's own width row
-    // needs the door's own cota color/size, same as everywhere else in the
-    // app that dimensions an opening — Elevação, the manual Cota tool).
-    const openingSpans = wallRunOpenings(run, elements).map(({ o, pos }) => {
-      const halfW = (toNum(o.width, 0.8) / 2 / scale) * GRID;
-      return { kind: o.type, start: Math.max(0, pos - halfW), end: Math.min(len, pos + halfW) };
-    });
-    const points = new Set([0, len]);
-    openingSpans.forEach(s => { points.add(s.start); points.add(s.end); });
-    const sorted = Array.from(points).sort((a, b) => a - b);
-    const segs = [];
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const a = sorted[i], b = sorted[i + 1];
-      if (b - a < GRID * 0.15) continue;
-      const match = openingSpans.find(s => Math.abs(s.start - a) < 1 && Math.abs(s.end - b) < 1);
-      segs.push({ a, b, kind: match ? match.kind : "gap" });
-    }
     const { nx, ny } = outwardNormalForRun(run, elements);
     return { id: run.id, tag: run.tag, x1: run.x1, y1: run.y1, ux, uy, nx, ny, halfThickPx, len, segs };
   }).filter(Boolean);
+}
+// The interior counterpart of exteriorPerimeterChains — a "face interna"
+// chain along each ROOM's own bounding walls, on that room's own side of
+// them (a party wall between two rooms gets one chain per room, each along
+// its own face, independent of the other). Unlike the exterior run, there's
+// no "overall" row here: nearestParallelWallDims already gives every room
+// its own corner-to-corner total (that's a facing-wall PAIR's clear span,
+// which is exactly what a room's total interior dimension is, regardless of
+// whether the two walls bounding it happen to be exterior or interior) —
+// so this only ever adds the finer corner→opening chain a real drawing
+// still places along each wall face inside the room.
+function interiorPerimeterChains(elements, scale) {
+  const rooms = elements.filter(e => e.type === "room");
+  if (!rooms.length) return [];
+  const walls = elements.filter(e => e.type === "wall");
+  const out = [];
+  rooms.forEach(room => {
+    // Each wall bordering this room contributes the [startPx,endPx] slice
+    // of its own centerline that actually runs alongside it — clipped per
+    // room (not per wall) since a single wall can border one room along
+    // part of its length and a different room (or nothing at all) along
+    // the rest.
+    const spans = [];
+    walls.forEach(w => {
+      const span = wallSpanForRoomLocal(w, room, scale);
+      if (!span || span.endPx - span.startPx < GRID * 0.5) return;
+      const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      spans.push({
+        id: w.id, tag: w.tag,
+        x1: w.x1 + ux * span.startPx, y1: w.y1 + uy * span.startPx,
+        x2: w.x1 + ux * span.endPx, y2: w.y1 + uy * span.endPx,
+        thicknessM: wallThicknessM(w),
+      });
+    });
+    if (!spans.length) return;
+    mergeCollinearWallRuns(spans).forEach(run => {
+      const built = buildChainSegs(run, elements, scale);
+      if (!built) return;
+      const { ux, uy, len, segs } = built;
+      const halfThickPx = (toNum(run.thicknessM, wallThicknessM(run)) / 2 / scale) * GRID;
+      // Which perpendicular side actually faces into THIS room — exact
+      // (unlike the exterior run's own outwardNormalForRun, which has to
+      // guess without a traced room to check against), since every run
+      // here already belongs to one specific, known room polygon.
+      const nxRaw = -uy, nyRaw = ux;
+      const mid = { x: run.x1 + ux * len / 2, y: run.y1 + uy * len / 2 };
+      const probeD = halfThickPx + GRID * 0.5;
+      const probe = { x: mid.x + nxRaw * probeD, y: mid.y + nyRaw * probeD };
+      const sign = pointInPolygon(probe, room.points) ? 1 : -1;
+      out.push({
+        id: `${room.id}:${run.id}`, roomId: room.id, x1: run.x1, y1: run.y1,
+        ux, uy, nx: nxRaw * sign, ny: nyRaw * sign, halfThickPx, len, segs,
+      });
+    });
+  });
+  return out;
 }
 // Auto-traces a room polygon by flood-filling the open floor area starting
 // from a clicked point, stopping at wall faces — the "click inside" room
@@ -855,6 +926,34 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // (already used for the tap-chain's own preview line) doubles as this
   // drag's live end point too.
   const wallGesture = useRef(null);
+  // Middle-mouse-button drag (any tool) or the dedicated "Pan" tool (one
+  // finger, for touch/trackpad users with no middle button) — slides the
+  // viewBox around without ever touching an element underneath, and never
+  // leaves a selection behind on release the way dragging a cota into place
+  // with the wrong tool active used to (see justDraggedOnCanvas below).
+  const panGesture = useRef(null);
+  function beginPanGesture(e) {
+    if (!(tool === "pan" || e.button === 1)) return;
+    if (e.touches && e.touches.length !== 1) return;
+    e.preventDefault();
+    const p = e.touches ? e.touches[0] : e;
+    panGesture.current = { startClientX: p.clientX, startClientY: p.clientY, startVb: viewBox, moved: false };
+  }
+  function movePanGesture(e) {
+    const g = panGesture.current;
+    if (!g) return;
+    if (e.cancelable) e.preventDefault();
+    const p = e.touches ? e.touches[0] : e;
+    const dxClient = p.clientX - g.startClientX, dyClient = p.clientY - g.startClientY;
+    if (!g.moved && Math.hypot(dxClient, dyClient) >= 3) g.moved = true;
+    const scaleX = g.startVb.w / dims.w, scaleY = g.startVb.h / dims.h;
+    setVb({ ...g.startVb, x: g.startVb.x - dxClient * scaleX, y: g.startVb.y - dyClient * scaleY });
+  }
+  function endPanGesture() {
+    const g = panGesture.current;
+    panGesture.current = null;
+    if (g && g.moved) justDraggedOnCanvas.current = true;
+  }
   // Mouse's own click event fires on mouseup regardless of how far the
   // pointer moved in between (no built-in "that was a drag, not a tap"
   // suppression the way touch-to-click synthesis usually has) — set right
@@ -865,13 +964,32 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const justDraggedOnCanvas = useRef(false);
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
+  // The generic fallback for a MANUALLY-placed "Cota" (face/eixo/faceExt/
+  // espessura) — automatic dimensions never fall back to this one anymore,
+  // each of those has its own category color below, so changing one no
+  // longer recolors every dimension on the sheet at once.
   const dimColor = level.dimColor || "#4A4A46";
+  // Automatic-dimension category colors — a real construction drawing
+  // tells these apart by color at a glance, so each family gets its own
+  // instead of everything defaulting to the same dimColor: exterior
+  // perimeter totals (red), exterior perimeter partial/corner-to-opening
+  // runs (blue), interior span totals — nearestParallelWallDims' own
+  // facing-wall pairs, always a room's own clear interior measurement no
+  // matter which side of a wall it's read from (purple), and interior
+  // partial/corner-to-opening runs along a room's own walls (dark orange).
+  const extTotalDimColor = level.extTotalDimColor || "#B23B3B";
+  const extPartialDimColor = level.extPartialDimColor || "#3B6EA5";
+  const intTotalDimColor = level.intTotalDimColor || "#7B4B9E";
+  const intPartialDimColor = level.intPartialDimColor || "#B5622A";
   // Door/window sill/height dimensions in the Elevação view get their own
   // pair of colors instead of sharing dimColor (that one's for the overall
   // exterior wall dimensions here in the plan), so a door-adjacent
-  // measurement and a window-adjacent one can be told apart at a glance.
-  const doorDimColor = level.doorDimColor || "#4A4A46";
-  const windowDimColor = level.windowDimColor || "#4A4A46";
+  // measurement and a window-adjacent one can be told apart at a glance —
+  // shared by every door/window-related dimension regardless of family
+  // (its own width, or the gap from it to the nearest wall/corner/other
+  // opening, exterior or interior, automatic or the manual "Cota" tool).
+  const doorDimColor = level.doorDimColor || "#3F6B3F";
+  const windowDimColor = level.windowDimColor || "#2C7A7A";
   const dimLabelOpaqueBg = level.dimLabelOpaqueBg !== false;
   const dimFontSize = toNum(level.dimFontSize, 7.5);
   // Same idea as the door/window dim colors above: a separate size for
@@ -1245,7 +1363,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function onTouchEndCanvas(e) {
     if (e.touches.length < 2) pinch.current = null;
     if (e.touches.length < 3) twist.current = null;
-    if (e.touches.length === 0) { onCanvasPointerUp(); endWallGesture(); endMarquee(); }
+    if (e.touches.length === 0) { onCanvasPointerUp(); endPanGesture(); endWallGesture(); endMarquee(); }
   }
 
   function nearestWall(p) {
@@ -1515,6 +1633,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
   function handleTap(e) {
     if (justDraggedOnCanvas.current) { justDraggedOnCanvas.current = false; return; }
+    if (tool === "pan") return; // navigation only — never selects or draws
     if (e.touches && e.touches.length > 1) return;
     if (draggingLabel || draggingDimLabel) return;
     e.preventDefault();
@@ -2169,6 +2288,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     delete next[field];
     onMeta({ autoDimStyles: { ...autoDimStyles, [key]: next } });
   }
+  // A chain segment's own default color + which level-meta field a "cor do
+  // grupo" edit should write to: the opening's own family color for a
+  // segment that IS a door/window's width, or that's immediately next to
+  // one (adjacentKind — "distância até a parede"/"entre portas" reads as
+  // that same family), otherwise the plain partial-run color for whichever
+  // chain this is (exterior blue vs. interior dark orange, passed in).
+  function chainSegColorInfo(seg, gapColor, gapGroupField) {
+    if (seg.kind === "door" || seg.adjacentKind === "door") return { color: doorDimColor, groupField: "doorDimColor" };
+    if (seg.kind === "window" || seg.adjacentKind === "window") return { color: windowDimColor, groupField: "windowDimColor" };
+    return { color: gapColor, groupField: gapGroupField };
+  }
 
   function luminariaDimensions(lm) {
     const walls = elements.filter(e => e.type === "wall");
@@ -2352,8 +2482,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
     const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
     const deltaPerp = dxp * d.nx + dyp * d.ny;
-    const nextOffset = Math.max(-60, Math.min(150, d.startOffset + deltaPerp));
-    setAutoDimStyle(d.key, { offset: nextOffset });
+    // Free — no min/max here anymore. It used to clamp to [-60, 150], which
+    // stopped it well short of the wall itself; dragging all the way down
+    // to (and past) the wall face is a legitimate way to tuck a dimension
+    // in close, not a state that needs preventing.
+    setAutoDimStyle(d.key, { offset: d.startOffset + deltaPerp });
   }
   function onExtDimDragEnd() {
     if (draggingExtDim && !draggingExtDim.moved) draggingExtDim.onTap();
@@ -2384,8 +2517,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
     const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
     const deltaPerp = dxp * d.nx + dyp * d.ny;
-    const nextOffset = Math.max(-80, Math.min(80, d.startOffset + deltaPerp));
-    commitElements(elements.map(el => el.id === d.id ? { ...el, offsetPx: nextOffset } : el));
+    // Free — no min/max here anymore, same reasoning as the auto-dim drag
+    // above: a manual cota should be draggable as close to the wall (or as
+    // far across the room) as the user actually wants, not stopped early.
+    commitElements(elements.map(el => el.id === d.id ? { ...el, offsetPx: d.startOffset + deltaPerp } : el));
   }
   function onCotaDragEnd() {
     if (draggingCota && !draggingCota.moved) setSelectedId(draggingCota.id);
@@ -2774,6 +2909,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
   const PISO_TOOLS = [
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
+    { id: "pan", label: "Pan", Icon: Hand },
     { id: "parede", label: "Parede", Icon: BrickWall },
     { id: "ambiente", label: "Ambiente", Icon: LayoutPanelTop },
     { id: "piso", label: "Piso", Icon: SquareStack },
@@ -2788,6 +2924,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   ];
   const FORRO_TOOLS = [
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
+    { id: "pan", label: "Pan", Icon: Hand },
     { id: "ambiente", label: "Ambiente (acabamento)", Icon: LayoutPanelTop },
     { id: "luminaria", label: "Luminária", Icon: Lightbulb },
     { id: "apagar", label: "Apagar", Icon: Eraser },
@@ -2885,8 +3022,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </button>
         {planMode === "piso" && (
           <>
-            <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
-              <Ruler size={11} /> Cotas
+            <span className="flex items-center gap-1" title="Cor das cotas manuais (ferramenta Cota) — as automáticas têm sua própria cor por grupo em Cores/fontes">
+              <Ruler size={11} /> Cota manual
               <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
                 className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
             </span>
@@ -2916,7 +3053,31 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <span className="font-medium" style={{ color: C.chalk }}>Cores e tamanhos de texto</span>
             <button onClick={() => setShowTextSettings(false)}><X size={14} color={C.mute} /></button>
           </div>
+          {/* Cada família de cota automática tem sua própria cor padrão —
+              mudar uma aqui não recolore as outras. Qualquer cota
+              individual ainda pode sobrepor a cor do seu próprio grupo, ao
+              tocar nela no croqui. */}
           <div className="flex items-center flex-wrap gap-3">
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Externas · total
+              <input type="color" value={extTotalDimColor} onChange={e => onMeta({ extTotalDimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Externas · parcial
+              <input type="color" value={extPartialDimColor} onChange={e => onMeta({ extPartialDimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Internas · total
+              <input type="color" value={intTotalDimColor} onChange={e => onMeta({ intTotalDimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
+            <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
+              Internas · parcial
+              <input type="color" value={intPartialDimColor} onChange={e => onMeta({ intPartialDimColor: e.target.value })}
+                className="w-5 h-5 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+            </span>
             <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
               Cota portas
               <input type="color" value={doorDimColor} onChange={e => onMeta({ doorDimColor: e.target.value })}
@@ -3108,10 +3269,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap text-[11px]" style={{ color: C.mute }}>
-              <span>Cor:</span>
-              <input type="color" value={pwStyle.color || dimColor} onChange={e => setAutoDimStyle(editingParallelDim.key, { color: e.target.value })}
+              <span>Cor desta cota:</span>
+              <input type="color" value={pwStyle.color || intTotalDimColor} onChange={e => setAutoDimStyle(editingParallelDim.key, { color: e.target.value })}
                 className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
-              {pwStyle.color && <button onClick={() => clearAutoDimStyle(editingParallelDim.key, "color")} className="text-[10px] underline">usar cor padrão</button>}
+              {pwStyle.color && <button onClick={() => clearAutoDimStyle(editingParallelDim.key, "color")} className="text-[10px] underline">usar cor do grupo</button>}
+              {/* Individual (above) OR the whole "internas totais" group's own
+                  default (here) — both stay reachable side by side so
+                  choosing which one to change is never a guess. */}
+              <span className="ml-1">Cor do grupo:</span>
+              <input type="color" value={intTotalDimColor} onChange={e => onMeta({ intTotalDimColor: e.target.value })}
+                className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
               <NumField value={toNum(pwStyle.fontSize, dimFontSize)} onChange={v => setAutoDimStyle(editingParallelDim.key, { fontSize: v })} unit="tam. fonte" w="w-10" />
               {pwStyle.fontSize !== undefined && <button onClick={() => clearAutoDimStyle(editingParallelDim.key, "fontSize")} className="text-[10px] underline">padrão</button>}
             </div>
@@ -3131,10 +3298,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <button onClick={() => setSelectedExtDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap text-[11px]" style={{ color: C.mute }}>
-              <span>Cor:</span>
+              <span>Cor desta cota:</span>
               <input type="color" value={extStyle.color || selectedExtDim.defaultColor || dimColor} onChange={e => setAutoDimStyle(selectedExtDim.key, { color: e.target.value })}
                 className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
-              {extStyle.color && <button onClick={() => clearAutoDimStyle(selectedExtDim.key, "color")} className="text-[10px] underline">usar cor padrão</button>}
+              {extStyle.color && <button onClick={() => clearAutoDimStyle(selectedExtDim.key, "color")} className="text-[10px] underline">usar cor do grupo</button>}
+              {/* Individual (above) OR this dimension's whole family/group
+                  (here, writing straight to the level's own category
+                  default) — both stay reachable side by side, never one at
+                  the expense of the other. */}
+              {selectedExtDim.groupField && (
+                <>
+                  <span className="ml-1">Cor do grupo:</span>
+                  <input type="color" value={level[selectedExtDim.groupField] || selectedExtDim.defaultColor || dimColor}
+                    onChange={e => onMeta({ [selectedExtDim.groupField]: e.target.value })}
+                    className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+                </>
+              )}
               <NumField value={toNum(extStyle.fontSize, selectedExtDim.defaultFontSize ?? dimFontSize)} onChange={v => setAutoDimStyle(selectedExtDim.key, { fontSize: v })} unit="tam. fonte" w="w-10" />
               {extStyle.fontSize !== undefined && <button onClick={() => clearAutoDimStyle(selectedExtDim.key, "fontSize")} className="text-[10px] underline">padrão</button>}
             </div>
@@ -3152,16 +3331,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       <svg ref={svgRef} data-croqui-svg="true" width="100%" height={dims.h} viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
         className="rounded-md touch-none" style={{
           background: exportMode ? "#FFFFFF" : "#DCDCD8", border: exportMode || fullscreen ? "none" : "1px solid #C6C6C1", display: "block", touchAction: "none",
+          cursor: tool === "pan" ? "grab" : undefined,
           ...(fullscreen ? { position: "absolute", inset: 0, zIndex: 0, borderRadius: 0 } : null),
         }}
         onClick={handleTap} onWheel={onWheel}
-        onMouseDown={e => { beginWallGesture(e); beginMarquee(e); }}
-        onTouchStart={e => { onTouchStartCanvas(e); if (e.touches.length === 1) { beginWallGesture(e); beginMarquee(e); } }}
-        onTouchMove={e => { onTouchMoveCanvas(e); if (e.touches.length === 1) { moveWallGesture(e); moveMarquee(e); } }}
+        onMouseDown={e => { beginPanGesture(e); if (!panGesture.current) { beginWallGesture(e); beginMarquee(e); } }}
+        onTouchStart={e => { onTouchStartCanvas(e); if (e.touches.length === 1) { beginPanGesture(e); if (!panGesture.current) { beginWallGesture(e); beginMarquee(e); } } }}
+        onTouchMove={e => { onTouchMoveCanvas(e); if (e.touches.length === 1) { movePanGesture(e); moveWallGesture(e); moveMarquee(e); } }}
         onTouchEnd={onTouchEndCanvas}
-        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); moveWallGesture(e); moveMarquee(e); }}
-        onMouseUp={e => { onCanvasPointerUp(e); endWallGesture(); endMarquee(); }}
-        onMouseLeave={e => { onCanvasPointerUp(e); endWallGesture(); endMarquee(); }}>
+        onMouseMove={e => { onCanvasPointerMove(e); onCanvasHover(e); movePanGesture(e); moveWallGesture(e); moveMarquee(e); }}
+        onMouseUp={e => { onCanvasPointerUp(e); endPanGesture(); endWallGesture(); endMarquee(); }}
+        onMouseLeave={e => { onCanvasPointerUp(e); endPanGesture(); endWallGesture(); endMarquee(); }}
+        onAuxClick={e => { if (e.button === 1) e.preventDefault(); }}
+        onContextMenu={e => { if (panGesture.current) e.preventDefault(); }}>
         <defs>
           <pattern id={`grid-${level.id}`} width={GRID} height={GRID} patternUnits="userSpaceOnUse">
             <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#C6C6C1" strokeWidth="1" />
@@ -3473,7 +3655,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             && editingParallelDim.fixedWallId === fixedWallId;
           const startEdit = () => { setSelectedId(movingWallId); setSelectedExtDim(null); setEditingParallelDim({ movingWallId, fixedWallId, value: faceDistM, key: pwKey }); };
           const pwStyle = autoDimStyle(pwKey);
-          const pwColor = pwStyle.color || dimColor;
+          const pwColor = pwStyle.color || intTotalDimColor;
           const pwFontSize = toNum(pwStyle.fontSize, dimFontSize);
           return (
             <g key={`pw-${d.aId}-${d.bId}`} opacity="0.9">
@@ -3522,9 +3704,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const at = (t, offset) => ({ x: run.x1 + run.ux * t + run.nx * offset, y: run.y1 + run.uy * t + run.ny * offset });
           const overallP1 = at(0, overallOffset), overallP2 = at(run.len, overallOffset), overallMid = at(run.len / 2, overallOffset);
           const totalM = (run.len / GRID) * scale;
-          const pick = (key, label, defaultColor, defaultFontSize) => () => {
+          const pick = (key, label, defaultColor, defaultFontSize, groupField) => () => {
             setEditingParallelDim(null);
-            setSelectedExtDim({ key, label, defaultColor, defaultFontSize });
+            setSelectedExtDim({ key, label, defaultColor, defaultFontSize, groupField });
           };
           return (
             <g key={`ext-${run.id}`} opacity="0.9">
@@ -3551,13 +3733,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 // made it look like changing one swatch should recolor
                 // everything and never actually did. Any one segment can
                 // still override its own color/size on top of that default.
-                const segDefaultColor = seg.kind === "door" ? doorDimColor : seg.kind === "window" ? windowDimColor : dimColor;
-                const segDefaultFontSize = seg.kind === "gap" ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
+                const segColorInfo = chainSegColorInfo(seg, extPartialDimColor, "extPartialDimColor");
+                const segDefaultColor = segColorInfo.color;
+                const segDefaultFontSize = seg.kind === "gap" && !seg.adjacentKind ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
                 const segStyle = autoDimStyle(segKey);
                 const segColor = segStyle.color || segDefaultColor;
                 const segFontSize = toNum(segStyle.fontSize, segDefaultFontSize);
-                const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : "vão";
-                const onTap = pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`, segDefaultColor, segDefaultFontSize);
+                const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : seg.adjacentKind === "door" ? "vão (porta)" : seg.adjacentKind === "window" ? "vão (janela)" : "vão";
+                const onTap = pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`, segDefaultColor, segDefaultFontSize, segColorInfo.groupField);
                 return (
                   <g key={i}>
                     <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
@@ -3578,9 +3761,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   the "red" annotation, further out past the chain. */}
               {!hiddenAutoDims.includes(overallKey) && (() => {
                 const overallStyle = autoDimStyle(overallKey);
-                const overallColor = overallStyle.color || dimColor;
+                const overallColor = overallStyle.color || extTotalDimColor;
                 const overallFontSize = toNum(overallStyle.fontSize, dimFontSize);
-                const onTap = pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`, dimColor, dimFontSize);
+                const onTap = pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`, extTotalDimColor, dimFontSize, "extTotalDimColor");
                 return (
                   <g>
                     <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
@@ -3597,6 +3780,61 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   </g>
                 );
               })()}
+            </g>
+          );
+        })}
+        {/* Interior counterpart ("face interna") of the exterior chain
+            above — each room's own corner→opening→opening→corner run,
+            along its own wall faces, in the interior partial color (dark
+            orange, or the door/window family color right next to an
+            opening) — same tap-to-edit/drag-to-nudge/hide mechanics, on
+            its own key namespace (intchainrow:/intseg:) so it never
+            collides with the exterior chain's own keys. */}
+        {planMode === "piso" && interiorPerimeterChains(
+          elements.filter(e => (e.type !== "wall" && e.type !== "door" && e.type !== "window") || phaseVisible(e)), scale
+        ).map(run => {
+          const CHAIN_GAP = 10;
+          const chainRowKey = `intchainrow:${run.id}`;
+          const chainOffset = run.halfThickPx + CHAIN_GAP + toNum(autoDimStyle(chainRowKey).offset, 0);
+          let dimDeg = Math.atan2(run.uy, run.ux) * 180 / Math.PI;
+          if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
+          const at = (t, offset) => ({ x: run.x1 + run.ux * t + run.nx * offset, y: run.y1 + run.uy * t + run.ny * offset });
+          const pick = (key, label, defaultColor, defaultFontSize, groupField) => () => {
+            setEditingParallelDim(null);
+            setSelectedExtDim({ key, label, defaultColor, defaultFontSize, groupField });
+          };
+          return (
+            <g key={`int-${run.id}`} opacity="0.9">
+              {run.segs.map((seg, i) => {
+                const segKey = `intseg:${run.id}:${Math.round(seg.a)}:${Math.round(seg.b)}`;
+                if (hiddenAutoDims.includes(segKey)) return null;
+                const p1 = at(seg.a, chainOffset), p2 = at(seg.b, chainOffset);
+                const mid = at((seg.a + seg.b) / 2, chainOffset);
+                const segM = ((seg.b - seg.a) / GRID) * scale;
+                const segColorInfo = chainSegColorInfo(seg, intPartialDimColor, "intPartialDimColor");
+                const segDefaultColor = segColorInfo.color;
+                const segDefaultFontSize = seg.kind === "gap" && !seg.adjacentKind ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
+                const segStyle = autoDimStyle(segKey);
+                const segColor = segStyle.color || segDefaultColor;
+                const segFontSize = toNum(segStyle.fontSize, segDefaultFontSize);
+                const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : seg.adjacentKind === "door" ? "vão (porta)" : seg.adjacentKind === "window" ? "vão (janela)" : "vão";
+                const onTap = pick(segKey, `Cota interna do ${kindLabel} · ${segM.toFixed(2)} m`, segDefaultColor, segDefaultFontSize, segColorInfo.groupField);
+                return (
+                  <g key={i}>
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <g transform={dimDeg ? `rotate(${dimDeg} ${mid.x} ${mid.y})` : undefined}>
+                      {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
+                      <text x={mid.x} y={mid.y + 1} fontSize={segFontSize} fill={segColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
+                      {tool === "selecionar" && (
+                        <rect x={mid.x - 24} y={mid.y - 24} width="48" height="48" fill="transparent" style={{ cursor: "move" }}
+                          onMouseDown={e => beginDragExtDim(chainRowKey, run.nx, run.ny, onTap, e)} onTouchStart={e => beginDragExtDim(chainRowKey, run.nx, run.ny, onTap, e)} />
+                      )}
+                    </g>
+                  </g>
+                );
+              })}
             </g>
           );
         })}
