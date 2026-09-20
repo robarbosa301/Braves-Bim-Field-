@@ -2569,13 +2569,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // Drag a manual "Cota" element's own offsetPx (see cotaGeometry) — a
   // plain tap still selects it (opening its normal color/fonte panel
   // below the canvas), a real drag nudges it perpendicular to its own
-  // measuring line instead.
-  function beginDragCota(el, nx, ny, e) {
+  // measuring line instead. field picks WHICH offset a drag actually
+  // nudges: "offsetPx" (default) moves the whole ruler — tick, extension
+  // lines and number together, the tick's own hit-line below uses this —
+  // "labelOffsetPx" moves only the number, free along the same axis, in
+  // or out along it — the number's own hit-rect uses that one, so
+  // grabbing the text nudges just the text, no separate numeric field to
+  // type into.
+  function beginDragCota(el, nx, ny, e, field = "offsetPx") {
     if (tool !== "selecionar") return;
     if (e.touches && e.touches.length > 1) return;
     e.stopPropagation(); e.preventDefault();
     if (multiSelectMode) { toggleSelectionMember(el.id); return; }
-    setDraggingCota({ id: el.id, nx, ny, startP: svgPointRaw(e), startOffset: toNum(el.offsetPx, 0), moved: false });
+    setDraggingCota({ id: el.id, nx, ny, field, startP: svgPointRaw(e), startOffset: toNum(el[field], 0), moved: false });
   }
   function onCotaDragMove(e) {
     if (!draggingCota) return;
@@ -2592,7 +2598,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     // Free — no min/max here anymore, same reasoning as the auto-dim drag
     // above: a manual cota should be draggable as close to the wall (or as
     // far across the room) as the user actually wants, not stopped early.
-    commitElements(elements.map(el => el.id === d.id ? { ...el, offsetPx: d.startOffset + deltaPerp } : el));
+    commitElements(elements.map(el => el.id === d.id ? { ...el, [d.field]: d.startOffset + deltaPerp } : el));
   }
   function onCotaDragEnd() {
     if (draggingCota && !draggingCota.moved) setSelectedId(draggingCota.id);
@@ -3839,8 +3845,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 return (
                   <g key={i}>
                     <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
-                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
-                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p1.x - run.nx * 4} y1={p1.y - run.ny * 4} x2={p1.x + run.nx * 4} y2={p1.y + run.ny * 4} stroke={segColor} strokeWidth="0.9" pointerEvents="none" />
+                    <line x1={p2.x - run.nx * 4} y1={p2.y - run.ny * 4} x2={p2.x + run.nx * 4} y2={p2.y + run.ny * 4} stroke={segColor} strokeWidth="0.9" pointerEvents="none" />
                     <g transform={dimDeg ? `rotate(${dimDeg} ${mid.x} ${mid.y})` : undefined}>
                       {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                       <text x={mid.x} y={mid.y + 1} fontSize={segFontSize} fill={segColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
@@ -3862,8 +3868,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 return (
                   <g>
                     <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
-                    <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
-                    <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
+                    <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={overallColor} strokeWidth="0.9" pointerEvents="none" />
+                    <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={overallColor} strokeWidth="0.9" pointerEvents="none" />
                     <g transform={dimDeg ? `rotate(${dimDeg} ${overallMid.x} ${overallMid.y})` : undefined}>
                       {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" pointerEvents="none" />}
                       <text x={overallMid.x} y={overallMid.y + 1} fontSize={overallFontSize} fill={overallColor} textAnchor="middle" fontWeight="700" style={{ pointerEvents: "none" }}>{totalM.toFixed(2)} m</text>
@@ -3917,8 +3923,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 return (
                   <g key={i}>
                     <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
-                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
-                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p1.x - run.nx * 4} y1={p1.y - run.ny * 4} x2={p1.x + run.nx * 4} y2={p1.y + run.ny * 4} stroke={segColor} strokeWidth="0.9" pointerEvents="none" />
+                    <line x1={p2.x - run.nx * 4} y1={p2.y - run.ny * 4} x2={p2.x + run.nx * 4} y2={p2.y + run.ny * 4} stroke={segColor} strokeWidth="0.9" pointerEvents="none" />
                     <g transform={dimDeg ? `rotate(${dimDeg} ${mid.x} ${mid.y})` : undefined}>
                       {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                       <text x={mid.x} y={mid.y + 1} fontSize={segFontSize} fill={segColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
@@ -3961,9 +3967,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const rotDeg = g.lineAngleDeg + toNum(el.labelRotDeg, 0);
           return (
             <g key={el.id} opacity={isSel ? 1 : 0.9}>
-              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke={isSel ? "#726F68" : color} strokeWidth={isSel ? 1.6 : 0.9} />
-              <line x1={g.x1 - nx * 4} y1={g.y1 - ny * 4} x2={g.x1 + nx * 4} y2={g.y1 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" />
-              <line x1={g.x2 - nx * 4} y1={g.y2 - ny * 4} x2={g.x2 + nx * 4} y2={g.y2 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" />
+              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke={isSel ? "#726F68" : color} strokeWidth={isSel ? 1.6 : 0.9} pointerEvents="none" />
+              <line x1={g.x1 - nx * 4} y1={g.y1 - ny * 4} x2={g.x1 + nx * 4} y2={g.y1 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={g.x2 - nx * 4} y1={g.y2 - ny * 4} x2={g.x2 + nx * 4} y2={g.y2 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" pointerEvents="none" />
+              {tool === "selecionar" && (
+                // A fat, invisible stroke over the tick line itself —
+                // grabbing THIS moves the whole ruler (tick, extension
+                // lines and number together), same as before. Kept
+                // separate from the number's own handle below, which now
+                // moves just the number.
+                <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="transparent" strokeWidth="20" style={{ cursor: "move" }}
+                  onMouseDown={e => beginDragCota(el, nx, ny, e)} onTouchStart={e => beginDragCota(el, nx, ny, e)} />
+              )}
               <g transform={rotDeg ? `rotate(${rotDeg} ${g.labelX} ${g.labelY})` : undefined}>
                 {dimLabelOpaqueBg && <rect x={g.labelX - 15} y={g.labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                 <text x={g.labelX} y={g.labelY + 1} fontSize={fontSize} fill={isSel ? "#726F68" : color} textAnchor="middle" fontWeight="600"
@@ -3977,8 +3992,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   // finger landing right on the visible number could still
                   // miss it after rotation. Squared and centered on the
                   // pivot maps onto itself at any angle, so it can't.
+                  // Dragging it moves ONLY the number (labelOffsetPx) —
+                  // free along the cota's own axis, in or out — replacing
+                  // the old numeric "afastar texto" field with a direct
+                  // drag; a plain tap (no movement) still just selects.
                   <rect x={g.labelX - 26} y={g.labelY - 26} width="52" height="52" fill="transparent" style={{ cursor: "move" }}
-                    onMouseDown={e => beginDragCota(el, nx, ny, e)} onTouchStart={e => beginDragCota(el, nx, ny, e)} />
+                    onMouseDown={e => beginDragCota(el, nx, ny, e, "labelOffsetPx")} onTouchStart={e => beginDragCota(el, nx, ny, e, "labelOffsetPx")} />
                 )}
               </g>
             </g>
@@ -4311,13 +4330,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
                   {FONT_FAMILIES.map(f => <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>)}
                 </select>
-                {/* The number's own position/angle relative to its
-                    tick — independent of dragging the cota itself (that
-                    moves the tick, this only nudges the text): how far
-                    from the line it sits, and a 90°-at-a-time spin for
-                    when the default reading angle comes out sideways or
-                    mismatched against a neighboring cota. */}
-                <NumField value={toNum(selected.labelOffsetPx, 0)} onChange={v => patchSelected({ labelOffsetPx: v })} unit="px afastar texto" w="w-10" />
+                {/* How far the number sits from its own tick is now a
+                    direct drag on the number itself (see the manual-cota
+                    render below) — free, in or out, along the cota's own
+                    axis — instead of a value typed in here. Only the
+                    90°-at-a-time spin (for when the default reading angle
+                    comes out sideways or mismatched against a neighboring
+                    cota) stays a button, since a drag can't express that. */}
                 <button onClick={() => patchSelected({ labelRotDeg: (toNum(selected.labelRotDeg, 0) + 90) % 360 })}
                   className="px-1.5 py-1 rounded text-[10px]" style={{ background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>
                   Girar texto 90°
