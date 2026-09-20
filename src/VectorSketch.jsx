@@ -243,12 +243,22 @@ function cotaGeometry(el, elements, scale) {
   const halfThickAPx = (wallThicknessM(a) / 2 / scale) * GRID;
   const halfThickBPx = (wallThicknessM(b) / 2 / scale) * GRID;
   let x1 = axis.x1, y1 = axis.y1, x2 = axis.x2, y2 = axis.y2;
-  if (el.mode === "face") {
-    x1 += ux * halfThickAPx; y1 += uy * halfThickAPx;
-    x2 -= ux * halfThickBPx; y2 -= uy * halfThickBPx;
-  } else if (el.mode === "faceExt") {
-    x1 -= ux * halfThickAPx; y1 -= uy * halfThickAPx;
-    x2 += ux * halfThickBPx; y2 += uy * halfThickBPx;
+  // Which face of EACH wall the line lands on, picked independently —
+  // "interna" is the face turned toward the other wall (closing the gap,
+  // same direction "Face a face" always used), "externa" the one turned
+  // away (opening it back up, same direction the old "Face ext. a face
+  // ext." always used). Old elements only ever had mode "face" (both
+  // internal) or "faceExt" (both external); faceA/faceB default from that
+  // mode so they keep rendering identically without needing a migration —
+  // any NEW cota (placed with the per-wall toggle) always carries its own
+  // explicit choice, in any combination, mode itself staying "face".
+  const isFaceMode = el.mode === "face" || el.mode === "faceExt";
+  const faceA = el.faceA || (el.mode === "faceExt" ? "ext" : "int");
+  const faceB = el.faceB || (el.mode === "faceExt" ? "ext" : "int");
+  if (isFaceMode) {
+    const signA = faceA === "ext" ? -1 : 1, signB = faceB === "ext" ? 1 : -1;
+    x1 += ux * halfThickAPx * signA; y1 += uy * halfThickAPx * signA;
+    x2 += ux * halfThickBPx * signB; y2 += uy * halfThickBPx * signB;
   }
   // Dragged (perpendicular to the measuring line, i.e. parallel to the two
   // walls) so the whole dimension can slide along the room — the same
@@ -258,17 +268,34 @@ function cotaGeometry(el, elements, scale) {
   const offsetPx = toNum(el.offsetPx, 0);
   x1 += dragNx * offsetPx; y1 += dragNy * offsetPx;
   x2 += dragNx * offsetPx; y2 += dragNy * offsetPx;
-  const halfSumM = wallThicknessM(a) / 2 + wallThicknessM(b) / 2;
+  const halfThickAM = wallThicknessM(a) / 2, halfThickBM = wallThicknessM(b) / 2;
   const distM = (axis.distPx / GRID) * scale;
-  const valueM = el.mode === "face" ? Math.max(0, distM - halfSumM) : el.mode === "faceExt" ? distM + halfSumM : distM;
+  let valueM = distM;
+  if (isFaceMode) {
+    const deltaA = faceA === "ext" ? -halfThickAM : halfThickAM;
+    const deltaB = faceB === "ext" ? -halfThickBM : halfThickBM;
+    valueM = Math.max(0, distM - deltaA - deltaB);
+  }
   let dimDeg = Math.atan2(uy, ux) * 180 / Math.PI;
   if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
-  return { x1, y1, x2, y2, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2, valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg };
+  return { x1, y1, x2, y2, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2, valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg, faceA, faceB };
 }
 const COTA_MODE_LABEL = {
   face: "Face a face", eixo: "Eixo a eixo", faceExt: "Face ext. a face ext.",
   espessura: "Espessura da parede", opening: "Largura (porta/janela)",
 };
+// A "face"-mode cota's label needs to say WHICH combination of faces it's
+// using now that any mix (not just both-internal or both-external) is
+// possible — falls back to the fixed table for every other mode, and for
+// a legacy "faceExt" element that hasn't had its face flipped yet (so its
+// own label keeps reading exactly as it always has).
+function cotaModeLabel(el) {
+  if (el.mode !== "face") return COTA_MODE_LABEL[el.mode] || "";
+  const faceA = el.faceA || "int", faceB = el.faceB || "int";
+  if (faceA === "int" && faceB === "int") return "Face a face";
+  if (faceA === "ext" && faceB === "ext") return "Face ext. a face ext.";
+  return `Face a face (1ª ${faceA === "ext" ? "externa" : "interna"} · 2ª ${faceB === "ext" ? "externa" : "interna"})`;
+}
 // Same room-membership test App.jsx's own wallSpanForRoom/isWallExterior
 // use, duplicated here (VectorSketch never imports from App.jsx) so the
 // automatic perimeter dimensioning below can tell an exterior wall from an
@@ -886,6 +913,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // plan — has no automatic equivalent, so the user places it by hand.
   const [cotaMode, setCotaMode] = useState("face");
   const [cotaPendingWallId, setCotaPendingWallId] = useState(null);
+  // Which face of EACH of the two walls a new "face"-mode cota lands on —
+  // picked independently so any combination is possible (both internal —
+  // the clear span, both external — the old "face ext. a face ext.", or
+  // mixed — e.g. the outer face of an exterior wall to the inner face of
+  // an interior partition), instead of only the two fixed symmetric
+  // presets. "1ª parede" is whichever wall gets tapped first.
+  const [cotaFaceA, setCotaFaceA] = useState("int");
+  const [cotaFaceB, setCotaFaceB] = useState("int");
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
   // entire phone screen — the toolbar rows and the selected-element panel
@@ -1754,7 +1789,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (!hit || hit.type !== "wall") return;
       if (!cotaPendingWallId) { setCotaPendingWallId(hit.id); return; }
       if (hit.id === cotaPendingWallId) { setCotaPendingWallId(null); return; }
-      const el = { id: uid(), type: "cota", mode: cotaMode, wallAId: cotaPendingWallId, wallBId: hit.id };
+      const el = {
+        id: uid(), type: "cota", mode: cotaMode, wallAId: cotaPendingWallId, wallBId: hit.id,
+        ...(cotaMode === "face" ? { faceA: cotaFaceA, faceB: cotaFaceB } : null),
+      };
       setCotaPendingWallId(null);
       commitElements([...elements, el]);
       setSelectedId(el.id);
@@ -3210,7 +3248,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             {[
               { id: "face", label: "Face a face" },
               { id: "eixo", label: "Eixo a eixo" },
-              { id: "faceExt", label: "Face ext. a face ext." },
               { id: "espessura", label: "Espessura" },
               { id: "opening", label: "Porta/janela" },
             ].map(m => (
@@ -3221,6 +3258,26 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               </button>
             ))}
           </div>
+          {/* Which face of EACH wall — independently, so "face externa da
+              1ª parede até face interna da 2ª" (or any other combination)
+              is just as reachable as the two old fixed presets (both
+              internal, or both external) used to be. */}
+          {cotaMode === "face" && (
+            <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
+              {[{ label: "1ª parede", value: cotaFaceA, set: setCotaFaceA }, { label: "2ª parede", value: cotaFaceB, set: setCotaFaceB }].map(f => (
+                <span key={f.label} className="flex items-center gap-1">
+                  {f.label}:
+                  {[{ id: "int", label: "Interna" }, { id: "ext", label: "Externa" }].map(o => (
+                    <button key={o.id} onClick={() => f.set(o.id)}
+                      className="px-1.5 py-0.5 rounded"
+                      style={{ background: f.value === o.id ? C.gold : C.panelAlt, color: f.value === o.id ? "#141311" : C.mute, border: `1px solid ${f.value === o.id ? C.gold : C.line}` }}>
+                      {o.label}
+                    </button>
+                  ))}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="text-[10px]" style={{ color: C.mute }}>
             {cotaMode === "espessura" ? "Toque na parede: mostra a espessura dela."
               : cotaMode === "opening" ? "Toque numa porta ou janela: mostra a largura dela em planta."
@@ -4015,7 +4072,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-medium" style={{ color: C.gold }}>
-              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${COTA_MODE_LABEL[selected.mode] || ""}` : "Luminária"}
+              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${cotaModeLabel(selected)}` : "Luminária"}
             </span>
             <button onClick={() => setSelectedId(null)}><X size={14} color={C.gold} /></button>
           </div>
@@ -4205,6 +4262,30 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
                   {FONT_FAMILIES.map(f => <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>)}
                 </select>
+                {/* Flip either wall's face without redoing the whole
+                    dimension — the same per-wall toggle the Cota tool
+                    itself uses when placing a new one, here for an
+                    already-placed one (any combination: both internal,
+                    both external, or mixed). Legacy elements (mode
+                    "face"/"faceExt" with no faceA/faceB stored yet) show
+                    what cotaGeometry itself already falls back to, so the
+                    first tap here always starts from what's on screen. */}
+                {(selected.mode === "face" || selected.mode === "faceExt") && g && (
+                  <>
+                    {[{ label: "1ª parede", key: "faceA", value: g.faceA }, { label: "2ª parede", key: "faceB", value: g.faceB }].map(f => (
+                      <span key={f.key} className="flex items-center gap-1">
+                        <span style={{ color: C.mute }}>{f.label}:</span>
+                        {[{ id: "int", label: "Interna" }, { id: "ext", label: "Externa" }].map(o => (
+                          <button key={o.id} onClick={() => patchSelected({ mode: "face", [f.key]: o.id })}
+                            className="px-1.5 py-0.5 rounded text-[10px]"
+                            style={{ background: f.value === o.id ? C.gold : C.panelAlt, color: f.value === o.id ? "#141311" : C.mute, border: `1px solid ${f.value === o.id ? C.gold : C.line}` }}>
+                            {o.label}
+                          </button>
+                        ))}
+                      </span>
+                    ))}
+                  </>
+                )}
               </div>
             );
           })()}
