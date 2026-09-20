@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, TriangleAlert, Rotate3d, Box, Home,
-  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut
+  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut, Undo2, Redo2
 } from "lucide-react";
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
@@ -1070,6 +1070,47 @@ export default function PranchetaBIM() {
     const existing = levelObj.elevDimStyles || {};
     updateLevelMeta(levelObj.id, { elevDimStyles: { ...existing, [key]: { ...(existing[key] || {}), ...patch } } });
   }
+  // Its own small Voltar/Avançar, separate from the Croqui canvas's own
+  // (that one only ever tracks sketchElements) — an Elevação edit touches
+  // level META (elevDimStyles) as much as it touches an opening element's
+  // own elevTagDx/Dy, so a single snapshot of the WHOLE level, taken once
+  // right as a drag starts (never on every frame — see onDragBegin), is
+  // simpler than trying to reconcile two separate undo stacks.
+  const [elevUndoStack, setElevUndoStack] = useState([]);
+  const [elevRedoStack, setElevRedoStack] = useState([]);
+  function pushElevHistory() {
+    setElevUndoStack(s => [...s.slice(-29), levelsRef.current]);
+    setElevRedoStack([]);
+  }
+  function elevUndo() {
+    if (!elevUndoStack.length) return;
+    const prev = elevUndoStack[elevUndoStack.length - 1];
+    setElevRedoStack(r => [...r, levelsRef.current]);
+    setElevUndoStack(s => s.slice(0, -1));
+    updateLevels(() => prev);
+  }
+  function elevRedo() {
+    if (!elevRedoStack.length) return;
+    const next = elevRedoStack[elevRedoStack.length - 1];
+    setElevUndoStack(s => [...s, levelsRef.current]);
+    setElevRedoStack(r => r.slice(0, -1));
+    updateLevels(() => next);
+  }
+  // "Apagar" for one wall's own Elevação — every dragged dimension offset
+  // on it (elevDimStyles keys prefixed with this wall's id) plus every one
+  // of its doors/windows' own dragged tag position, back to the
+  // auto-computed default layout. Scoped to just this wall (not the whole
+  // level) since a stacked "Ambiente" view shows several at once and
+  // clearing one shouldn't touch the others.
+  function clearElevAdjustments(levelObj, wallId) {
+    pushElevHistory();
+    const prefix = wallId + ":";
+    updateLevels(ls => ls.map(l => l.id !== levelObj.id ? l : {
+      ...l,
+      elevDimStyles: Object.fromEntries(Object.entries(l.elevDimStyles || {}).filter(([k]) => !k.startsWith(prefix))),
+      sketchElements: (l.sketchElements || []).map(e => (e.wallId === wallId && (e.type === "door" || e.type === "window")) ? { ...e, elevTagDx: undefined, elevTagDy: undefined } : e),
+    }));
+  }
   function removeLevelElement(levelId, elementId) {
     updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.filter(e => e.id !== elementId) }));
   }
@@ -1852,6 +1893,10 @@ export default function PranchetaBIM() {
                         style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>{Math.round(elevationZoom * 100)}%</button>
                       <button onClick={() => setElevationZoom(z => Math.min(2, +(z + 0.15).toFixed(2)))} title="Aumentar"
                         className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomIn size={13} color={C.chalk} /></button>
+                      <button onClick={elevUndo} disabled={!elevUndoStack.length} title="Voltar (desfazer um arraste na Elevação)"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, opacity: elevUndoStack.length ? 1 : 0.4 }}><Undo2 size={13} color={C.chalk} /></button>
+                      <button onClick={elevRedo} disabled={!elevRedoStack.length} title="Avançar"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, opacity: elevRedoStack.length ? 1 : 0.4 }}><Redo2 size={13} color={C.chalk} /></button>
                     </div>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
                 ) : (
@@ -1920,10 +1965,15 @@ export default function PranchetaBIM() {
                 elevationRoomWalls.length > 0 ? (
                   <div style={{ height: elevationNaturalHeight ? elevationNaturalHeight * elevationZoom : undefined, overflow: "hidden" }}>
                   <div ref={elevationScaleRef} style={{ transform: `scale(${elevationZoom})`, transformOrigin: "top left" }}>
-                  <div className="space-y-4">
-                    {/* The 4 walls of a room, one under the other — not a
-                        one-at-a-time picker — so the whole ambiente is
-                        visible without extra taps. */}
+                  {/* Every wall's own sheet, side by side wherever the
+                      screen is wide enough for more than one (a tablet, or
+                      a phone turned sideways) instead of always one long
+                      vertical scroll — auto-fit lets however many actually
+                      fit per row do so, then wraps the rest down, still
+                      falling back to one per row on a narrow phone. */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", alignItems: "start" }}>
+                    {/* Every wall of the room — not a one-at-a-time picker —
+                        so the whole ambiente is visible without extra taps. */}
                     {elevationRoomWalls.map(w => {
                       // "Externo" is the building's own outside face, not
                       // any one room's inside — never clipped to a room
@@ -1932,14 +1982,22 @@ export default function PranchetaBIM() {
                       // of the building shows, not just this one level's.
                       if (elevationRoomName === "Externo") {
                         const stack = buildingElevationStack(levels, croquiLevel, w);
+                        const topLevel = stack[stack.length - 1]?.level;
                         return (
                           <div key={w.id}>
-                            <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[11px] font-semibold" style={{ color: C.gold }}>Parede {w.tag}</span>
+                              {topLevel && (
+                                <button onClick={() => clearElevAdjustments(topLevel, w.id)} title="Apagar ajustes de posição desta parede (cotas e tags arrastados)"
+                                  className="text-[10px] underline shrink-0" style={{ color: C.mute }}>apagar ajustes</button>
+                              )}
+                            </div>
                             <div className="flex flex-col-reverse">
                               {stack.map(({ level: lvl, wall: sw }) => (
                                 <ElevationView key={lvl.id + ":" + sw.id} level={lvl} wallId={sw.id}
                                   onPatchOpening={(id, patch) => updateLevelElement(lvl.id, id, patch)}
-                                  onPatchDimStyle={(key, patch) => patchElevDimStyle(lvl, key, patch)} />
+                                  onPatchDimStyle={(key, patch) => patchElevDimStyle(lvl, key, patch)}
+                                  onDragBegin={pushElevHistory} />
                               ))}
                             </div>
                           </div>
@@ -1951,10 +2009,15 @@ export default function PranchetaBIM() {
                       const span = wallSpanForRoom(croquiLevel, w, elevationRoomName) || { startPx: 0, endPx: fullLenPx };
                       return (
                         <div key={w.id}>
-                          <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[11px] font-semibold" style={{ color: C.gold }}>Parede {w.tag}</span>
+                            <button onClick={() => clearElevAdjustments(croquiLevel, w.id)} title="Apagar ajustes de posição desta parede (cotas e tags arrastados)"
+                              className="text-[10px] underline shrink-0" style={{ color: C.mute }}>apagar ajustes</button>
+                          </div>
                           <ElevationView level={croquiLevel} wallId={w.id} spanStartM={toM(span.startPx)} spanEndM={toM(span.endPx)}
                             onPatchOpening={(id, patch) => updateLevelElement(croquiLevel.id, id, patch)}
-                            onPatchDimStyle={(key, patch) => patchElevDimStyle(croquiLevel, key, patch)} />
+                            onPatchDimStyle={(key, patch) => patchElevDimStyle(croquiLevel, key, patch)}
+                            onDragBegin={pushElevHistory} />
                         </div>
                       );
                     })}

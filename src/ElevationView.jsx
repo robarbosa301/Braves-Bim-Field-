@@ -26,8 +26,10 @@ const TAG_LINE_GAP = 10;
 // onPatchOpening(openingId, patch) and onPatchDimStyle(key, patch) are how a
 // drag here gets persisted — both optional, so a caller that hasn't wired
 // them up yet (or a read-only context) just renders the same static view
-// this always was, with no drag handles shown.
-export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle }) {
+// this always was, with no drag handles shown. onDragBegin() (also optional)
+// fires once per gesture, right as it starts — the caller's hook for
+// pushing an undo snapshot before the drag's own patches start landing.
+export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle, onDragBegin }) {
   const elements = level.sketchElements || [];
   const wall = elements.find(e => e.id === wallId && e.type === "wall");
   const svgRef = useRef(null);
@@ -112,21 +114,35 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
     const rect = svgRef.current?.getBoundingClientRect();
     return rect && rect.width ? viewW / rect.width : 1;
   }
-  function beginDrag(kind, key, startDx, startDy, e) {
+  // A dimension only ever moves along the ONE axis that matches its own
+  // orientation — a horizontal dim (the gap chain, the overall length)
+  // slides up/down to find its own clear row, a vertical one (sill,
+  // height, overall wall height) slides left/right — never both, or it
+  // ends up floating free over the drawing instead of staying aligned
+  // with the geometry it's actually measuring. Only "dim" drags are
+  // constrained this way; a tag's own position (kind "tag") is free in
+  // both directions, since it's a label, not a measuring line.
+  function beginDrag(kind, key, startDx, startDy, axis, e) {
     e.stopPropagation();
     if (e.cancelable) e.preventDefault();
     const p = e.touches ? e.touches[0] : e;
-    setDragState({ kind, key, startClientX: p.clientX, startClientY: p.clientY, startDx, startDy });
+    onDragBegin?.();
+    setDragState({ kind, key, axis, startClientX: p.clientX, startClientY: p.clientY, startDx, startDy });
   }
   function onSvgMove(e) {
     if (!dragState) return;
     if (e.cancelable) e.preventDefault();
     const p = e.touches ? e.touches[0] : e;
     const f = svgUnitsPerClientPx();
-    const ndx = dragState.startDx + (p.clientX - dragState.startClientX) * f;
-    const ndy = dragState.startDy + (p.clientY - dragState.startClientY) * f;
-    if (dragState.kind === "tag") onPatchOpening?.(dragState.key, { elevTagDx: ndx, elevTagDy: ndy });
-    else onPatchDimStyle?.(wall.id + ":" + dragState.key, { dx: ndx, dy: ndy });
+    const rawDx = dragState.startDx + (p.clientX - dragState.startClientX) * f;
+    const rawDy = dragState.startDy + (p.clientY - dragState.startClientY) * f;
+    if (dragState.kind === "tag") {
+      onPatchOpening?.(dragState.key, { elevTagDx: rawDx, elevTagDy: rawDy });
+    } else {
+      const ndx = dragState.axis === "y" ? dragState.startDx : rawDx;
+      const ndy = dragState.axis === "x" ? dragState.startDy : rawDy;
+      onPatchDimStyle?.(wall.id + ":" + dragState.key, { dx: ndx, dy: ndy });
+    }
   }
   function endDrag() { setDragState(null); }
 
@@ -147,7 +163,7 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
               color={g.type === "door" ? doorDimColor : g.type === "window" ? windowDimColor : dimColor}
               fontSize={g.type ? doorWindowDimFontSize : dimFontSize}
               dx={off.dx} dy={off.dy}
-              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", key, off.dx, off.dy, e)) : undefined} />
+              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", key, off.dx, off.dy, "y", e)) : undefined} />
           );
         })}
 
@@ -179,16 +195,16 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
               <text x={oX + wPx / 2 + tagDx} y={oTopY - 4 + tagDy} fontSize={tagFontSize} fill={tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{o.width}×{o.height}</text>
               {onPatchOpening && (
                 <rect x={oX + wPx / 2 + tagDx - 24} y={oTopY - 4 - TAG_LINE_GAP + tagDy - 10} width="48" height="26" fill="transparent" style={{ cursor: "move" }}
-                  onMouseDown={e => beginDrag("tag", o.id, tagDx, tagDy, e)} onTouchStart={e => beginDrag("tag", o.id, tagDx, tagDy, e)} />
+                  onMouseDown={e => beginDrag("tag", o.id, tagDx, tagDy, null, e)} onTouchStart={e => beginDrag("tag", o.id, tagDx, tagDy, null, e)} />
               )}
               {!isDoor && sillM > 0 && (
                 <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize}
                   dx={sillOff.dx} dy={sillOff.dy}
-                  onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "sill:" + o.id, sillOff.dx, sillOff.dy, e)) : undefined} />
+                  onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "sill:" + o.id, sillOff.dx, sillOff.dy, "x", e)) : undefined} />
               )}
               <ElevVDim x={oX + wPx + 8} y1={oBottomY} y2={oTopY} label={oHeightM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize}
                 dx={heightOff.dx} dy={heightOff.dy}
-                onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "height:" + o.id, heightOff.dx, heightOff.dy, e)) : undefined} />
+                onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "height:" + o.id, heightOff.dx, heightOff.dy, "x", e)) : undefined} />
             </g>
           );
         })}
@@ -198,7 +214,7 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
           return (
             <ElevVDim x={wallX - 30} y1={wallBottomY} y2={wallTopY} label={heightM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold
               dx={off.dx} dy={off.dy}
-              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallHeight", off.dx, off.dy, e)) : undefined} />
+              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallHeight", off.dx, off.dy, "x", e)) : undefined} />
           );
         })()}
         {(() => {
@@ -206,7 +222,7 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
           return (
             <ElevHDim y={wallBottomY + 24} x1={wallX} x2={wallX + lengthPx} label={lengthM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold
               dx={off.dx} dy={off.dy}
-              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallLength", off.dx, off.dy, e)) : undefined} />
+              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallLength", off.dx, off.dy, "y", e)) : undefined} />
           );
         })()}
       </svg>

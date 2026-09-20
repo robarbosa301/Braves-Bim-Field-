@@ -104,8 +104,19 @@ function wallFaceMaterial(finish, color, segLen, segH) {
   return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
 }
 
+// A literal [] as a default parameter is a FRESH array on every single call
+// where the caller omits roofs (the isolated "Ambiente" 3D view never
+// passes one) — including a re-render triggered by this component's own
+// local state (tapping an element to select it). roofs sits in the main
+// scene-building effect's dependency array, so that fresh reference made
+// the effect think roofs itself had changed on every re-render, tearing the
+// whole scene down and rebuilding it — whose own cleanup clears the
+// selection it had JUST set two lines earlier. The net effect: any tap
+// briefly selected something, then the immediate rebuild wiped it again, so
+// nothing ever stayed selected. One shared, stable empty array fixes it.
+const EMPTY_ROOFS = [];
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
-export default function ThreeDView({ buildingLevels, elevationsById, roofs = [], openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
+export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMPTY_ROOFS, openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
   const mountRef = useRef(null);
   const hintRef = useRef(null);
   const [ok, setOk] = useState(true);

@@ -203,18 +203,24 @@ function cotaGeometry(el, elements, scale) {
     if (!w) return null;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-    // Dragged along the wall itself (the only direction that makes sense
-    // for "where along this wall's length does the thickness tick sit") —
-    // reuses offsetPx as a delta on top of the original tap position
-    // instead of a fixed absolute, same as every other mode.
-    const t = Math.max(0, Math.min(len, (el.atPx ?? len / 2) + toNum(el.offsetPx, 0)));
+    const t = Math.max(0, Math.min(len, el.atPx ?? len / 2));
     const cx = w.x1 + ux * t, cy = w.y1 + uy * t;
     const halfThickPx = (wallThicknessM(w) / 2 / scale) * GRID;
+    // Dragged straight out from the wall (nx,ny) — the tick itself always
+    // stays exactly where it crosses the wall's own thickness (that IS the
+    // measurement), but the label can be pulled further out along that
+    // same line, so it can be lined up with whatever other dimension row
+    // it needs to sit alongside instead of being stuck cramped at the
+    // corner. dragNx/dragNy (not lineAngleDeg, which is this tick's own
+    // CROSSING angle — needed as-is so the text reads across the wall, not
+    // along it) is what the drag handler below actually nudges along.
+    const pushPx = toNum(el.offsetPx, 0);
     return {
       x1: cx - nx * halfThickPx, y1: cy - ny * halfThickPx,
       x2: cx + nx * halfThickPx, y2: cy + ny * halfThickPx,
-      labelX: cx + ux * 16, labelY: cy + uy * 16,
+      labelX: cx + ux * 16 + nx * pushPx, labelY: cy + uy * 16 + ny * pushPx,
       valueM: wallThicknessM(w), lineAngleDeg: Math.atan2(ny, nx) * 180 / Math.PI,
+      dragNx: nx, dragNy: ny,
     };
   }
   if (el.mode === "opening") {
@@ -232,6 +238,7 @@ function cotaGeometry(el, elements, scale) {
       x2: cx + ux * halfWPx, y2: cy + uy * halfWPx,
       labelX: cx, labelY: cy,
       valueM: toNum(o.width, 0.8), lineAngleDeg: Math.atan2(uy, ux) * 180 / Math.PI,
+      dragNx: nx, dragNy: ny,
     };
   }
   // face / eixo / faceExt: between two walls the user tapped in sequence.
@@ -278,7 +285,7 @@ function cotaGeometry(el, elements, scale) {
   }
   let dimDeg = Math.atan2(uy, ux) * 180 / Math.PI;
   if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
-  return { x1, y1, x2, y2, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2, valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg, faceA, faceB };
+  return { x1, y1, x2, y2, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2, valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg, faceA, faceB, dragNx, dragNy };
 }
 const COTA_MODE_LABEL = {
   face: "Face a face", eixo: "Eixo a eixo", faceExt: "Face ext. a face ext.",
@@ -3908,7 +3915,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {planMode === "piso" && elements.filter(el => el.type === "cota").map(el => {
           const g = cotaGeometry(el, elements, scale);
           if (!g) return null;
-          const nx = -Math.sin(g.lineAngleDeg * Math.PI / 180), ny = Math.cos(g.lineAngleDeg * Math.PI / 180);
+          // The direction a drag actually nudges along — NOT derived from
+          // lineAngleDeg (that one's purely the label's own text rotation,
+          // e.g. "espessura" needs its text rotated to read ACROSS the
+          // wall while the drag itself needs to push straight OUT from it,
+          // two different directions for that mode specifically) —
+          // cotaGeometry returns the correct one per mode directly.
+          const nx = g.dragNx, ny = g.dragNy;
           // A "Porta/janela" cota defaults to that family's own cota color
           // and size (doorDimColor/windowDimColor, doorWindowDimFontSize —
           // same ones Elevação and the automatic perimeter chain use for an
