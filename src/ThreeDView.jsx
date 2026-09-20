@@ -710,14 +710,8 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       // HTML legend in the component's own return below.
       const raycaster = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
-      let highlightMesh = null, highlightFill = null, dimensionGroup = null;
+      let highlightFill = null, dimensionGroup = null;
       function clearHighlight() {
-        if (highlightMesh) {
-          scene.remove(highlightMesh);
-          highlightMesh.geometry.dispose();
-          highlightMesh.material.dispose();
-          highlightMesh = null;
-        }
         if (highlightFill) {
           scene.remove(highlightFill);
           highlightFill.geometry.dispose();
@@ -733,18 +727,14 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           dimensionGroup = null;
         }
       }
-      // A soft, translucent aqua reads as "selected" without the stark
-      // white wireframe looking like a construction/error outline, and
-      // stays clearly distinct from any wall/floor material color it
-      // might be sitting on top of.
+      // A soft, translucent aqua wash over the WHOLE selected element reads
+      // as "this is selected" on its own — no separate wireframe outline
+      // (tried both: wireframe-only read as thin edge lines with the
+      // element itself looking untouched; wireframe + fill together was
+      // redundant once the fill alone already changes the element's own
+      // color). depthWrite is off so this never z-fights with the real
+      // mesh sitting at almost the same surface.
       const SELECT_COLOR = 0x4DD9C7;
-      const wireMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, wireframe: true, transparent: true, opacity: 0.85 });
-      // A solid, translucent wash over the WHOLE element — the wireframe
-      // outline alone left the actual wall/door/floor looking untouched,
-      // so "this is selected" only showed up as thin edge lines instead
-      // of the element itself visibly changing. depthWrite is off so this
-      // (and the coincident wireframe) never z-fight with the real mesh
-      // sitting at almost the same surface.
       const fillMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide });
       // Distinct id for whatever a mesh actually represents (a wall, a
       // door/window, or a floor zone) — used to collapse a ray's several
@@ -789,56 +779,32 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
         setSelectedWallInfo({ ...info, _hitIndex: hitIndex, _hitTotal: hits.length });
         dimensionGroup = new THREE.Group();
         if (info.kind === "wall") {
-          // A wireframe box spanning the WHOLE wall's own centerline (not
-          // just the one segment actually hit — a door/window splits a
-          // wall into several segment meshes that all share this same
-          // userData, so the highlight has to be rebuilt from the wall's
-          // own geometry rather than reused from whichever segment the
-          // ray happened to land on).
-          highlightMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(info.lengthM + 0.02, info.heightM + 0.02, info.thicknessM + 0.02),
-            wireMat()
-          );
-          highlightMesh.position.set(info.centerX, info.centerY, info.centerZ);
-          highlightMesh.rotation.y = -info.angle;
-          scene.add(highlightMesh);
+          // Spans the WHOLE wall's own centerline (not just the one
+          // segment actually hit — a door/window splits a wall into
+          // several segment meshes that all share this same userData, so
+          // the highlight has to be rebuilt from the wall's own geometry
+          // rather than reused from whichever segment the ray landed on).
           highlightFill = new THREE.Mesh(
             new THREE.BoxGeometry(info.lengthM + 0.02, info.heightM + 0.02, info.thicknessM + 0.02),
             fillMat()
           );
-          highlightFill.position.copy(highlightMesh.position);
-          highlightFill.rotation.copy(highlightMesh.rotation);
+          highlightFill.position.set(info.centerX, info.centerY, info.centerZ);
+          highlightFill.rotation.y = -info.angle;
           scene.add(highlightFill);
           dimensionGroup.add(buildWallDimensionGroup(info));
         } else if (info.kind === "door" || info.kind === "window") {
           const midY = info.elev + (info.yBottom + info.yTop) / 2;
-          highlightMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(info.widthM + 0.02, (info.yTop - info.yBottom) + 0.02, info.thicknessM + 0.04),
-            wireMat()
-          );
-          highlightMesh.position.set(info.cx, midY, info.cz);
-          highlightMesh.rotation.y = -Math.atan2(info.uz, info.ux);
-          scene.add(highlightMesh);
           highlightFill = new THREE.Mesh(
             new THREE.BoxGeometry(info.widthM + 0.02, (info.yTop - info.yBottom) + 0.02, info.thicknessM + 0.04),
             fillMat()
           );
-          highlightFill.position.copy(highlightMesh.position);
-          highlightFill.rotation.copy(highlightMesh.rotation);
+          highlightFill.position.set(info.cx, midY, info.cz);
+          highlightFill.rotation.y = -Math.atan2(info.uz, info.ux);
           scene.add(highlightFill);
           dimensionGroup.add(buildOpeningDimensionGroup(info));
         } else if (info.kind === "floor") {
-          // No box makes sense for an arbitrary polygon — trace its own
-          // outline instead, just above the floor plane it belongs to.
-          const pts = info.points.map(p => new THREE.Vector3(p.x, info.elev + 0.02, p.y));
-          if (pts.length) pts.push(pts[0].clone());
-          highlightMesh = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints(pts),
-            new THREE.LineBasicMaterial({ color: SELECT_COLOR, transparent: true, opacity: 0.85 })
-          );
-          scene.add(highlightMesh);
-          // Same polygon, filled this time — a plain outline on a floor
-          // is easy to miss entirely from a steep viewing angle.
+          // No box makes sense for an arbitrary polygon — fill its own
+          // shape instead, just above the floor plane it belongs to.
           const shape = new THREE.Shape(info.points.map(p => new THREE.Vector2(p.x, -p.y)));
           highlightFill = new THREE.Mesh(new THREE.ShapeGeometry(shape), fillMat());
           highlightFill.rotation.x = -Math.PI / 2;
