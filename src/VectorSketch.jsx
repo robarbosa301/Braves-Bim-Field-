@@ -489,8 +489,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // "Alinhar": tap the wall to align TO (reference, stays put), then tap
   // the wall that should move to line up with it — same two-tap pattern
   // as Estender, just a parallel-offset correction instead of a
-  // stretch/shrink to a meeting point.
-  const [alignRefId, setAlignRefId] = useState(null);
+  // stretch/shrink to a meeting point. Holds the actual wall object (not
+  // just an id) since the reference can be a ghost wall from the level
+  // above/below, which isn't in this level's own elements/wallsById.
+  const [alignRef, setAlignRef] = useState(null);
   const [alignMsg, setAlignMsg] = useState("");
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
@@ -658,6 +660,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const levelIdx = (allLevels || []).findIndex(l => l.id === level.id);
   const belowLevel = levelIdx > 0 ? allLevels[levelIdx - 1] : null;
   const aboveLevel = (allLevels && levelIdx >= 0 && levelIdx < allLevels.length - 1) ? allLevels[levelIdx + 1] : null;
+  // Only the ghost level(s) actually toggled on ("ver [nível]") — same
+  // walls ghostLevel() below draws as a faint dashed reference, reused
+  // here so a NEW wall can snap its endpoint (or align) straight onto
+  // one, instead of the ghost being purely a look-but-don't-touch guide.
+  // Raw x/y, no scale conversion: the ghost overlay itself never converts
+  // between levels' scales either, so this only lines up when both
+  // levels share the same "1 quadro = " setting, exactly like the visual
+  // guide already assumes.
+  const ghostWalls = [
+    ...(showBelow && belowLevel ? (belowLevel.sketchElements || []).filter(e => e.type === "wall") : []),
+    ...(showAbove && aboveLevel ? (aboveLevel.sketchElements || []).filter(e => e.type === "wall") : []),
+  ];
 
   useLayoutEffect(() => {
     function measure() {
@@ -916,7 +930,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // point doesn't land on a grid intersection — angled walls in particular
   // rarely meet the grid exactly. Returns null (not a fallback point) when
   // nothing is close, so callers can still try angle-snapping first.
-  function findNearbyEndpoint(p, excludeWallId, excludeIds) {
+  function findNearbyEndpoint(p, excludeWallId, excludeIds, extraWalls) {
     // Expressed as a screen-pixel radius, not a fixed world-space one — a
     // fixed SVG-unit tolerance is tied to the drawing's real-world scale,
     // so two corners genuinely closer together than it (like either end of
@@ -930,6 +944,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (e.type !== "wall" && e.type !== "stair") return;
       if (e.id === excludeWallId) return;
       if (excludeIds && excludeIds.has(e.id)) return;
+      [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }].forEach(pt => {
+        const d = dist(p, pt);
+        if (d < bestD) { bestD = d; best = pt; }
+      });
+    });
+    // Ghost (above/below level) walls — same corners, just from a
+    // different level's own list instead of this one's elements.
+    (extraWalls || []).forEach(e => {
       [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }].forEach(pt => {
         const d = dist(p, pt);
         if (d < bestD) { bestD = d; best = pt; }
@@ -961,13 +983,21 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // actually tapped (the wall isn't really perpendicular/parallel here,
   // so forcing it would silently redirect the tap somewhere else on the
   // line).
-  function findNearbyWallLineOrtho(rawP, fixedPt, excludeWallId) {
+  function findNearbyWallLineOrtho(rawP, fixedPt, excludeWallId, extraWalls) {
     const screenPxTolerance = 14;
     const TOL = screenPxTolerance * (viewBox.w / dims.w);
     let best = null, bestD = TOL, bestWall = null;
     elements.forEach(e => {
       if (e.type !== "wall") return;
       if (e.id === excludeWallId) return;
+      const proj = projectPointOnSegment(rawP, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
+      const d = dist(rawP, proj);
+      if (d < bestD) { bestD = d; best = proj; bestWall = e; }
+    });
+    // Ghost (above/below level) walls, same as findNearbyEndpoint — lets a
+    // new wall's mid-span meet one on the ghost level too, not just its
+    // corners.
+    (extraWalls || []).forEach(e => {
       const proj = projectPointOnSegment(rawP, { x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 });
       const d = dist(rawP, proj);
       if (d < bestD) { bestD = d; best = proj; bestWall = e; }
@@ -1035,6 +1065,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const hitRoom = roomPolys.find(r => pointInPolygon(p, r.points));
     if (hitRoom) return hitRoom;
     return null;
+  }
+  // Like findAt, but only ever matches a wall from the ghost level(s)
+  // currently toggled on — used solely as the Alinhar tool's reference
+  // pick, so a wall on this level can be aligned straight onto one from
+  // the level above/below without that other wall needing to exist here.
+  function findGhostWallAt(p) {
+    const TOL = 16 * (viewBox.w / dims.w);
+    let best = null, bestD = TOL;
+    ghostWalls.forEach(w => {
+      const proj = projectPointOnSegment(p, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
+      const d = dist(p, proj);
+      if (d < bestD) { bestD = d; best = w; }
+    });
+    return best;
   }
 
   function elementBounds(el) {
@@ -1116,8 +1160,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     // walls had) leaves gaps that never actually close the shape.
     let p = rawP;
     if (tool === "parede" || tool === "escada" || tool === "ambiente") {
-      const endpointHit = findNearbyEndpoint(rawP, null);
-      const wallLineHit = !endpointHit && (tool === "parede" || tool === "escada") ? findNearbyWallLineOrtho(rawP, pending, null) : null;
+      // Drawing a wall/escada also snaps onto whichever ghost level (the
+      // one/below above) is currently toggled on — otherwise the only way
+      // to land a new wall exactly on top of one from another level was
+      // eyeballing it against the faint dashed guide.
+      const snapExtra = (tool === "parede" || tool === "escada") ? ghostWalls : undefined;
+      const endpointHit = findNearbyEndpoint(rawP, null, undefined, snapExtra);
+      const wallLineHit = !endpointHit && (tool === "parede" || tool === "escada") ? findNearbyWallLineOrtho(rawP, pending, null, snapExtra) : null;
       p = endpointHit || wallLineHit || { x: snap(rawP.x), y: snap(rawP.y) };
       // A freehand second tap almost never lands on an exact 0/45/90°
       // angle from the first point — nudge it there when it's already
@@ -1160,15 +1209,26 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
 
     if (tool === "alinhar") {
+      // First tap: the wall to align TO (the reference, stays put) — can
+      // be a real wall on this level OR a ghost wall from the level
+      // above/below currently toggled on ("ver [nível]"), so a floor's
+      // wall can finally be aligned straight onto the one below it
+      // instead of only ever referencing another wall on the same level.
+      if (!alignRef) {
+        const hit = findAt(p) || findGhostWallAt(p);
+        if (!hit || hit.type !== "wall") return;
+        setAlignRef(hit);
+        setAlignMsg("");
+        return;
+      }
+      // Second tap: the wall to MOVE so it lines up with the reference —
+      // always a real wall on THIS level, since that's the one being
+      // edited (the ghost level's own wall is read-only here).
       const hit = findAt(p);
       if (!hit || hit.type !== "wall") return;
-      // First tap: the wall to align TO (the reference, stays put).
-      // Second tap: the wall to MOVE so it lines up with the reference.
-      if (!alignRefId) { setAlignRefId(hit.id); setAlignMsg(""); return; }
-      if (hit.id === alignRefId) { setAlignRefId(null); return; }
-      const ref = wallsById[alignRefId];
-      setAlignRefId(null);
-      if (!ref) return;
+      if (hit.id === alignRef.id) { setAlignRef(null); return; }
+      const ref = alignRef;
+      setAlignRef(null);
       const err = alignWallTo(hit, ref);
       setAlignMsg(err || "");
       return;
@@ -2014,9 +2074,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       // trying to move away from, so snapping to them would just pull the
       // point straight back and make it impossible to ever straighten.
       const linkedIds = new Set(linked.map(l => l.id));
-      const hit = w && findNearbyEndpoint(p, dragSession.id, linkedIds);
+      const hit = w && findNearbyEndpoint(p, dragSession.id, linkedIds, ghostWalls);
       const fixedPt = w ? (dragSession.which === "start" ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 }) : null;
-      const wallLineHit = !hit && w && findNearbyWallLineOrtho(p, fixedPt, dragSession.id);
+      const wallLineHit = !hit && w && findNearbyWallLineOrtho(p, fixedPt, dragSession.id, ghostWalls);
       let sp = hit || wallLineHit || { x: snap(p.x), y: snap(p.y) };
       if (!hit && !wallLineHit && w) {
         sp = angleSnap(fixedPt, sp);
@@ -2062,8 +2122,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // press-drag-release gesture below, so all three ways of placing a point
   // land in exactly the same spot for the same finger/cursor position.
   function resolveDrawPoint(rawP, angleAnchor) {
-    const endpointHit = findNearbyEndpoint(rawP, null);
-    const wallLineHit = !endpointHit ? findNearbyWallLineOrtho(rawP, angleAnchor, null) : null;
+    const endpointHit = findNearbyEndpoint(rawP, null, undefined, ghostWalls);
+    const wallLineHit = !endpointHit ? findNearbyWallLineOrtho(rawP, angleAnchor, null, ghostWalls) : null;
     if (endpointHit || wallLineHit) return endpointHit || wallLineHit;
     const snapped = { x: snap(rawP.x), y: snap(rawP.y) };
     return angleAnchor ? angleSnap(angleAnchor, snapped) : snapped;
@@ -2430,7 +2490,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
             <span key={id} className="contents">
-              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRefId(null); setAlignMsg(""); }} title={label}
+              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); }} title={label}
                 className="flex items-center justify-center p-2 rounded"
                 style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
                 <Icon size={16} />
@@ -2454,10 +2514,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           whatever's currently selected) share this one row with the
           cor-das-cotas group instead of each getting their own — a row
           just to hold a handful of small icon buttons was a big chunk of
-          dead space above the canvas. Cor das cotas keeps its ml-auto
-          (right side when there's room, its own wrapped line once there
-          isn't). */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+          dead space above the canvas. Every item here is a direct child
+          of this same flex-wrap row (no nested ml-auto sub-group) so they
+          all pack tightly left-to-right and wrap individually — an
+          ml-auto group used to wrap as one solid block, leaving whatever
+          space was left on the first line sitting empty instead of
+          letting the next item flow into it. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-1.5 text-[10px]" style={{ color: C.mute }}>
         <button onClick={undoLast} title="Voltar" className="flex items-center justify-center px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
           <Undo2 size={13} />
         </button>
@@ -2472,7 +2535,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <RotateCcw size={13} />
         </button>
         {planMode === "piso" && (
-          <div className="flex items-center flex-wrap gap-2 text-[10px] ml-auto" style={{ color: C.mute }}>
+          <>
             <span className="flex items-center gap-1" title="Cor das cotas entre paredes">
               <Ruler size={11} /> Cotas
               <input type="color" value={dimColor} onChange={e => onMeta({ dimColor: e.target.value })}
@@ -2495,11 +2558,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             {aboveLevel && (
               <label className="flex items-center gap-1"><input type="checkbox" checked={showAbove} onChange={e => setShowAbove(e.target.checked)} /> ver {aboveLevel.name}</label>
             )}
-          </div>
+          </>
         )}
       </div>
       {planMode === "piso" && showTextSettings && (
         <div className="flex flex-col gap-2 p-2.5 rounded-lg mb-1.5 text-[11px]" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+          <div className="flex items-center justify-between">
+            <span className="font-medium" style={{ color: C.chalk }}>Cores e tamanhos de texto</span>
+            <button onClick={() => setShowTextSettings(false)}><X size={14} color={C.mute} /></button>
+          </div>
           <div className="flex items-center flex-wrap gap-3">
             <span className="flex items-center gap-1.5" style={{ color: C.mute }}>
               Cota portas
@@ -2619,7 +2686,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
 
       {tool === "alinhar" && planMode === "piso" && (
         <div className="mb-2 text-[10px]" style={{ color: alignMsg ? C.bad : C.mute }}>
-          {alignMsg || (alignRefId ? "Agora toque na parede que deve se mover para alinhar." : "Toque na parede de referência (a que fica parada).")}
+          {alignMsg || (alignRef ? "Agora toque na parede que deve se mover para alinhar." : "Toque na parede de referência (a que fica parada — pode ser de outro nível, se estiver com \"ver nível\" ligado).")}
         </div>
       )}
 
@@ -2824,9 +2891,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={extendSourceId === el.id || alignRefId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
-              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRefId === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={extendSourceId === el.id || alignRefId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
+              stroke={extendSourceId === el.id || alignRef?.id === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
+              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRef?.id === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={extendSourceId === el.id || alignRef?.id === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {planMode === "piso" && (() => {
               const canEdit = tool === "selecionar" && selectedId === el.id;
