@@ -299,6 +299,17 @@ function roofFootprintFromLevel(level) {
   return { minX, maxX, minY, maxY, baseElevation: toNum(level.elevation, 0) + maxH };
 }
 const ROOF_SHAPE_AGUA_COUNT = { "1agua": 1, "2aguas": 2, "4aguas": 4 };
+// Shared by every computeRoofPlanes call site (2D overlay, 3D "casa toda",
+// recalcRoofGeometry) so "escondido" (platibanda — no overhang past the
+// wall face) and the manual level adjustment behave identically everywhere
+// a roof gets drawn, instead of only in whichever call site remembered to
+// apply them.
+function roofPlaneSettings(roof) {
+  return { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM: roof.hidden ? 0 : toNum(roof.overhangM, 0.4), ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge };
+}
+function roofBaseElevation(roof, footprint) {
+  return footprint.baseElevation + toNum(roof.elevationOffsetM, 0);
+}
 
 export function levelToMeters(level) {
   const s = toNum(level.sketchScale, 0.5);
@@ -758,10 +769,7 @@ export default function PranchetaBIM() {
     ? roofs.filter(r => r.level === croquiLevel.name).map(roof => {
         const footprint = roofFootprintFromLevel(croquiLevel);
         if (!footprint) return null;
-        const { eaveLoop, ridge } = computeRoofPlanes(
-          { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM: toNum(roof.overhangM, 0.4), ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge },
-          footprint, footprint.baseElevation
-        );
+        const { eaveLoop, ridge } = computeRoofPlanes(roofPlaneSettings(roof), footprint, roofBaseElevation(roof, footprint));
         const s = toNum(croquiLevel.sketchScale, 0.5);
         const toPx = (m) => (m / s) * GRID;
         return {
@@ -948,10 +956,7 @@ export default function PranchetaBIM() {
       const level = levels.find(l => l.name === r.level);
       const footprint = roofFootprintFromLevel(level);
       if (!footprint) return r;
-      const { planes } = computeRoofPlanes(
-        { shape: r.shape, pitchDeg: toNum(r.pitchDeg, 30), overhangM: toNum(r.overhangM, 0.4), ridgeAxis: r.ridgeAxis, highEdge: r.highEdge },
-        footprint, footprint.baseElevation
-      );
+      const { planes } = computeRoofPlanes(roofPlaneSettings(r), footprint, roofBaseElevation(r, footprint));
       const aguas = planes.map((plane, i) => {
         const prev = r.aguas[i];
         const area = polygonAreaXZ(plane) / Math.cos((Math.max(0, Math.min(89, toNum(r.pitchDeg, 30))) * Math.PI) / 180);
@@ -1811,11 +1816,9 @@ export default function PranchetaBIM() {
                       roofs={roofs.map(roof => {
                         const footprint = roofFootprintFromLevel(levels.find(l => l.name === roof.level));
                         if (!footprint) return null;
-                        const geo = computeRoofPlanes(
-                          { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM: toNum(roof.overhangM, 0.4), ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge },
-                          footprint, footprint.baseElevation
-                        );
-                        return { id: roof.id, tileType: roof.tileType || TILE_TYPES[0], baseElevation: footprint.baseElevation, ...geo };
+                        const baseElevation = roofBaseElevation(roof, footprint);
+                        const geo = computeRoofPlanes(roofPlaneSettings(roof), footprint, baseElevation);
+                        return { id: roof.id, tileType: roof.tileType || TILE_TYPES[0], baseElevation, ...geo };
                       }).filter(Boolean)}
                       openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
                   </Suspense>
@@ -2015,10 +2018,30 @@ export default function PranchetaBIM() {
                         <input type="text" inputMode="decimal" value={roof.pitchDeg ?? "30"} onChange={e => setRoofField(roof.id, { pitchDeg: e.target.value })}
                           className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
                         <span style={{ color: C.mute }}>°</span>
-                        <span style={{ color: C.mute }}>Beiral:</span>
-                        <input type="text" inputMode="decimal" value={roof.overhangM ?? "0.4"} onChange={e => setRoofField(roof.id, { overhangM: e.target.value })}
-                          className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
-                        <span style={{ color: C.mute }}>m</span>
+                        {!roof.hidden && (
+                          <>
+                            <span style={{ color: C.mute }}>Beiral:</span>
+                            <input type="text" inputMode="decimal" value={roof.overhangM ?? "0.4"} onChange={e => setRoofField(roof.id, { overhangM: e.target.value })}
+                              className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                            <span style={{ color: C.mute }}>m</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mb-2 text-[11px]">
+                        {/* "Escondido" (platibanda): the roof plane stops
+                            right at the wall face instead of projecting a
+                            beiral past it — overhangM is kept in state (so
+                            toggling back doesn't lose the value typed
+                            before), just forced to 0 in the geometry
+                            (roofPlaneSettings) while this is on. */}
+                        <button onClick={() => setRoofField(roof.id, { hidden: !roof.hidden })} className="px-2 py-1 rounded text-[10px]"
+                          style={{ ...heading, fontWeight: 600, background: roof.hidden ? C.goldTint : C.panelAlt, color: roof.hidden ? C.gold : C.mute, border: `1px solid ${roof.hidden ? C.gold : C.line}` }}>
+                          {roof.hidden ? "✓ " : ""}Telhado escondido (platibanda)
+                        </button>
+                        <span style={{ color: C.mute }}>Ajuste de nível:</span>
+                        <input type="text" inputMode="decimal" value={roof.elevationOffsetM ?? "0"} onChange={e => setRoofField(roof.id, { elevationOffsetM: e.target.value })}
+                          className="w-14 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                        <span style={{ color: C.mute }}>m (+ acima / − abaixo do topo das paredes)</span>
                       </div>
                       {(roof.shape === "2aguas" || roof.shape === "4aguas") && (
                         <div className="flex items-center gap-1.5 mb-2 text-[11px] flex-wrap">
