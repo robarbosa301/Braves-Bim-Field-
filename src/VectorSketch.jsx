@@ -2192,6 +2192,58 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const dist = D + towardWall * ASCENT + extra;
     return { x: offDir.x * dist, y: offDir.y * dist };
   }
+  // Standard architectural door-swing symbol (or, for a sliding family, a
+  // simple direction arrow) drawn in the door's own local frame — same
+  // rotated <g> the leaf itself renders in, so this always tracks the
+  // door's wall angle for free. swingSide flips which side of the wall the
+  // leaf opens toward, swingHand which end it hinges from (single leaf
+  // only — a double leaf always hinges at both outer edges), slideDir
+  // which way a sliding door's arrow points; all three default to a fixed
+  // side/hand instead of null so an existing door drawn before this
+  // feature still gets a sensible symbol without needing a migration.
+  function doorProjection(el, widthPx, panels) {
+    const sliding = /correr/i.test(el.doorType || "");
+    const side = el.swingSide === -1 ? -1 : 1;
+    if (sliding) {
+      const dir = el.slideDir === -1 ? -1 : 1;
+      const halfSpan = widthPx * 0.35;
+      const y0 = el.y + side * 9;
+      const xTail = el.x - dir * halfSpan, xHead = el.x + dir * halfSpan;
+      return (
+        <g style={{ pointerEvents: "none" }} opacity="0.85">
+          <line x1={xTail} y1={y0} x2={xHead} y2={y0} stroke="#726F68" strokeWidth="1" strokeDasharray="4,2" />
+          <polygon points={`${xHead},${y0} ${xHead - dir * 5},${y0 - 3} ${xHead - dir * 5},${y0 + 3}`} fill="#726F68" />
+        </g>
+      );
+    }
+    // A quarter-circle from the latch (on the wall line) to the leaf's
+    // fully-open tip (perpendicular to the wall, swung toward `side`),
+    // radius = leaf width — hingeX < latchX (hinge on the left) sweeps the
+    // opposite way from hinge-on-the-right, same as flipping `side` does.
+    const leafArc = (hingeX, latchX, radius) => {
+      const tipY = el.y + side * radius;
+      const sweep = (hingeX < latchX) === (side === 1) ? 1 : 0;
+      return `M ${latchX} ${el.y} A ${radius} ${radius} 0 0 ${sweep} ${hingeX} ${tipY}`;
+    };
+    if (panels >= 2) {
+      const half = widthPx / 2;
+      return (
+        <g style={{ pointerEvents: "none" }} opacity="0.85">
+          <path d={leafArc(el.x - half, el.x, half)} fill="none" stroke="#726F68" strokeWidth="1" />
+          <path d={leafArc(el.x + half, el.x, half)} fill="none" stroke="#726F68" strokeWidth="1" />
+        </g>
+      );
+    }
+    const hand = el.swingHand === "right" ? "right" : "left";
+    const hingeX = hand === "left" ? el.x - widthPx / 2 : el.x + widthPx / 2;
+    const latchX = hand === "left" ? el.x + widthPx / 2 : el.x - widthPx / 2;
+    return (
+      <g style={{ pointerEvents: "none" }} opacity="0.85">
+        <line x1={hingeX} y1={el.y} x2={hingeX} y2={el.y + side * widthPx} stroke="#726F68" strokeWidth="1" />
+        <path d={leafArc(hingeX, latchX, widthPx)} fill="none" stroke="#726F68" strokeWidth="1" />
+      </g>
+    );
+  }
   function ghostLevel(lvl, color) {
     if (!lvl) return null;
     const els = lvl.sketchElements || [];
@@ -2889,6 +2941,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 )}
                 <text x={el.x} y={el.y - 14} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.width}×{el.height} · {panels}f</text>
               </g>
+              {isDoor && doorProjection(el, widthPx, panels)}
             </g>
           );
         })}
@@ -3049,6 +3102,26 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <NumField value={selected.width} onChange={v => patchSelected({ width: v })} unit="larg." />
               <NumField value={selected.height} onChange={v => patchSelected({ height: v })} unit="alt." />
               {selected.type === "window" && <NumField value={selected.peitoril} onChange={v => patchSelected({ peitoril: v })} unit="peitoril" />}
+            </div>
+          )}
+          {selected.type === "door" && (
+            <div className="flex items-center gap-2 flex-wrap text-[11px] mt-1.5">
+              {/correr/i.test(selected.doorType || "") ? (
+                <button onClick={() => patchSelected({ slideDir: (selected.slideDir === -1 ? 1 : -1) })} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                  <ArrowLeftRight size={11} /> Inverter sentido de correr
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => patchSelected({ swingSide: (selected.swingSide === -1 ? 1 : -1) })} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                    <RotateCcw size={11} /> Inverter lado da abertura
+                  </button>
+                  {Math.max(1, Math.round(toNum(selected.panels, 1))) === 1 && (
+                    <button onClick={() => patchSelected({ swingHand: selected.swingHand === "right" ? "left" : "right" })} className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                      <ArrowLeftRight size={11} /> Inverter dobradiça
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
           {selected.type === "room" && (
