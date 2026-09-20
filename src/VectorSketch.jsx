@@ -2990,7 +2990,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                     new value in the field itself is what creates one, for
                     a wall whose real thickness doesn't match any preset
                     (a 19cm block wall, say). */}
-                <TypeSelect value={selected.wallType || WALL_TYPES[0]} options={WALL_TYPES} onChange={v => patchSelected({ wallType: v, wallThickness: undefined })} />
+                <TypeSelect value={selected.wallType || WALL_TYPES[0]} options={WALL_TYPES} onChange={v => patchSelected({
+                  wallType: v, wallThickness: undefined,
+                  // A guarda-corpo is never floor-to-ceiling like a real
+                  // wall — switching to it also drops the height to the
+                  // standard guardrail height (NBR 6494/9077) so it doesn't
+                  // render as a full-height wall until the user notices and
+                  // fixes it by hand.
+                  ...(v.startsWith("Guarda-corpo") ? { height: "1.05" } : {}),
+                })} />
                 <NumField value={Math.round(wallThicknessM(selected) * 100)} onCommit={v => patchSelected({ wallThickness: Math.max(1, toNum(v, 15)) / 100 })} unit="cm espessura" />
               </div>
               {findMergeableWall(selected, elements) && (

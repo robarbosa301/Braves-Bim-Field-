@@ -2,8 +2,8 @@
 // and the Elementos tab) and ElementRows.jsx (the per-element edit rows) —
 // kept in their own module so neither file has to import these from the
 // other.
-export const WALL_TYPES = ["Alvenaria 15cm", "Alvenaria 20cm", "Concreto", "Drywall", "Divisória de granito", "Vidro"];
-const WALL_THICKNESS_M = { "Alvenaria 15cm": 0.15, "Alvenaria 20cm": 0.20, "Concreto": 0.20, "Drywall": 0.10, "Divisória de granito": 0.03, "Vidro": 0.10 };
+export const WALL_TYPES = ["Alvenaria 15cm", "Alvenaria 20cm", "Concreto", "Drywall", "Divisória de granito", "Vidro", "Guarda-corpo (vidro)", "Guarda-corpo (metálico)"];
+const WALL_THICKNESS_M = { "Alvenaria 15cm": 0.15, "Alvenaria 20cm": 0.20, "Concreto": 0.20, "Drywall": 0.10, "Divisória de granito": 0.03, "Vidro": 0.10, "Guarda-corpo (vidro)": 0.01, "Guarda-corpo (metálico)": 0.05 };
 // Takes either a wall's own type name (legacy call sites, e.g. tests) or
 // the wall element itself — an element's own wallThickness, when set,
 // overrides whatever its wallType would otherwise imply, so a wall isn't
