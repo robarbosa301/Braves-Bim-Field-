@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useLayoutEffect } from "react";
 import * as THREE from "three";
 import { C, matchesPhaseView } from "./theme.js";
-import { toNum } from "./utils.js";
+import { toNum, wallNetAreaM2 } from "./utils.js";
 import { pointInPolygon, polygonAreaXZ } from "./geometry.js";
 import { wallThicknessM, FLOOR_TYPES, DOOR_MATERIAL_MIX, WINDOW_MATERIAL_MIX } from "./constants.js";
 
@@ -336,8 +336,19 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             const room = lvl.rooms.find(r => pointInPolygon(p, r.points));
             return room ? (room.name || "Ambiente sem nome") : "Externo";
           };
+          // A door/window's own area (and the volume it displaces) comes
+          // back out of its wall's gross length×height×thickness — the
+          // same net figure the Tabelas tab and this wall's own info panel
+          // below both show, so a door isn't counted once under "Portas"
+          // and AGAIN inside its wall's full, un-punched área/volume.
+          const wallOpeningsRaw = [
+            ...levelDoors.filter(d => d.wallId === w.id),
+            ...levelWindows.filter(win => win.wallId === w.id),
+          ];
+          const netAreaM2 = wallNetAreaM2(len, h, wallOpeningsRaw);
           const wallInfo = {
             kind: "wall", wallId: w.id, tag: w.tag, lengthM: len, heightM: h, thicknessM: thickness,
+            netAreaM2, netVolumeM3: netAreaM2 * thickness,
             wallType: w.wallType, condition: w.condition,
             faceA: roomAt({ x: wallMid.x + nx * 0.3, y: wallMid.y + nz * 0.3 }),
             faceB: roomAt({ x: wallMid.x - nx * 0.3, y: wallMid.y - nz * 0.3 }),
@@ -1053,7 +1064,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             return mix.map(m => `${m.material} ${(totalM3 * m.fraction).toFixed(3)}`).join(" + ") + " m³";
           };
           const summary = info.kind === "wall"
-            ? `${info.wallType} · ${(info.lengthM * info.heightM).toFixed(1)} m² · ${(info.lengthM * info.heightM * info.thicknessM).toFixed(2)} m³`
+            ? `${info.wallType} · ${info.netAreaM2.toFixed(1)} m² · ${info.netVolumeM3.toFixed(2)} m³`
             : info.kind === "door" || info.kind === "window"
               ? `${info.wallTag} · ${info.kind === "door" ? info.doorType : info.windowType} · ${openingVolumeByMaterial(info.kind)}`
               : info.kind === "roof"

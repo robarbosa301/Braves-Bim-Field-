@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, TriangleAlert, Rotate3d, Box, Home,
-  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut, Undo2, Redo2
+  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut, Undo2, Redo2, Ruler, MousePointer2
 } from "lucide-react";
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
@@ -1114,6 +1114,62 @@ export default function PranchetaBIM() {
   function removeLevelElement(levelId, elementId) {
     updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.filter(e => e.id !== elementId) }));
   }
+  // Manual dimensions in the Elevação, same idea as the Croqui's own
+  // "Cota" tool but simpler (one wall's own 2D face, so a dimension is
+  // always either purely horizontal — along the wall's length — or purely
+  // vertical — up its height, never a diagonal between arbitrary points).
+  // elevTool switches the view between its usual drag/select mode and
+  // placing one of these; elevCotaPending holds the first of the two taps
+  // a new one needs, elevSelectedCota which one (if any) is picked for the
+  // Apagar button below to act on.
+  const [elevTool, setElevTool] = useState("selecionar");
+  const [elevCotaPending, setElevCotaPending] = useState(null);
+  const [elevSelectedCota, setElevSelectedCota] = useState(null);
+  // Switching which ambiente's Elevação is open swaps out every wall panel
+  // on screen — a pending first tap or a selected cota from the ambiente
+  // just left behind would otherwise silently point at a wall that isn't
+  // even rendered anymore.
+  useEffect(() => { setElevCotaPending(null); setElevSelectedCota(null); }, [elevationRoomName]);
+  function addElevCota(levelId, wallId, axis, aM, bM) {
+    pushElevHistory();
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : {
+      ...l, sketchElements: [...(l.sketchElements || []), { id: uid(), type: "elevCota", wallId, axis, aM, bM }],
+    }));
+  }
+  function removeElevCota(levelId, wallId, id) {
+    pushElevHistory();
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : {
+      ...l,
+      sketchElements: (l.sketchElements || []).filter(e => e.id !== id),
+      elevDimStyles: Object.fromEntries(Object.entries(l.elevDimStyles || {}).filter(([k]) => k !== wallId + ":" + id)),
+    }));
+  }
+  // The tool's first tap on a wall just remembers where; its second tap on
+  // that SAME wall completes the dimension, picking horizontal vs. vertical
+  // from whichever axis the two points actually differ along the most (a
+  // sill-height tap and a same-row tap two openings apart are both "mostly
+  // horizontal", same idea a straightedge held up to the drawing would
+  // read). Tapping a different wall (or the same spot twice) just restarts
+  // from that new point instead of erroring out.
+  function handleElevCotaTap(levelId, wallId, xM, yM) {
+    if (!elevCotaPending || elevCotaPending.levelId !== levelId || elevCotaPending.wallId !== wallId) {
+      setElevCotaPending({ levelId, wallId, xM, yM });
+      return;
+    }
+    const dxM = xM - elevCotaPending.xM, dyM = yM - elevCotaPending.yM;
+    if (Math.abs(dxM) < 0.03 && Math.abs(dyM) < 0.03) { setElevCotaPending(null); return; }
+    if (Math.abs(dxM) >= Math.abs(dyM)) {
+      addElevCota(levelId, wallId, "h", Math.min(elevCotaPending.xM, xM), Math.max(elevCotaPending.xM, xM));
+    } else {
+      addElevCota(levelId, wallId, "v", Math.min(elevCotaPending.yM, yM), Math.max(elevCotaPending.yM, yM));
+    }
+    setElevCotaPending(null);
+  }
+  function deleteSelectedElevCota() {
+    if (!elevSelectedCota) return;
+    removeElevCota(elevSelectedCota.levelId, elevSelectedCota.wallId, elevSelectedCota.id);
+    setElevSelectedCota(null);
+  }
   // A wall's length isn't its own stored field — it's the distance between
   // x1/y1 and x2/y2, with `length` just a cached label of that (same as
   // VectorSketch's own setWallLengthDirect). Editing it from the Tabelas
@@ -1897,6 +1953,20 @@ export default function PranchetaBIM() {
                         className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, opacity: elevUndoStack.length ? 1 : 0.4 }}><Undo2 size={13} color={C.chalk} /></button>
                       <button onClick={elevRedo} disabled={!elevRedoStack.length} title="Avançar"
                         className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, opacity: elevRedoStack.length ? 1 : 0.4 }}><Redo2 size={13} color={C.chalk} /></button>
+                      <div className="flex gap-0.5 rounded p-0.5 shrink-0" style={{ background: C.panelAlt }}>
+                        <button onClick={() => { setElevTool("selecionar"); setElevCotaPending(null); }} title="Selecionar"
+                          className="p-1 rounded" style={{ background: elevTool === "selecionar" ? C.gold : "transparent" }}>
+                          <MousePointer2 size={13} color={elevTool === "selecionar" ? "#141311" : C.chalk} />
+                        </button>
+                        <button onClick={() => { setElevTool("cota"); setElevSelectedCota(null); }} title="Cota (toque dois pontos na mesma parede)"
+                          className="p-1 rounded" style={{ background: elevTool === "cota" ? C.gold : "transparent" }}>
+                          <Ruler size={13} color={elevTool === "cota" ? "#141311" : C.chalk} />
+                        </button>
+                      </div>
+                      {elevSelectedCota && (
+                        <button onClick={deleteSelectedElevCota} title="Apagar cota selecionada"
+                          className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Trash2 size={13} color="#C1543F" /></button>
+                      )}
                     </div>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
                 ) : (
@@ -1997,7 +2067,12 @@ export default function PranchetaBIM() {
                                 <ElevationView key={lvl.id + ":" + sw.id} level={lvl} wallId={sw.id}
                                   onPatchOpening={(id, patch) => updateLevelElement(lvl.id, id, patch)}
                                   onPatchDimStyle={(key, patch) => patchElevDimStyle(lvl, key, patch)}
-                                  onDragBegin={pushElevHistory} />
+                                  onDragBegin={pushElevHistory}
+                                  elevTool={elevTool}
+                                  pendingPointM={elevCotaPending?.levelId === lvl.id && elevCotaPending?.wallId === sw.id ? elevCotaPending : null}
+                                  onElevCotaTap={(xM, yM) => handleElevCotaTap(lvl.id, sw.id, xM, yM)}
+                                  selectedCotaId={elevSelectedCota?.levelId === lvl.id && elevSelectedCota?.wallId === sw.id ? elevSelectedCota.id : null}
+                                  onSelectCota={id => setElevSelectedCota({ levelId: lvl.id, wallId: sw.id, id })} />
                               ))}
                             </div>
                           </div>
@@ -2017,7 +2092,12 @@ export default function PranchetaBIM() {
                           <ElevationView level={croquiLevel} wallId={w.id} spanStartM={toM(span.startPx)} spanEndM={toM(span.endPx)}
                             onPatchOpening={(id, patch) => updateLevelElement(croquiLevel.id, id, patch)}
                             onPatchDimStyle={(key, patch) => patchElevDimStyle(croquiLevel, key, patch)}
-                            onDragBegin={pushElevHistory} />
+                            onDragBegin={pushElevHistory}
+                            elevTool={elevTool}
+                            pendingPointM={elevCotaPending?.levelId === croquiLevel.id && elevCotaPending?.wallId === w.id ? elevCotaPending : null}
+                            onElevCotaTap={(xM, yM) => handleElevCotaTap(croquiLevel.id, w.id, xM, yM)}
+                            selectedCotaId={elevSelectedCota?.levelId === croquiLevel.id && elevSelectedCota?.wallId === w.id ? elevSelectedCota.id : null}
+                            onSelectCota={id => setElevSelectedCota({ levelId: croquiLevel.id, wallId: w.id, id })} />
                         </div>
                       );
                     })}

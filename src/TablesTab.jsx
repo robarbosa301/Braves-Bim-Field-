@@ -8,7 +8,7 @@
 import { useState, useEffect } from "react";
 import { Trash2 } from "lucide-react";
 import { C, mono, heading } from "./theme.js";
-import { toNum } from "./utils.js";
+import { toNum, wallNetAreaM2 } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM } from "./constants.js";
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
 
@@ -69,15 +69,24 @@ function groupBy(items, keyFn, valueFn) {
   });
   return Object.values(map).sort((a, b) => b.value - a.value);
 }
-function SummaryBlock({ title, unit, items, valueFn, groupField, groupLabel }) {
+function SummaryBlock({ title, unit, items, valueFn, groupField, groupLabel, valueFn2, unit2 }) {
   const total = items.reduce((s, it) => s + valueFn(it), 0);
   const byLevel = groupBy(items, it => it.levelName, valueFn);
   const byGroup = groupBy(items, it => it[groupField], valueFn);
+  // A second metric (volume alongside área, so far only paredes) piggybacks
+  // on the exact same per-level/per-tipo grouping instead of a parallel
+  // block, keeping the two figures for the same row next to each other.
+  const total2 = valueFn2 ? items.reduce((s, it) => s + valueFn2(it), 0) : null;
+  const byLevel2 = valueFn2 ? groupBy(items, it => it.levelName, valueFn2) : null;
+  const byGroup2 = valueFn2 ? groupBy(items, it => it[groupField], valueFn2) : null;
+  const val2For = (map2, key) => map2?.find(g => g.key === key)?.value ?? 0;
   return (
     <div className="p-3 rounded-lg mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium" style={{ color: C.chalk }}>{title}</span>
-        <span className="text-sm font-semibold" style={{ ...mono, color: C.gold }}>{total.toFixed(1)} {unit}</span>
+        <span className="text-sm font-semibold" style={{ ...mono, color: C.gold }}>
+          {total.toFixed(1)} {unit}{valueFn2 && <span style={{ color: C.mute }}> · {total2.toFixed(2)} {unit2}</span>}
+        </span>
       </div>
       {items.length === 0 ? (
         <div className="text-[11px] italic" style={{ color: C.mute }}>Nada lançado ainda.</div>
@@ -89,7 +98,9 @@ function SummaryBlock({ title, unit, items, valueFn, groupField, groupLabel }) {
               {byLevel.map(g => (
                 <div key={g.key} className="flex items-center justify-between gap-2 text-[11px]">
                   <span className="truncate" style={{ color: C.chalk }}>{g.key}</span>
-                  <span className="shrink-0" style={{ ...mono, color: C.mute }}>{g.value.toFixed(1)} {unit}</span>
+                  <span className="shrink-0" style={{ ...mono, color: C.mute }}>
+                    {g.value.toFixed(1)} {unit}{valueFn2 && ` · ${val2For(byLevel2, g.key).toFixed(2)} ${unit2}`}
+                  </span>
                 </div>
               ))}
             </div>
@@ -100,7 +111,9 @@ function SummaryBlock({ title, unit, items, valueFn, groupField, groupLabel }) {
               {byGroup.map(g => (
                 <div key={g.key} className="flex items-center justify-between gap-2 text-[11px]">
                   <span className="truncate" style={{ color: C.chalk }}>{g.key}</span>
-                  <span className="shrink-0" style={{ ...mono, color: C.mute }}>{g.count}× · {g.value.toFixed(1)} {unit}</span>
+                  <span className="shrink-0" style={{ ...mono, color: C.mute }}>
+                    {g.count}× · {g.value.toFixed(1)} {unit}{valueFn2 && ` · ${val2For(byGroup2, g.key).toFixed(2)} ${unit2}`}
+                  </span>
                 </div>
               ))}
             </div>
@@ -125,6 +138,19 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
     levels.forEach(l => (l.sketchElements || []).forEach(e => { if (e.type === type) out.push({ ...e, levelId: l.id, levelName: l.name }); }));
     return out;
   };
+  // A door/window's own área comes back out of its wall's gross length×
+  // height — same net figure the 3D view's own selected-wall panel shows,
+  // so a door isn't counted once under "Portas" and again inside its
+  // wall's full, un-punched área/volume here.
+  const openingsByWall = {};
+  levels.forEach(l => (l.sketchElements || []).forEach(e => {
+    if (e.type === "door" || e.type === "window") {
+      const k = l.id + ":" + e.wallId;
+      (openingsByWall[k] || (openingsByWall[k] = [])).push(e);
+    }
+  }));
+  const wallNetArea = w => wallNetAreaM2(w.length, toNum(w.height, 2.8), openingsByWall[w.levelId + ":" + w.id]);
+  const wallNetVolume = w => wallNetArea(w) * wallThicknessM(w);
   const walls = sub === "paredes" ? rowsOf("wall").filter(matchesTag) : null;
   const doors = sub === "portas" ? rowsOf("door").filter(matchesTag) : null;
   const windows = sub === "janelas" ? rowsOf("window").filter(matchesTag) : null;
@@ -172,7 +198,7 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
       {sub === "resumo" && (
         <div>
           <SummaryBlock title="Paredes" unit="m²" items={rowsOf("wall")}
-            valueFn={w => toNum(w.length, 0) * toNum(w.height, 0)} groupField="wallType" groupLabel="tipo" />
+            valueFn={wallNetArea} valueFn2={wallNetVolume} unit2="m³" groupField="wallType" groupLabel="tipo" />
           <SummaryBlock title="Pisos" unit="m²" items={rowsOf("floor")}
             valueFn={f => toNum(f.area, 0)} groupField="floorType" groupLabel="material" />
           <SummaryBlock title="Ambientes" unit="m²" items={roomSummaryItems}
@@ -188,10 +214,10 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
         <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${C.line}` }}>
           <table className="w-full border-collapse">
             <thead><tr>
-              <Th>Nível</Th><Th>Tag</Th><Th>Tipo</Th><Th>Esp. (cm)</Th><Th>Compr. (m)</Th><Th>Alt. (m)</Th><Th>Condição</Th><Th>Fase</Th><Th></Th>
+              <Th>Nível</Th><Th>Tag</Th><Th>Tipo</Th><Th>Esp. (cm)</Th><Th>Compr. (m)</Th><Th>Alt. (m)</Th><Th>Área líq. (m²)</Th><Th>Vol. líq. (m³)</Th><Th>Condição</Th><Th>Fase</Th><Th></Th>
             </tr></thead>
             <tbody>
-              {walls.length === 0 && <EmptyRow span={9} msg="Nenhuma parede lançada ainda." />}
+              {walls.length === 0 && <EmptyRow span={11} msg="Nenhuma parede lançada ainda." />}
               {walls.map(w => (
                 <tr key={w.id}>
                   <Td>{w.levelName}</Td>
@@ -200,6 +226,8 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
                   <Td><NumField value={Math.round(wallThicknessM(w) * 100)} onCommit={v => updateLevelElement(w.levelId, w.id, { wallThickness: Math.max(1, toNum(v, 15)) / 100 })} w="w-10" /></Td>
                   <Td><NumField value={w.length} onCommit={v => resizeWallLength(w.levelId, w.id, v)} w="w-12" /></Td>
                   <Td><NumField value={w.height} onCommit={v => updateLevelElement(w.levelId, w.id, { height: v })} w="w-12" /></Td>
+                  <Td><span style={{ ...mono, color: C.mute }}>{wallNetArea(w).toFixed(2)}</span></Td>
+                  <Td><span style={{ ...mono, color: C.mute }}>{wallNetVolume(w).toFixed(3)}</span></Td>
                   <Td><ConditionSelect value={w.condition} onChange={v => updateLevelElement(w.levelId, w.id, { condition: v })} /></Td>
                   <Td><div className="flex items-center gap-1"><PhaseToggles demolir={w.demolir} construir={w.construir} onChange={p => updateLevelElement(w.levelId, w.id, p)} /></div></Td>
                   <Td><button onClick={() => removeLevelElement(w.levelId, w.id)}><Trash2 size={12} color={C.mute} /></button></Td>

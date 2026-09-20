@@ -29,7 +29,14 @@ const TAG_LINE_GAP = 10;
 // this always was, with no drag handles shown. onDragBegin() (also optional)
 // fires once per gesture, right as it starts — the caller's hook for
 // pushing an undo snapshot before the drag's own patches start landing.
-export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle, onDragBegin }) {
+// elevTool ("selecionar" | "cota") switches between that usual drag/select
+// behavior and placing a manual dimension: pendingPointM is this wall's own
+// half-placed first tap (if any), onElevCotaTap(xM, yM) reports each tap in
+// this view's own local meters (0 at this span's own start/floor), and
+// selectedCotaId/onSelectCota carry which manual cota (if any) is picked —
+// a plain tap (no drag) on one selects it, same gesture that already
+// distinguishes a tap from a drag everywhere else in this app.
+export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle, onDragBegin, elevTool = "selecionar", pendingPointM, onElevCotaTap, selectedCotaId, onSelectCota }) {
   const elements = level.sketchElements || [];
   const wall = elements.find(e => e.id === wallId && e.type === "wall");
   const svgRef = useRef(null);
@@ -127,7 +134,7 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
     if (e.cancelable) e.preventDefault();
     const p = e.touches ? e.touches[0] : e;
     onDragBegin?.();
-    setDragState({ kind, key, axis, startClientX: p.clientX, startClientY: p.clientY, startDx, startDy });
+    setDragState({ kind, key, axis, startClientX: p.clientX, startClientY: p.clientY, startDx, startDy, moved: false });
   }
   function onSvgMove(e) {
     if (!dragState) return;
@@ -136,6 +143,12 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
     const f = svgUnitsPerClientPx();
     const rawDx = dragState.startDx + (p.clientX - dragState.startClientX) * f;
     const rawDy = dragState.startDy + (p.clientY - dragState.startClientY) * f;
+    // Distinguishes a plain tap from a real drag — a manual cota (kind
+    // "elevCota") uses this below to select itself on a tap instead of
+    // nudging its position by a stray sub-pixel jiggle.
+    if (!dragState.moved && Math.hypot(p.clientX - dragState.startClientX, p.clientY - dragState.startClientY) > 4) {
+      setDragState(s => (s ? { ...s, moved: true } : s));
+    }
     if (dragState.kind === "tag") {
       onPatchOpening?.(dragState.key, { elevTagDx: rawDx, elevTagDy: rawDy });
     } else {
@@ -144,15 +157,57 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
       onPatchDimStyle?.(wall.id + ":" + dragState.key, { dx: ndx, dy: ndy });
     }
   }
-  function endDrag() { setDragState(null); }
+  function endDrag() {
+    if (dragState && dragState.kind === "elevCota" && !dragState.moved) onSelectCota?.(dragState.key);
+    setDragState(null);
+  }
+  // The "Cota" tool's own tap-to-place — snaps to whatever's actually
+  // measurable on this wall (its own corners, each opening's edges/sill/
+  // top) within a small tolerance, same idea as the plan's own manual Cota
+  // tool only ever measuring between real elements instead of arbitrary
+  // pixels, so a placed dimension reads a clean value instead of whatever
+  // a finger happened to land on.
+  const candidateXs = [0, lengthM, ...opens.flatMap(o => { const halfW = toNum(o.width, 0.8) / 2; return [o.posM - halfW, o.posM + halfW]; })];
+  const candidateYs = [0, heightM, ...opens.flatMap(o => {
+    const isDoor = o.type === "door", oH = toNum(o.height, isDoor ? 2.1 : 1.2), sill = isDoor ? 0 : toNum(o.peitoril, 1);
+    return [sill, sill + oH];
+  })];
+  function snapTo(raw, candidates) {
+    let best = null, bestD = Infinity;
+    candidates.forEach(c => { const d = Math.abs(c - raw); if (d < bestD) { bestD = d; best = c; } });
+    return (best !== null && bestD <= 0.08) ? best : Math.round(raw * 100) / 100;
+  }
+  function handleSvgClick(e) {
+    if (elevTool !== "cota" || !onElevCotaTap) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width) return;
+    const f = viewW / rect.width;
+    const svgX = (e.clientX - rect.left) * f, svgY = (e.clientY - rect.top) * f;
+    const rawX = (svgX - wallX) / PX_PER_M, rawY = (wallBottomY - svgY) / PX_PER_M;
+    const xM = Math.max(0, Math.min(lengthM, snapTo(rawX, candidateXs)));
+    const yM = Math.max(0, Math.min(heightM, snapTo(rawY, candidateYs)));
+    onElevCotaTap(xM, yM);
+  }
 
+  // Every EXISTING drag handle (auto rows, opening tags) only makes sense
+  // in the view's usual mode — with the Cota tool active, a tap anywhere
+  // should place a point instead, so those hit-rects are left out entirely
+  // rather than fighting the placement tap for the same gesture.
+  const dragEnabled = elevTool !== "cota";
   return (
     <div className="rounded-lg overflow-hidden" style={{ background: "#DCDCD8" }}>
-      <svg ref={svgRef} viewBox={`0 0 ${viewW} ${viewH}`} width="100%" style={{ display: "block", touchAction: dragState ? "none" : undefined }} fontFamily={fontFamily}
+      <svg ref={svgRef} viewBox={`0 0 ${viewW} ${viewH}`} width="100%"
+        style={{ display: "block", touchAction: dragState ? "none" : undefined, cursor: elevTool === "cota" ? "crosshair" : undefined }} fontFamily={fontFamily}
+        onClick={handleSvgClick}
         onMouseMove={onSvgMove} onMouseUp={endDrag} onMouseLeave={endDrag}
         onTouchMove={onSvgMove} onTouchEnd={endDrag} onTouchCancel={endDrag}>
         <rect x={wallX} y={wallTopY} width={lengthPx} height={heightPx} fill="#EDEAE2" stroke="#1B1E1A" strokeWidth="2" />
         <line x1={wallX - 14} y1={wallBottomY} x2={wallX + lengthPx + 14} y2={wallBottomY} stroke="#1B1E1A" strokeWidth="2" />
+
+        {pendingPointM && (
+          <circle cx={wallX + pendingPointM.xM * PX_PER_M} cy={wallBottomY - pendingPointM.yM * PX_PER_M} r="4"
+            fill="none" stroke="#C1543F" strokeWidth="1.5" pointerEvents="none" />
+        )}
 
         {gaps.map((g, i) => {
           const key = "gap" + i;
@@ -163,7 +218,25 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
               color={g.type === "door" ? doorDimColor : g.type === "window" ? windowDimColor : dimColor}
               fontSize={g.type ? doorWindowDimFontSize : dimFontSize}
               dx={off.dx} dy={off.dy}
-              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", key, off.dx, off.dy, "y", e)) : undefined} />
+              onDragStart={dragEnabled && onPatchDimStyle ? (e => beginDrag("dim", key, off.dx, off.dy, "y", e)) : undefined} />
+          );
+        })}
+
+        {elements.filter(e => e.type === "elevCota" && e.wallId === wall.id).map(el => {
+          const off = dimOffset(el.id);
+          const isSel = selectedCotaId === el.id;
+          const color = isSel ? "#726F68" : dimColor;
+          const onDragStart = dragEnabled && onPatchDimStyle
+            ? (e => beginDrag("elevCota", el.id, off.dx, off.dy, el.axis === "h" ? "y" : "x", e))
+            : undefined;
+          return el.axis === "h" ? (
+            <ElevHDim key={el.id} y={wallTopY - 22} x1={wallX + el.aM * PX_PER_M} x2={wallX + el.bM * PX_PER_M}
+              label={(el.bM - el.aM).toFixed(2)} color={color} fontSize={dimFontSize} bold={isSel}
+              dx={off.dx} dy={off.dy} onDragStart={onDragStart} />
+          ) : (
+            <ElevVDim key={el.id} x={wallX - 40} y1={wallBottomY - el.aM * PX_PER_M} y2={wallBottomY - el.bM * PX_PER_M}
+              label={(el.bM - el.aM).toFixed(2)} color={color} fontSize={dimFontSize} bold={isSel}
+              dx={off.dx} dy={off.dy} onDragStart={onDragStart} />
           );
         })}
 
@@ -193,18 +266,18 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
                 <text x={oX + wPx / 2 + tagDx} y={oTopY - 4 - TAG_LINE_GAP + tagDy} fontSize={tagFontSize} fill={tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{o.tag}</text>
               )}
               <text x={oX + wPx / 2 + tagDx} y={oTopY - 4 + tagDy} fontSize={tagFontSize} fill={tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{o.width}×{o.height}</text>
-              {onPatchOpening && (
+              {dragEnabled && onPatchOpening && (
                 <rect x={oX + wPx / 2 + tagDx - 24} y={oTopY - 4 - TAG_LINE_GAP + tagDy - 10} width="48" height="26" fill="transparent" style={{ cursor: "move" }}
                   onMouseDown={e => beginDrag("tag", o.id, tagDx, tagDy, null, e)} onTouchStart={e => beginDrag("tag", o.id, tagDx, tagDy, null, e)} />
               )}
               {!isDoor && sillM > 0 && (
                 <ElevVDim x={oX - 8} y1={wallBottomY} y2={oBottomY} label={sillM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize}
                   dx={sillOff.dx} dy={sillOff.dy}
-                  onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "sill:" + o.id, sillOff.dx, sillOff.dy, "x", e)) : undefined} />
+                  onDragStart={dragEnabled && onPatchDimStyle ? (e => beginDrag("dim", "sill:" + o.id, sillOff.dx, sillOff.dy, "x", e)) : undefined} />
               )}
               <ElevVDim x={oX + wPx + 8} y1={oBottomY} y2={oTopY} label={oHeightM.toFixed(2)} color={color} fontSize={doorWindowDimFontSize}
                 dx={heightOff.dx} dy={heightOff.dy}
-                onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "height:" + o.id, heightOff.dx, heightOff.dy, "x", e)) : undefined} />
+                onDragStart={dragEnabled && onPatchDimStyle ? (e => beginDrag("dim", "height:" + o.id, heightOff.dx, heightOff.dy, "x", e)) : undefined} />
             </g>
           );
         })}
@@ -214,7 +287,7 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
           return (
             <ElevVDim x={wallX - 30} y1={wallBottomY} y2={wallTopY} label={heightM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold
               dx={off.dx} dy={off.dy}
-              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallHeight", off.dx, off.dy, "x", e)) : undefined} />
+              onDragStart={dragEnabled && onPatchDimStyle ? (e => beginDrag("dim", "wallHeight", off.dx, off.dy, "x", e)) : undefined} />
           );
         })()}
         {(() => {
@@ -222,7 +295,7 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
           return (
             <ElevHDim y={wallBottomY + 24} x1={wallX} x2={wallX + lengthPx} label={lengthM.toFixed(2)} color={dimColor} fontSize={dimFontSize} bold
               dx={off.dx} dy={off.dy}
-              onDragStart={onPatchDimStyle ? (e => beginDrag("dim", "wallLength", off.dx, off.dy, "y", e)) : undefined} />
+              onDragStart={dragEnabled && onPatchDimStyle ? (e => beginDrag("dim", "wallLength", off.dx, off.dy, "y", e)) : undefined} />
           );
         })()}
       </svg>

@@ -206,19 +206,24 @@ function cotaGeometry(el, elements, scale) {
     const t = Math.max(0, Math.min(len, el.atPx ?? len / 2));
     const cx = w.x1 + ux * t, cy = w.y1 + uy * t;
     const halfThickPx = (wallThicknessM(w) / 2 / scale) * GRID;
-    // Dragged straight out from the wall (nx,ny) — the tick itself always
-    // stays exactly where it crosses the wall's own thickness (that IS the
-    // measurement), but the label can be pulled further out along that
-    // same line, so it can be lined up with whatever other dimension row
-    // it needs to sit alongside instead of being stuck cramped at the
-    // corner. dragNx/dragNy (not lineAngleDeg, which is this tick's own
+    // Dragged straight out from the wall (nx,ny) — same "the whole ruler
+    // slides as one rigid unit" convention every other cota mode already
+    // uses (see face/eixo/faceExt and opening above, which both bake
+    // offsetPx into x1/y1/x2/y2 too): the tick's OWN length always stays
+    // exactly the wall's thickness (that IS the measurement), but the
+    // entire tick — not just the label — can be pushed further out along
+    // this line, so it can be lined up at the same distance as whatever
+    // other external dimension row it needs to sit alongside, instead of
+    // being stuck pinned to the wall while only the number floats free of
+    // it. dragNx/dragNy (not lineAngleDeg, which is this tick's own
     // CROSSING angle — needed as-is so the text reads across the wall, not
     // along it) is what the drag handler below actually nudges along.
     const pushPx = toNum(el.offsetPx, 0);
+    const ox = nx * pushPx, oy = ny * pushPx;
     return {
-      x1: cx - nx * halfThickPx, y1: cy - ny * halfThickPx,
-      x2: cx + nx * halfThickPx, y2: cy + ny * halfThickPx,
-      labelX: cx + ux * 16 + nx * pushPx, labelY: cy + uy * 16 + ny * pushPx,
+      x1: cx - nx * halfThickPx + ox, y1: cy - ny * halfThickPx + oy,
+      x2: cx + nx * halfThickPx + ox, y2: cy + ny * halfThickPx + oy,
+      labelX: cx + ux * 16 + ox, labelY: cy + uy * 16 + oy,
       valueM: wallThicknessM(w), lineAngleDeg: Math.atan2(ny, nx) * 180 / Math.PI,
       dragNx: nx, dragNy: ny,
     };
