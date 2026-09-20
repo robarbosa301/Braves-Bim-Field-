@@ -18,7 +18,7 @@ import VectorSketch from "./VectorSketch.jsx";
 import ElevationView from "./ElevationView.jsx";
 import TablesTab from "./TablesTab.jsx";
 import SyncTab from "./SyncTab.jsx";
-import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES } from "./constants.js";
+import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES, wallThicknessM } from "./constants.js";
 import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ, polygonCentroid } from "./geometry.js";
 import {
   Pill, StatRow,
@@ -285,13 +285,25 @@ function roofFootprintFromLevel(level) {
   const toM = (px) => (px / GRID) * s;
   const walls = (level.sketchElements || []).filter(e => e.type === "wall");
   if (!walls.length) return null;
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxH = 0;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxH = 0, maxHalfThick = 0;
   walls.forEach(w => {
     minX = Math.min(minX, toM(w.x1), toM(w.x2)); maxX = Math.max(maxX, toM(w.x1), toM(w.x2));
     minY = Math.min(minY, toM(w.y1), toM(w.y2)); maxY = Math.max(maxY, toM(w.y1), toM(w.y2));
     maxH = Math.max(maxH, toNum(w.height, 2.8));
+    maxHalfThick = Math.max(maxHalfThick, wallThicknessM(w) / 2);
   });
-  return { minX, maxX, minY, maxY, baseElevation: toNum(level.elevation, 0) + maxH };
+  // The box above is built from wall CENTERLINES — a roof with 0 overhang
+  // (telhado escondido) would otherwise land its edge inside the wall's own
+  // thickness instead of at its outer face, visibly cutting through solid
+  // wall geometry in 3D. Growing the box by the thickest perimeter wall's
+  // half-thickness first means overhangM=0 always lands flush with the
+  // wall's outer face — never past it, never inside it — and a positive
+  // overhang still projects further out from there, same as before.
+  return {
+    minX: minX - maxHalfThick, maxX: maxX + maxHalfThick,
+    minY: minY - maxHalfThick, maxY: maxY + maxHalfThick,
+    baseElevation: toNum(level.elevation, 0) + maxH,
+  };
 }
 const ROOF_SHAPE_AGUA_COUNT = { "1agua": 1, "2aguas": 2, "4aguas": 4 };
 // Shared by every computeRoofPlanes call site (2D overlay, 3D "casa toda",

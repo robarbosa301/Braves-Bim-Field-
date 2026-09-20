@@ -144,7 +144,14 @@ export function polygonAreaXZ(points) {
 // the ridge to a single point (ridgeHalfLen <= 0), giving a 4-sided pyramid
 // instead of 4 trapezoids-and-triangles.
 export function computeRoofPlanes(settings, footprint, baseElevation) {
-  const overhang = Math.max(0, settings.overhangM ?? 0.4);
+  // Negative overhang recesses the roof inward from the wall's outer face
+  // (footprint is already built from that face, not the wall centerline —
+  // see roofFootprintFromLevel) instead of projecting a beiral past it —
+  // clamped so the footprint itself never collapses to zero or flips
+  // inside-out on a small building.
+  const rawOverhang = settings.overhangM ?? 0.4;
+  const minSpan = Math.min(footprint.maxX - footprint.minX, footprint.maxY - footprint.minY);
+  const overhang = Math.max(-minSpan / 2 + 0.2, rawOverhang);
   const pitch = (Math.max(0, Math.min(89, settings.pitchDeg ?? 30)) * Math.PI) / 180;
   const minX = footprint.minX - overhang, maxX = footprint.maxX + overhang;
   const minY = footprint.minY - overhang, maxY = footprint.maxY + overhang;
