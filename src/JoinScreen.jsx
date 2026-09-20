@@ -116,6 +116,7 @@ export default function JoinScreen({ onJoin }) {
     return () => { cancelled = true; };
   }, [building.cep]);
   const [savedProjects, setSavedProjects] = useState([]);
+  const [showAllProjects, setShowAllProjects] = useState(false);
 
   useEffect(() => {
     idbGet("projects-index").then(list => setSavedProjects(list || []));
@@ -256,20 +257,51 @@ export default function JoinScreen({ onJoin }) {
                 className="w-full mb-3 px-3 py-2.5 rounded-xl text-sm uppercase" style={{ ...mono, background: C.panel, color: C.chalk, border: `1px solid ${C.line}` }} />
               {savedProjects.length > 0 && (
                 <div className="mb-3">
-                  <div className="text-[10px] mb-1.5" style={{ color: C.mute, letterSpacing: "0.06em" }}>OU ESCOLHA UM LEVANTAMENTO SALVO NESTE APARELHO</div>
-                  <div className="space-y-1.5 max-h-52 overflow-y-auto">
-                    {savedProjects.map(p => (
-                      <button key={p.code} onClick={() => handleJoinExisting(p.code)}
-                        className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                        <Building2 size={15} color={C.gold} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
-                          <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"} · {p.roomsCount || 0} ambiente(s)</div>
-                        </div>
-                        <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="text-[10px]" style={{ color: C.mute, letterSpacing: "0.06em" }}>OU ESCOLHA UM LEVANTAMENTO SALVO NESTE APARELHO</div>
+                    {savedProjects.length > 2 && (
+                      <button onClick={() => setShowAllProjects(v => !v)} className="text-[10px] font-semibold shrink-0 ml-2" style={{ color: C.gold }}>
+                        {showAllProjects ? "Ver menos" : `Todos (${savedProjects.length})`}
                       </button>
-                    ))}
+                    )}
                   </div>
+                  {showAllProjects ? (
+                    // "Todos": a proper grid of every saved project instead
+                    // of the same short scrolling list — each card stands in
+                    // as a thumbnail (icon + name + address + stats) since a
+                    // real floor-plan preview would mean loading every
+                    // project's full geometry from IndexedDB just to draw one.
+                    <div className="grid grid-cols-2 gap-2 max-h-96 overflow-y-auto">
+                      {savedProjects.map(p => (
+                        <button key={p.code} onClick={() => handleJoinExisting(p.code)}
+                          className="text-left p-2.5 rounded-xl flex flex-col gap-1.5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                          <div className="w-full aspect-square rounded-lg flex items-center justify-center" style={{ background: C.panelAlt }}>
+                            <Building2 size={26} color={C.gold} />
+                          </div>
+                          <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
+                          <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"}</div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px]" style={{ color: C.mute }}>{p.roomsCount || 0} amb.</span>
+                            <span className="text-[10px]" style={{ ...mono, color: C.gold }}>{p.code}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                      {savedProjects.map(p => (
+                        <button key={p.code} onClick={() => handleJoinExisting(p.code)}
+                          className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                          <Building2 size={15} color={C.gold} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
+                            <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"} · {p.roomsCount || 0} ambiente(s)</div>
+                          </div>
+                          <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>
