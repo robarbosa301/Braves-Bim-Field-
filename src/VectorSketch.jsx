@@ -541,6 +541,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // measurement and a window-adjacent one can be told apart at a glance.
   const doorDimColor = level.doorDimColor || "#4A4A46";
   const windowDimColor = level.windowDimColor || "#4A4A46";
+  const dimLabelOpaqueBg = level.dimLabelOpaqueBg !== false;
   const dimFontSize = toNum(level.dimFontSize, 7.5);
   // Same idea as the door/window dim colors above: a separate size for
   // the door/window-adjacent gap numbers, so they can be made bigger (or
@@ -2447,6 +2448,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               {FONT_FAMILIES.map(f => <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>)}
             </select>
           </div>
+          <label className="flex items-center gap-1.5" style={{ color: C.mute }}>
+            <input type="checkbox" checked={level.dimLabelOpaqueBg !== false} onChange={e => onMeta({ dimLabelOpaqueBg: e.target.checked })} />
+            Fundo opaco atrás do número da cota
+          </label>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
@@ -2894,7 +2899,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                     onMouseDown={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)}
                     onTouchStart={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)} />
                 )}
-                <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />
+                {dimLabelOpaqueBg && <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                 <text x={labelX} y={labelY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
                   style={{ pointerEvents: "none" }}>{faceDistM} m</text>
               </g>
