@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useLayoutEffect } from "react";
 import * as THREE from "three";
 import { C, matchesPhaseView } from "./theme.js";
 import { toNum } from "./utils.js";
-import { pointInPolygon } from "./geometry.js";
+import { pointInPolygon, polygonAreaXZ } from "./geometry.js";
 import { wallThicknessM, FLOOR_TYPES, DOOR_MATERIAL_MIX, WINDOW_MATERIAL_MIX } from "./constants.js";
 
 // Split out of App.jsx and lazy-loaded (see the React.lazy import there) so
@@ -558,14 +558,25 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
       };
       roofs.forEach(roof => {
         const mat = new THREE.MeshStandardMaterial({ color: TILE_COLORS[roof.tileType] ?? 0xB5623A, roughness: 0.8, side: THREE.DoubleSide });
-        (roof.planes || []).forEach(plane => {
+        (roof.planes || []).forEach((plane, aguaIndex) => {
           const tris = plane.length === 3 ? [[0, 1, 2]] : [[0, 1, 2], [0, 2, 3]];
           const positions = [];
           tris.forEach(t => t.forEach(idx => { const p = plane[idx]; positions.push(p.x, p.y, p.z); }));
           const geo = new THREE.BufferGeometry();
           geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
           geo.computeVertexNormals();
-          scene.add(new THREE.Mesh(geo, mat));
+          const mesh = new THREE.Mesh(geo, mat);
+          // The plane's own real area (its true tilted surface, not its
+          // flat XZ footprint) is what a "Água" actually needs — the same
+          // 1/cos(pitch) correction recalcRoofGeometry (App.jsx) uses for
+          // the Coberturas tab's own area field, kept in sync here instead
+          // of trusting that tab's own (possibly stale, un-recalculated)
+          // stored value.
+          const pitchRad = (Math.max(0, Math.min(89, toNum(roof.pitchDeg, 30))) * Math.PI) / 180;
+          const areaM2 = polygonAreaXZ(plane) / Math.cos(pitchRad);
+          mesh.userData = { kind: "roof", roofId: roof.id, roofName: roof.name || "Cobertura", aguaIndex, pitchDeg: toNum(roof.pitchDeg, 30), areaM2, plane, tileType: roof.tileType };
+          scene.add(mesh);
+          selectableMeshes.push(mesh);
           plane.forEach(p => {
             minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
             minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
@@ -703,6 +714,34 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
         group.add(heightLabel);
         return group;
       }
+      // Every edge of the selected água's own plane, each labeled with its
+      // real 3D length — same "cotas right on the element" idea as a wall
+      // or opening gets, except these edges run up the slope instead of
+      // level, so the dimension line (and its length) follow the incline
+      // instead of a flattened plan projection of it.
+      const ROOF_DIM_COLOR = "#4A4A46";
+      function buildRoofDimensionGroup(info) {
+        const pts = info.plane.map(p => new THREE.Vector3(p.x, p.y, p.z));
+        const n = new THREE.Vector3().crossVectors(
+          new THREE.Vector3().subVectors(pts[1], pts[0]),
+          new THREE.Vector3().subVectors(pts[2], pts[0])
+        ).normalize();
+        // Always push the dimension lines up and away from the roof deck,
+        // never down into the attic space below it.
+        if (n.y < 0) n.multiplyScalar(-1);
+        const offset = n.clone().multiplyScalar(0.08);
+        const group = new THREE.Group();
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i].clone().add(offset), b = pts[(i + 1) % pts.length].clone().add(offset);
+          const edgeLen = a.distanceTo(b);
+          if (edgeLen < 0.05) continue;
+          group.add(makeDimensionLine(a, b, ROOF_DIM_COLOR));
+          const label = makeTextSprite(`${edgeLen.toFixed(2)} m`, ROOF_DIM_COLOR);
+          label.position.copy(a).lerp(b, 0.5).add(offset);
+          group.add(label);
+        }
+        return group;
+      }
 
       // Tap-to-select: raycasts against selectableMeshes (wall segments,
       // door/window leaves, and piso zones) and reports the whole element
@@ -745,6 +784,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
         const info = mesh.userData;
         if (info.kind === "wall") return "wall:" + info.wallId;
         if (info.kind === "door" || info.kind === "window") return info.kind + ":" + info.wallTag + ":" + info.tag;
+        if (info.kind === "roof") return "roof:" + info.roofId + ":" + info.aguaIndex;
         return "obj:" + mesh.uuid;
       }
       // A tap only ever raycasts to whatever's NEAREST the camera — with a
@@ -810,6 +850,21 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           highlightFill.rotation.x = -Math.PI / 2;
           highlightFill.position.y = info.elev + 0.025;
           scene.add(highlightFill);
+        } else if (info.kind === "roof") {
+          // Same quad-of-triangles construction the roof's own tile mesh
+          // uses (buildRoofDimensionGroup's own normal-offset trick keeps
+          // this from z-fighting with it), just re-triangulated here with
+          // the translucent select material instead of the tile texture.
+          const plane = info.plane;
+          const tris = plane.length === 3 ? [[0, 1, 2]] : [[0, 1, 2], [0, 2, 3]];
+          const positions = [];
+          tris.forEach(t => t.forEach(idx => { const p = plane[idx]; positions.push(p.x, p.y + 0.01, p.z); }));
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+          geo.computeVertexNormals();
+          highlightFill = new THREE.Mesh(geo, fillMat());
+          scene.add(highlightFill);
+          dimensionGroup.add(buildRoofDimensionGroup(info));
         }
         scene.add(dimensionGroup);
       }
@@ -990,7 +1045,9 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
             ? `${info.wallType} · ${(info.lengthM * info.heightM).toFixed(1)} m² · ${(info.lengthM * info.heightM * info.thicknessM).toFixed(2)} m³`
             : info.kind === "door" || info.kind === "window"
               ? `${info.wallTag} · ${info.kind === "door" ? info.doorType : info.windowType} · ${openingVolumeByMaterial(info.kind)}`
-              : `${info.areaM2} m²`;
+              : info.kind === "roof"
+                ? `${info.pitchDeg}° · ${info.areaM2.toFixed(1)} m²`
+                : `${info.areaM2} m²`;
           const ambiente = (info.faceA || info.faceB)
             ? (info.faceA === info.faceB ? info.faceA : `${info.faceA} / ${info.faceB}`)
             : null;
@@ -1002,7 +1059,8 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
                   {info.kind === "wall" ? `Parede ${info.tag}`
                     : info.kind === "door" ? `Porta ${info.tag}`
                       : info.kind === "window" ? `Janela ${info.tag}`
-                        : `Piso · ${info.floorType}`}
+                        : info.kind === "roof" ? `${info.roofName} · Água ${info.aguaIndex + 1}`
+                          : `Piso · ${info.floorType}`}
                 </span>
                 <span className="flex-1 text-right truncate" style={{ color: C.mute }}>{summary}</span>
                 <button onClick={() => setSelectedWallInfo(null)} className="shrink-0" style={{ color: C.mute, fontSize: 16, lineHeight: 1 }}>×</button>

@@ -1857,7 +1857,7 @@ export default function PranchetaBIM() {
                         if (!footprint) return null;
                         const baseElevation = roofBaseElevation(roof, footprint);
                         const geo = computeRoofPlanes(roofPlaneSettings(roof), footprint, baseElevation);
-                        return { id: roof.id, tileType: roof.tileType || TILE_TYPES[0], baseElevation, ...geo };
+                        return { id: roof.id, name: roof.name, tileType: roof.tileType || TILE_TYPES[0], pitchDeg: toNum(roof.pitchDeg, 30), baseElevation, ...geo };
                       }).filter(Boolean)}
                       openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
                   </Suspense>
