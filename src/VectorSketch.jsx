@@ -54,6 +54,61 @@ function WindowIcon({ size = 16, color = "currentColor" }) {
   );
 }
 
+// A physical wall run split into several elements (a door/window cutting
+// it, or just drawn as separate segments) otherwise makes each piece find
+// its own nearest facing wall independently in nearestParallelWallDims
+// below — several dimension pairs that all measure the exact same span,
+// rendering as visual duplicates stacked along the same side. Collapses
+// any chain of touching, collinear segments into one virtual run (the
+// first segment's own id stands in for the whole chain, for the thickness
+// lookup and the drag-to-edit target) spanning its two outer endpoints,
+// so pairing sees one wall per physical side — same real corners either
+// way, but jogs/steps (never collinear with their neighbor) still pair up
+// on their own, exactly where a plain rectangle wouldn't have needed this
+// at all.
+function mergeCollinearWallRuns(walls) {
+  const sameLine = (a, b) => {
+    const ax = a.x2 - a.x1, ay = a.y2 - a.y1, alen = Math.hypot(ax, ay) || 1;
+    const bx = b.x2 - b.x1, by = b.y2 - b.y1, blen = Math.hypot(bx, by) || 1;
+    if (Math.abs(ax * by - ay * bx) / (alen * blen) > 0.02) return false; // not parallel
+    const ux = ax / alen, uy = ay / alen;
+    const perp = Math.abs((b.x1 - a.x1) * -uy + (b.y1 - a.y1) * ux);
+    return perp < GRID * 0.3;
+  };
+  const touches = (a, b) => {
+    const pts = [{ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }];
+    const qts = [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }];
+    return pts.some(p => qts.some(q => dist(p, q) < 3));
+  };
+  const used = new Array(walls.length).fill(false);
+  const runs = [];
+  for (let i = 0; i < walls.length; i++) {
+    if (used[i]) continue;
+    const group = [walls[i]];
+    used[i] = true;
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let j = 0; j < walls.length; j++) {
+        if (used[j]) continue;
+        if (group.some(g => sameLine(g, walls[j]) && touches(g, walls[j]))) { group.push(walls[j]); used[j] = true; grew = true; }
+      }
+    }
+    if (group.length === 1) { runs.push(group[0]); continue; }
+    const ax = group[0].x2 - group[0].x1, ay = group[0].y2 - group[0].y1, alen = Math.hypot(ax, ay) || 1;
+    const ux = ax / alen, uy = ay / alen;
+    let minT = Infinity, maxT = -Infinity, p0 = null, p1 = null;
+    group.forEach(g => {
+      [{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }].forEach(p => {
+        const t = (p.x - group[0].x1) * ux + (p.y - group[0].y1) * uy;
+        if (t < minT) { minT = t; p0 = p; }
+        if (t > maxT) { maxT = t; p1 = p; }
+      });
+    });
+    runs.push({ ...group[0], x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y });
+  }
+  return runs;
+}
 // For each wall, finds the nearest parallel wall facing it on each side
 // (overlapping projection along its own axis) and returns one dimension
 // line per such pair — the "cota" between opposing wall faces (e.g. room
@@ -2724,8 +2779,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRef?.id === el.id ? 6 : 4} strokeLinecap="square"
               strokeDasharray={extendSourceId === el.id || alignRef?.id === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
-            {planMode === "piso" && (() => {
-              const canEdit = tool === "selecionar" && selectedId === el.id;
+            {/* Every wall used to carry its own bare length label — floating
+                text with no leader/tick line, right in the middle of the
+                drawing, next to (and often duplicating) the exterior
+                dimension chain below. It now only shows for the SELECTED
+                wall, as a quick way to tap-to-edit its length, instead of
+                cluttering every other wall on the sheet at once; the same
+                value is still always available in the selected-wall panel's
+                own "comprimento" field. */}
+            {planMode === "piso" && selectedId === el.id && tool === "selecionar" && (() => {
+              const canEdit = true;
               const midX = (el.x1 + el.x2) / 2, midY = (el.y1 + el.y2) / 2;
               const angleDeg = labelAngleDeg(el);
               // The wall's own length label defaults to the wall's exact
@@ -2784,7 +2847,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <circle key={pt.id} cx={pt.x} cy={pt.y} r="4" fill="none" stroke="#2E6FED" strokeWidth="1.5" opacity="0.8" pointerEvents="none" />
           ));
         })()}
-        {planMode === "piso" && nearestParallelWallDims(elements.filter(el => el.type === "wall" && phaseVisible(el))).map(d => {
+        {planMode === "piso" && nearestParallelWallDims(mergeCollinearWallRuns(elements.filter(el => el.type === "wall" && phaseVisible(el)))).map(d => {
           const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
           const ux = dx / len, uy = dy / len;
           const nx = -uy, ny = ux;
