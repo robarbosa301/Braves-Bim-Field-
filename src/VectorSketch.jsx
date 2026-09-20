@@ -213,10 +213,16 @@ function cotaGeometry(el, elements, scale) {
     const t = (el.atPx ?? len / 2) + toNum(el.offsetPx, 0);
     const cx = w.x1 + ux * t, cy = w.y1 + uy * t;
     const halfThickPx = (wallThicknessM(w) / 2 / scale) * GRID;
+    // The text's own distance from the tick — a fixed 16px by default,
+    // adjustable per-cota (el.labelOffsetPx) along the SAME axis so it can
+    // be pulled in closer or pushed further without touching where the
+    // tick itself sits (that's offsetPx above, a completely separate
+    // knob) — same idea for every mode below.
+    const labelPush = 16 + toNum(el.labelOffsetPx, 0);
     return {
       x1: cx - nx * halfThickPx, y1: cy - ny * halfThickPx,
       x2: cx + nx * halfThickPx, y2: cy + ny * halfThickPx,
-      labelX: cx + ux * 16, labelY: cy + uy * 16,
+      labelX: cx + ux * labelPush, labelY: cy + uy * labelPush,
       // dragNx/dragNy doubles as the render's own tick-mark direction
       // below (the little perpendicular caps at each end of the line) —
       // ux,uy is perpendicular to THIS tick's own crossing span (nx,ny),
@@ -236,10 +242,11 @@ function cotaGeometry(el, elements, scale) {
     const halfWPx = (toNum(o.width, 0.8) / 2 / scale) * GRID;
     const offsetPx = 16 + toNum(el.offsetPx, 0);
     const cx = w.x1 + ux * posUnits + nx * offsetPx, cy = w.y1 + uy * posUnits + ny * offsetPx;
+    const labelPush = toNum(el.labelOffsetPx, 0);
     return {
       x1: cx - ux * halfWPx, y1: cy - uy * halfWPx,
       x2: cx + ux * halfWPx, y2: cy + uy * halfWPx,
-      labelX: cx, labelY: cy,
+      labelX: cx + nx * labelPush, labelY: cy + ny * labelPush,
       valueM: toNum(o.width, 0.8), lineAngleDeg: Math.atan2(uy, ux) * 180 / Math.PI,
       dragNx: nx, dragNy: ny,
     };
@@ -288,7 +295,12 @@ function cotaGeometry(el, elements, scale) {
   }
   let dimDeg = Math.atan2(uy, ux) * 180 / Math.PI;
   if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
-  return { x1, y1, x2, y2, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2, valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg, faceA, faceB, dragNx, dragNy };
+  const labelPush = toNum(el.labelOffsetPx, 0);
+  return {
+    x1, y1, x2, y2,
+    labelX: (x1 + x2) / 2 + dragNx * labelPush, labelY: (y1 + y2) / 2 + dragNy * labelPush,
+    valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg, faceA, faceB, dragNx, dragNy,
+  };
 }
 const COTA_MODE_LABEL = {
   face: "Face a face", eixo: "Eixo a eixo", faceExt: "Face ext. a face ext.",
@@ -922,6 +934,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // overall outer-to-outer building width, an opening's own width in
   // plan — has no automatic equivalent, so the user places it by hand.
   const [cotaMode, setCotaMode] = useState("face");
+  // "Copiar propriedade" clipboard for a cota's own visual style (cor,
+  // tamanho de fonte, fonte) — lets one already-styled cota's look be
+  // reused on others instead of matching color pickers and font sizes by
+  // eye across the whole drawing. Session-local (not persisted): it's a
+  // working clipboard for the person editing right now, not project data.
+  const [copiedCotaStyle, setCopiedCotaStyle] = useState(null);
   const [cotaPendingWallId, setCotaPendingWallId] = useState(null);
   // Which face of EACH of the two walls a new "face"-mode cota lands on —
   // picked independently so any combination is possible (both internal —
@@ -3935,12 +3953,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const color = el.color || defaultColor;
           const fontSize = toNum(el.fontSize, defaultFontSize);
           const isSel = selectedId === el.id;
+          // A per-cota override on top of the angle cotaGeometry works out
+          // on its own — for when that default (chosen purely from the
+          // measuring geometry) lands the text upside down or reading a
+          // different way than a neighboring cota it should visually match;
+          // a 90° turn (the "Girar texto" button below) fixes either.
+          const rotDeg = g.lineAngleDeg + toNum(el.labelRotDeg, 0);
           return (
             <g key={el.id} opacity={isSel ? 1 : 0.9}>
               <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke={isSel ? "#726F68" : color} strokeWidth={isSel ? 1.6 : 0.9} />
               <line x1={g.x1 - nx * 4} y1={g.y1 - ny * 4} x2={g.x1 + nx * 4} y2={g.y1 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" />
               <line x1={g.x2 - nx * 4} y1={g.y2 - ny * 4} x2={g.x2 + nx * 4} y2={g.y2 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" />
-              <g transform={g.lineAngleDeg ? `rotate(${g.lineAngleDeg} ${g.labelX} ${g.labelY})` : undefined}>
+              <g transform={rotDeg ? `rotate(${rotDeg} ${g.labelX} ${g.labelY})` : undefined}>
                 {dimLabelOpaqueBg && <rect x={g.labelX - 15} y={g.labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                 <text x={g.labelX} y={g.labelY + 1} fontSize={fontSize} fill={isSel ? "#726F68" : color} textAnchor="middle" fontWeight="600"
                   fontFamily={el.fontFamily ? fontFamilyCss(el.fontFamily) : undefined}
@@ -4287,6 +4311,30 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
                   {FONT_FAMILIES.map(f => <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>)}
                 </select>
+                {/* The number's own position/angle relative to its
+                    tick — independent of dragging the cota itself (that
+                    moves the tick, this only nudges the text): how far
+                    from the line it sits, and a 90°-at-a-time spin for
+                    when the default reading angle comes out sideways or
+                    mismatched against a neighboring cota. */}
+                <NumField value={toNum(selected.labelOffsetPx, 0)} onChange={v => patchSelected({ labelOffsetPx: v })} unit="px afastar texto" w="w-10" />
+                <button onClick={() => patchSelected({ labelRotDeg: (toNum(selected.labelRotDeg, 0) + 90) % 360 })}
+                  className="px-1.5 py-1 rounded text-[10px]" style={{ background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>
+                  Girar texto 90°
+                </button>
+                {/* "Copiar propriedade" grabs this cota's own cor/fonte/
+                    tamanho (its own override, or whatever it's currently
+                    showing by default) into a clipboard any OTHER cota's
+                    "Colar propriedade" can then apply — a quick way to
+                    make a batch of cotas match one already styled right,
+                    instead of repeating the same color pick and font size
+                    on each one by eye. */}
+                <button onClick={() => setCopiedCotaStyle({ color: selected.color || defaultColor, fontSize: toNum(selected.fontSize, defaultFontSize), fontFamily: selected.fontFamily || level.fontFamily || "padrao" })}
+                  className="text-[10px] underline" style={{ color: C.mute }}>copiar propriedade</button>
+                {copiedCotaStyle && (
+                  <button onClick={() => patchSelected({ color: copiedCotaStyle.color, fontSize: copiedCotaStyle.fontSize, fontFamily: copiedCotaStyle.fontFamily })}
+                    className="text-[10px] underline" style={{ color: C.gold }}>colar propriedade</button>
+                )}
                 {/* Flip either wall's face without redoing the whole
                     dimension — the same per-wall toggle the Cota tool
                     itself uses when placing a new one, here for an
