@@ -491,22 +491,26 @@ export function levelToMetersForRoom(level, room) {
   const roomWallSpans = els.filter(e => e.type === "wall")
     .map(w => ({ w, span: wallSpanForRoom(level, w, poly.name) }))
     .filter(x => x.span !== null);
-  const clippedWalls = roomWallSpans.map(({ w, span }) => {
-    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    return {
-      ...w,
-      x1: w.x1 + ux * span.startPx, y1: w.y1 + uy * span.startPx,
-      x2: w.x1 + ux * span.endPx, y2: w.y1 + uy * span.endPx,
-      _origin: w, _span: span,
-    };
-  });
-  const roomWallIds = new Set(clippedWalls.map(w => w.id));
-  const spanByWallId = new Map(clippedWalls.map(cw => [cw.id, cw]));
+  // The wall itself always renders — and reports its own área/volume/
+  // seleção — at its TRUE, full corner-to-corner geometry, never shortened
+  // to just the sub-run facing this one room. Clipping it down to that
+  // span (as this used to) also clipped its own selection highlight to
+  // that same partial stub (never the whole physical wall — the "seleção
+  // por parte" a tap here always showed) AND, since a door/window's own
+  // x,y stays in the wall's TRUE coordinate frame, put every opening
+  // outside whatever shortened frame the clipped wall now measured
+  // itself against — the wall's own área/volume then had no matching
+  // opening to subtract, still counting a door/window's area as solid
+  // wall. wallSpanForRoom still decides WHICH walls belong here and
+  // (below) which openings sit on this room's own facing run — only the
+  // wall's own rendered/reported geometry no longer gets shortened.
+  const roomWalls = roomWallSpans.map(({ w, span }) => ({ ...w, _span: span }));
+  const roomWallIds = new Set(roomWalls.map(w => w.id));
+  const spanByWallId = new Map(roomWalls.map(w => [w.id, w]));
   const openingInSpan = (o) => {
-    const cw = spanByWallId.get(o.wallId);
-    if (!cw) return false;
-    const w = cw._origin, span = cw._span;
+    const w = spanByWallId.get(o.wallId);
+    if (!w) return false;
+    const span = w._span;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
@@ -515,7 +519,7 @@ export function levelToMetersForRoom(level, room) {
   const inPoly = (x, y) => pointInPolygon({ x, y }, poly.points);
   return {
     elevation: toNum(level.elevation, 0),
-    walls: clippedWalls.map(w => wallToM(w, toM)),
+    walls: roomWalls.map(w => wallToM(w, toM)),
     doors: els.filter(e => e.type === "door" && roomWallIds.has(e.wallId) && openingInSpan(e)).map(d => doorToM(d, toM)),
     windows: els.filter(e => e.type === "window" && roomWallIds.has(e.wallId) && openingInSpan(e)).map(w => windowToM(w, toM)),
     stairs: els.filter(e => e.type === "stair" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(s2 => stairToM(s2, toM)),
