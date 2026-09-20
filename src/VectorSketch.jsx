@@ -1819,6 +1819,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         if (draggingLabel.offsetField === "ceilingLabelOffset") setSelectedId(el.id);
         else { setNamingId(el.id); setNamingValue(el.name || ""); }
       }
+    } else if (draggingLabel) {
+      // Same fix as onDimLabelDragEnd below: a real drag must suppress the
+      // tap that follows this release, or lifting the finger off the label
+      // silently (re)selects whatever wall happens to be underneath it.
+      justDraggedOnCanvas.current = true;
     }
     setDraggingLabel(null);
     isDraggingRef.current = false;
@@ -1881,6 +1886,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   }
   function onDimLabelDragEnd() {
     if (draggingDimLabel && !draggingDimLabel.moved) draggingDimLabel.startEdit();
+    // A real drag (not just a tap-to-edit) must suppress the tap that
+    // follows this release, same as endWallGesture/endMarquee already do —
+    // without it, lifting the finger off the dimension line fires a plain
+    // tap at that same spot, which lands on whatever wall is underneath
+    // and silently selects it instead of leaving the dimension alone.
+    if (draggingDimLabel && draggingDimLabel.moved) justDraggedOnCanvas.current = true;
     setDraggingDimLabel(null);
     isDraggingRef.current = false;
   }
