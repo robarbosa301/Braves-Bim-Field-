@@ -1460,7 +1460,7 @@ export default function PranchetaBIM() {
                   </div>
                   <div className="flex-1">
                     <div className="text-sm font-medium" style={{ color: C.chalk }}>{l.name}</div>
-                    <div className="text-[11px]" style={{ color: C.mute }}>{roomsHere.length} ambiente(s) · {totalArea.toFixed(1)} m² de área construída · cota {l.elevation} m</div>
+                    <div className="text-[11px]" style={{ color: C.mute }}>{roomsHere.length} ambiente(s) · {totalArea.toFixed(1)} m² de área construída · cota {l.elevation} m · pé-direito {l.wallHeightDefault || "2.80"} m</div>
                   </div>
                   <ChevronRight size={16} color={C.mute} />
                 </button>
