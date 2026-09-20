@@ -242,7 +242,7 @@ function wallRoomAdjacency(level, wall) {
   const nx = -uy, ny = ux;
   const mid = { x: (wall.x1 + wall.x2) / 2, y: (wall.y1 + wall.y2) / 2 };
   const polys = (level.sketchElements || []).filter(e => e.type === "room");
-  const roomAt = (p) => { const poly = polys.find(r => pointInPolygon(p, r.points)); return poly ? (poly.name || "Ambiente sem nome") : "Externo / não identificado"; };
+  const roomAt = (p) => { const poly = polys.find(r => pointInPolygon(p, r.points)); return poly ? (poly.name || "Ambiente sem nome") : "Externo"; };
   return {
     faceA: roomAt({ x: mid.x + nx * 12, y: mid.y + ny * 12 }),
     faceB: roomAt({ x: mid.x - nx * 12, y: mid.y - ny * 12 }),
@@ -261,7 +261,7 @@ export function wallSpanForRoom(level, wall, roomName) {
   const ux = dx / len, uy = dy / len;
   const nx = -uy, ny = ux;
   const room = (level.sketchElements || []).find(e => e.type === "room" && e.name === roomName);
-  if (!room) return { startPx: 0, endPx: len };
+  if (!room) return null;
   const scale = toNum(level.sketchScale, 0.5);
   const halfThickPx = (wallThicknessM(wall) / 2 / scale) * GRID;
   const tolerance = halfThickPx + GRID * 0.6;
@@ -272,8 +272,68 @@ export function wallSpanForRoom(level, wall, roomName) {
     })
     .filter(p => p.perp <= tolerance)
     .map(p => p.pos);
-  if (!along.length) return { startPx: 0, endPx: len };
+  if (!along.length) return null;
   return { startPx: Math.max(0, Math.min(...along)), endPx: Math.min(len, Math.max(...along)) };
+}
+export function wallsForRoom(level, roomName) {
+  return (level.sketchElements || [])
+    .filter(e => e.type === "wall")
+    .filter(w => wallSpanForRoom(level, w, roomName) !== null);
+}
+// A wall is part of the building's true exterior perimeter when at least
+// one stretch of its own length has open air (no room) on the far side —
+// i.e. at most one room claims that stretch via wallSpanForRoom. A wall
+// sandwiched between two DIFFERENT rooms along the same stretch (their
+// spans overlapping, not just adjacent) is a pure interior partition and
+// never counts, even though it may border a room on each face. A wall
+// that runs past a T-junction serving two rooms end-to-end (each covering
+// its own non-overlapping half) still reads as exterior on its far side
+// the whole way, which is exactly the case that used to get missed.
+export function isWallExterior(level, wall) {
+  const rooms = (level.sketchElements || []).filter(e => e.type === "room");
+  if (!rooms.length) return true;
+  const spans = rooms.map(r => wallSpanForRoom(level, wall, r.name)).filter(Boolean);
+  if (spans.length <= 1) return true;
+  // Only the stretch actually claimed by at least one room is meaningful —
+  // room polygons are inset from the wall's own corners, so both ends of
+  // the wall always read as "claimed by nobody" even on a genuine interior
+  // partition; that corner sliver must not be mistaken for open air.
+  const overallStart = Math.min(...spans.map(s => s.startPx));
+  const overallEnd = Math.max(...spans.map(s => s.endPx));
+  const points = Array.from(new Set([overallStart, overallEnd, ...spans.flatMap(s => [s.startPx, s.endPx])])).sort((a, b) => a - b);
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    if (b - a < 1) continue;
+    const mid = (a + b) / 2;
+    const coverCount = spans.filter(s => mid >= s.startPx && mid <= s.endPx).length;
+    if (coverCount <= 1) return true;
+  }
+  return false;
+}
+// Same physical wall (matched in real-world meters, so it still lines up
+// across pavimentos that use a different sketchScale) traced across every
+// level of the building, sorted bottom-to-top by elevation — lets the
+// "Externo" elevation stack every story's exterior face into one full-height
+// view of the building instead of just whichever level the Croqui has open.
+function wallFootprintM(level, w) {
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  return { x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2) };
+}
+function sameWallFootprint(a, b, tolM = 0.08) {
+  return (Math.hypot(a.x1 - b.x1, a.y1 - b.y1) < tolM && Math.hypot(a.x2 - b.x2, a.y2 - b.y2) < tolM) ||
+    (Math.hypot(a.x1 - b.x2, a.y1 - b.y2) < tolM && Math.hypot(a.x2 - b.x1, a.y2 - b.y1) < tolM);
+}
+export function buildingElevationStack(levels, level, wall) {
+  const fp = wallFootprintM(level, wall);
+  const matches = [];
+  (levels || []).forEach(lvl => {
+    const w = (lvl.sketchElements || []).find(e => e.type === "wall" && sameWallFootprint(wallFootprintM(lvl, e), fp));
+    if (w) matches.push({ level: lvl, wall: w });
+  });
+  if (!matches.length) matches.push({ level, wall });
+  matches.sort((a, b) => toNum(a.level.elevation, 0) - toNum(b.level.elevation, 0));
+  return matches;
 }
 export function wallToM(w, toM) {
   return {
@@ -383,10 +443,7 @@ function levelToMetersForRoom(level, room) {
   // room, which is exactly why this view always came up empty. A wall
   // belongs to this room the same way the Ambientes tab and the Croqui's
   // own wall legend already decide it: which room sits on either face.
-  const roomWalls = els.filter(e => e.type === "wall").filter(w => {
-    const adj = wallRoomAdjacency(level, w);
-    return adj.faceA === room.name || adj.faceB === room.name;
-  });
+  const roomWalls = els.filter(e => e.type === "wall").filter(w => wallSpanForRoom(level, w, poly.name) !== null);
   const roomWallIds = new Set(roomWalls.map(w => w.id));
   const inPoly = (x, y) => pointInPolygon({ x, y }, poly.points);
   return {
@@ -784,14 +841,15 @@ export default function PranchetaBIM() {
     : [];
   const activeRoomWallAreaTotal = activeRoomWallFaces.reduce((s, f) => s + toNum(f.wall.length, 0) * toNum(f.wall.height, 0), 0);
 
-  // Ambiente options for the Elevação picker — every distinct face name any
-  // wall on this level touches, "Externo / não identificado" included so
-  // exterior walls (no room polygon on either side) stay reachable too.
+  // Ambiente options for the Elevação picker — every room actually traced
+  // on this level, plus "Externo" (the building's own outer perimeter)
+  // whenever at least one wall has a genuinely exterior-facing stretch.
   const elevationRoomOptions = croquiLevel
-    ? Array.from(new Set((croquiLevel.sketchElements || []).filter(e => e.type === "wall").flatMap(w => {
-        const adj = wallRoomAdjacency(croquiLevel, w);
-        return [adj.faceA, adj.faceB];
-      })))
+    ? (() => {
+        const names = Array.from(new Set((croquiLevel.sketchElements || []).filter(e => e.type === "room").map(r => r.name || "Ambiente sem nome")));
+        const hasExterior = (croquiLevel.sketchElements || []).some(e => e.type === "wall" && isWallExterior(croquiLevel, e));
+        return hasExterior ? [...names, "Externo"] : names;
+      })()
     : [];
   // Roof outline (eave rectangle + ridge line) for whichever roofs target
   // the level currently open in the Croqui — converted back from meters
@@ -814,10 +872,9 @@ export default function PranchetaBIM() {
       }).filter(Boolean)
     : [];
   const elevationRoomWalls = croquiLevel && elevationRoomName
-    ? (croquiLevel.sketchElements || []).filter(e => e.type === "wall").filter(w => {
-        const adj = wallRoomAdjacency(croquiLevel, w);
-        return adj.faceA === elevationRoomName || adj.faceB === elevationRoomName;
-      })
+    ? elevationRoomName === "Externo"
+      ? (croquiLevel.sketchElements || []).filter(e => e.type === "wall" && isWallExterior(croquiLevel, e))
+      : wallsForRoom(croquiLevel, elevationRoomName)
     : [];
 
   function removeRoom(id) {
@@ -1761,9 +1818,28 @@ export default function PranchetaBIM() {
                         one-at-a-time picker — so the whole ambiente is
                         visible without extra taps. */}
                     {elevationRoomWalls.map(w => {
+                      // "Externo" is the building's own outside face, not
+                      // any one room's inside — never clipped to a room
+                      // span, and stacked across every pavimento that
+                      // shares this same wall footprint so the full height
+                      // of the building shows, not just this one level's.
+                      if (elevationRoomName === "Externo") {
+                        const stack = buildingElevationStack(levels, croquiLevel, w);
+                        return (
+                          <div key={w.id}>
+                            <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
+                            <div className="flex flex-col-reverse">
+                              {stack.map(({ level: lvl, wall: sw }) => (
+                                <ElevationView key={lvl.id + ":" + sw.id} level={lvl} wallId={sw.id} />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
                       const scale = toNum(croquiLevel.sketchScale, 0.5);
                       const toM = (px) => (px / GRID) * scale;
-                      const span = wallSpanForRoom(croquiLevel, w, elevationRoomName);
+                      const fullLenPx = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+                      const span = wallSpanForRoom(croquiLevel, w, elevationRoomName) || { startPx: 0, endPx: fullLenPx };
                       return (
                         <div key={w.id}>
                           <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>

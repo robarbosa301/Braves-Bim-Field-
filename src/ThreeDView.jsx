@@ -323,7 +323,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           const wallMid = { x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 };
           const roomAt = (p) => {
             const room = lvl.rooms.find(r => pointInPolygon(p, r.points));
-            return room ? (room.name || "Ambiente sem nome") : "Externo / não identificado";
+            return room ? (room.name || "Ambiente sem nome") : "Externo";
           };
           const wallInfo = {
             kind: "wall", wallId: w.id, tag: w.tag, lengthM: len, heightM: h, thicknessM: thickness,

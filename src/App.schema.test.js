@@ -7,6 +7,9 @@ import {
   levelToMeters,
   buildLevantamentoSchema,
   wallSpanForRoom,
+  wallsForRoom,
+  isWallExterior,
+  buildingElevationStack,
 } from "./App.jsx";
 import { conditionColor, phaseColor } from "./theme.js";
 import { wallThicknessM } from "./constants.js";
@@ -58,11 +61,88 @@ describe("wallSpanForRoom", () => {
     expect(span.endPx).toBeLessThan(400); // never the wall's own full length
   });
 
-  it("falls back to the wall's full length when no room polygon matches (e.g. the exterior side)", () => {
+  it("returns null when no room polygon matches this wall (e.g. the exterior side), instead of a fake full-length span", () => {
     level.sketchElements = [{ type: "room", name: "Outra sala", points: [{ x: 200, y: 3 }, { x: 397, y: 3 }, { x: 397, y: 297 }, { x: 200, y: 297 }] }];
     const span = wallSpanForRoom(level, wall, "Sala");
-    expect(span.startPx).toBe(0);
-    expect(span.endPx).toBe(400);
+    expect(span).toBeNull();
+  });
+
+  it("returns null when the named room itself doesn't exist", () => {
+    level.sketchElements = [];
+    expect(wallSpanForRoom(level, wall, "Sala")).toBeNull();
+  });
+});
+
+describe("wallsForRoom", () => {
+  it("only includes walls whose face actually borders the room, even when another wall spans a T-junction into a different room", () => {
+    // Two rooms side by side, sharing a partition. The TOP wall (0..400px)
+    // runs the full width but only "Sala" (the left room) traces its face
+    // along the first half — "Cozinha" borders a different sub-span.
+    const level = {
+      sketchScale: "0.5",
+      sketchElements: [
+        { id: "top", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0, wallType: "Alvenaria 15cm" },
+        { id: "left", type: "wall", x1: 0, y1: 0, x2: 0, y2: 300, wallType: "Alvenaria 15cm" },
+        { id: "partition", type: "wall", x1: 200, y1: 0, x2: 200, y2: 300, wallType: "Alvenaria 15cm" },
+        { id: "right", type: "wall", x1: 400, y1: 0, x2: 400, y2: 300, wallType: "Alvenaria 15cm" },
+        { type: "room", name: "Sala", points: [{ x: 3, y: 3 }, { x: 197, y: 3 }, { x: 197, y: 297 }, { x: 3, y: 297 }] },
+        { type: "room", name: "Cozinha", points: [{ x: 203, y: 3 }, { x: 397, y: 3 }, { x: 397, y: 297 }, { x: 203, y: 297 }] },
+      ],
+    };
+    const salaWalls = wallsForRoom(level, "Sala").map(w => w.id).sort();
+    expect(salaWalls).toEqual(["left", "partition", "top"]);
+    const cozinhaWalls = wallsForRoom(level, "Cozinha").map(w => w.id).sort();
+    expect(cozinhaWalls).toEqual(["partition", "right", "top"]);
+  });
+});
+
+describe("isWallExterior", () => {
+  // Same T-junction layout as wallsForRoom above: "top"/"left"/"right" all
+  // have open air on their far side somewhere along their length (the
+  // building's real perimeter); "partition" has a room on BOTH faces
+  // along its whole run, so it's a pure interior wall.
+  const level = {
+    sketchScale: "0.5",
+    sketchElements: [
+      { id: "top", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0, wallType: "Alvenaria 15cm" },
+      { id: "left", type: "wall", x1: 0, y1: 0, x2: 0, y2: 300, wallType: "Alvenaria 15cm" },
+      { id: "partition", type: "wall", x1: 200, y1: 0, x2: 200, y2: 300, wallType: "Alvenaria 15cm" },
+      { id: "right", type: "wall", x1: 400, y1: 0, x2: 400, y2: 300, wallType: "Alvenaria 15cm" },
+      { type: "room", name: "Sala", points: [{ x: 3, y: 3 }, { x: 197, y: 3 }, { x: 197, y: 297 }, { x: 3, y: 297 }] },
+      { type: "room", name: "Cozinha", points: [{ x: 203, y: 3 }, { x: 397, y: 3 }, { x: 397, y: 297 }, { x: 203, y: 297 }] },
+    ],
+  };
+  it("treats the T-junction wall shared end-to-end by two rooms as exterior", () => {
+    const top = level.sketchElements.find(w => w.id === "top");
+    expect(isWallExterior(level, top)).toBe(true);
+  });
+  it("treats single-room perimeter walls as exterior", () => {
+    expect(isWallExterior(level, level.sketchElements.find(w => w.id === "left"))).toBe(true);
+    expect(isWallExterior(level, level.sketchElements.find(w => w.id === "right"))).toBe(true);
+  });
+  it("treats a true partition (a room on each face along the whole run) as interior, not exterior", () => {
+    const partition = level.sketchElements.find(w => w.id === "partition");
+    expect(isWallExterior(level, partition)).toBe(false);
+  });
+  it("treats every wall as exterior when the level has no rooms traced yet", () => {
+    const bareLevel = { sketchScale: "0.5", sketchElements: [{ id: "w1", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0, wallType: "Alvenaria 15cm" }] };
+    expect(isWallExterior(bareLevel, bareLevel.sketchElements[0])).toBe(true);
+  });
+});
+
+describe("buildingElevationStack", () => {
+  it("stacks the same wall footprint across pavimentos, sorted bottom-to-top, even with different sketchScale per level", () => {
+    const terreo = { id: "L1", elevation: 0, sketchScale: "0.5", sketchElements: [{ id: "w-terreo", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0 }] };
+    const superior = { id: "L2", elevation: 2.8, sketchScale: "0.25", sketchElements: [{ id: "w-superior", type: "wall", x1: 0, y1: 0, x2: 800, y2: 0 }] };
+    const levels = [superior, terreo]; // deliberately out of elevation order
+    const stack = buildingElevationStack(levels, terreo, terreo.sketchElements[0]);
+    expect(stack.map(s => s.level.id)).toEqual(["L1", "L2"]);
+    expect(stack.map(s => s.wall.id)).toEqual(["w-terreo", "w-superior"]);
+  });
+  it("falls back to just the wall's own level when no other pavimento shares its footprint", () => {
+    const onlyLevel = { id: "L1", elevation: 0, sketchScale: "0.5", sketchElements: [{ id: "w1", type: "wall", x1: 0, y1: 0, x2: 400, y2: 0 }] };
+    const stack = buildingElevationStack([onlyLevel], onlyLevel, onlyLevel.sketchElements[0]);
+    expect(stack).toEqual([{ level: onlyLevel, wall: onlyLevel.sketchElements[0] }]);
   });
 });
 
