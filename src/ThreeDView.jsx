@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { C, matchesPhaseView } from "./theme.js";
 import { toNum } from "./utils.js";
 import { pointInPolygon } from "./geometry.js";
-import { wallThicknessM, FLOOR_TYPES } from "./constants.js";
+import { wallThicknessM, FLOOR_TYPES, DOOR_MATERIAL_MIX, WINDOW_MATERIAL_MIX } from "./constants.js";
 
 // Split out of App.jsx and lazy-loaded (see the React.lazy import there) so
 // three.js — a large dependency only ever needed once someone opens the 3D
@@ -976,10 +976,20 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           // Group/buildOpeningDimensionGroup) — repeti-los aqui em texto só
           // engordava o painel. Cada tipo vira UMA linha de resumo (sem
           // rótulo por campo) em vez de uma pilha de "Campo: valor".
+          // A door/window's own volume, split by the materials its family
+          // is actually made of (glass + frame, wood + glass, etc.) instead
+          // of one combined number — DOOR_MATERIAL_MIX/WINDOW_MATERIAL_MIX
+          // are architectural estimates, not a real cut list.
+          const openingVolumeByMaterial = (kind) => {
+            const familyName = kind === "door" ? info.doorType : info.windowType;
+            const mix = (kind === "door" ? DOOR_MATERIAL_MIX[familyName] : WINDOW_MATERIAL_MIX[familyName]) || [{ material: kind === "door" ? "Madeira" : "Alumínio", fraction: 1 }];
+            const totalM3 = info.widthM * info.heightM * info.thicknessM;
+            return mix.map(m => `${m.material} ${(totalM3 * m.fraction).toFixed(3)}`).join(" + ") + " m³";
+          };
           const summary = info.kind === "wall"
             ? `${info.wallType} · ${(info.lengthM * info.heightM).toFixed(1)} m² · ${(info.lengthM * info.heightM * info.thicknessM).toFixed(2)} m³`
             : info.kind === "door" || info.kind === "window"
-              ? `${info.wallTag} · ${info.kind === "door" ? info.doorType : info.windowType} · ${info.panels}f`
+              ? `${info.wallTag} · ${info.kind === "door" ? info.doorType : info.windowType} · ${openingVolumeByMaterial(info.kind)}`
               : `${info.areaM2} m²`;
           const ambiente = (info.faceA || info.faceB)
             ? (info.faceA === info.faceB ? info.faceA : `${info.faceA} / ${info.faceB}`)
