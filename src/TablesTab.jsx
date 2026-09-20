@@ -113,16 +113,22 @@ function SummaryBlock({ title, unit, items, valueFn, groupField, groupLabel }) {
 
 export default function TablesTab({ levels, rooms, updateLevelElement, removeLevelElement, resizeWallLength, nameRoomPolygon }) {
   const [sub, setSub] = useState("resumo");
+  // Finds a row by tag (P1, J5…) or ambiente name — a flat table with no
+  // per-level grouping like Resumo's own breakdown is otherwise a long
+  // scroll on a project with many paredes/portas/janelas.
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
+  const matchesTag = (el) => !q || (el.tag || "").toLowerCase().includes(q);
 
   const rowsOf = (type) => {
     const out = [];
     levels.forEach(l => (l.sketchElements || []).forEach(e => { if (e.type === type) out.push({ ...e, levelId: l.id, levelName: l.name }); }));
     return out;
   };
-  const walls = sub === "paredes" ? rowsOf("wall") : null;
-  const doors = sub === "portas" ? rowsOf("door") : null;
-  const windows = sub === "janelas" ? rowsOf("window") : null;
-  const floors = sub === "pisos" ? rowsOf("floor") : null;
+  const walls = sub === "paredes" ? rowsOf("wall").filter(matchesTag) : null;
+  const doors = sub === "portas" ? rowsOf("door").filter(matchesTag) : null;
+  const windows = sub === "janelas" ? rowsOf("window").filter(matchesTag) : null;
+  const floors = sub === "pisos" ? rowsOf("floor").filter(el => !q || (el.floorType || "").toLowerCase().includes(q)) : null;
 
   // Each room's editable bits (name, area, floor/ceiling finish) actually
   // live on its polygon in sketchElements, not on the rooms[] entry itself
@@ -137,6 +143,7 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
       if (e.type === "room" && e.roomId) roomPolyByRoomId[e.roomId] = { ...e, levelId: l.id };
     }));
   }
+  const filteredRooms = sub === "ambientes" ? rooms.filter(r => !q || (r.name || "").toLowerCase().includes(q)) : null;
   const roomSummaryItems = sub === "resumo"
     ? rooms.map(r => {
         const poly = roomPolyByRoomId[r.id];
@@ -154,6 +161,13 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
           </button>
         ))}
       </div>
+
+      {sub !== "resumo" && (
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder={sub === "ambientes" ? "Buscar por nome do ambiente…" : sub === "pisos" ? "Buscar por material…" : "Buscar por tag (P1, J5…)"}
+          className="w-full px-2.5 py-1.5 rounded text-xs mb-2"
+          style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+      )}
 
       {sub === "resumo" && (
         <div>
@@ -254,8 +268,8 @@ export default function TablesTab({ levels, rooms, updateLevelElement, removeLev
               <Th>Nível</Th><Th>Nome</Th><Th>Área (m²)</Th><Th>Piso</Th><Th>Forro</Th>
             </tr></thead>
             <tbody>
-              {rooms.length === 0 && <EmptyRow span={5} msg="Nenhum ambiente nomeado ainda." />}
-              {rooms.map(r => {
+              {filteredRooms.length === 0 && <EmptyRow span={5} msg="Nenhum ambiente nomeado ainda." />}
+              {filteredRooms.map(r => {
                 const poly = roomPolyByRoomId[r.id];
                 return (
                   <tr key={r.id}>

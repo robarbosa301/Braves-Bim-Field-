@@ -417,6 +417,10 @@ export default function PranchetaBIM() {
   // which levels are collapsed — ids toggled into this set hide that
   // level's list instead of leaving everything always expanded.
   const [elementTypeFilter, setElementTypeFilter] = useState("wall");
+  // Finds an element by its own tag (P1, J5…) across every level at once —
+  // a project with many levels and dozens of paredes/portas/janelas is
+  // otherwise a long scroll through one collapsed section at a time.
+  const [elementSearch, setElementSearch] = useState("");
   const [collapsedLevels, setCollapsedLevels] = useState(() => new Set());
   const [rooms, setRooms] = useState([]);
   const [levels, setLevels] = useState([]);
@@ -1841,9 +1845,17 @@ export default function PranchetaBIM() {
                     </button>
                   ))}
                 </div>
+                <input type="text" value={elementSearch} onChange={e => setElementSearch(e.target.value)}
+                  placeholder="Buscar por tag (P1, J5…)" className="w-full px-2.5 py-1.5 rounded text-xs"
+                  style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
                 {levels.map(l => {
-                  const collapsed = collapsedLevels.has(l.id);
-                  const items = (l.sketchElements || []).filter(e => e.type === elementTypeFilter);
+                  const items = (l.sketchElements || []).filter(e => e.type === elementTypeFilter)
+                    .filter(e => !elementSearch.trim() || (e.tag || "").toLowerCase().includes(elementSearch.trim().toLowerCase()));
+                  // While searching, every level with a match opens on its
+                  // own regardless of its collapsed state — otherwise
+                  // finding a tag would still mean manually opening each
+                  // level to check.
+                  const collapsed = elementSearch.trim() ? items.length === 0 : collapsedLevels.has(l.id);
                   const emptyLabel = elementTypeFilter === "wall" ? "Nenhuma parede neste nível." : elementTypeFilter === "door" ? "Nenhuma porta neste nível." : "Nenhuma janela neste nível.";
                   return (
                     <div key={l.id}>
