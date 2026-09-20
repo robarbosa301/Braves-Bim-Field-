@@ -1790,8 +1790,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (!cotaPendingWallId) { setCotaPendingWallId(hit.id); return; }
       if (hit.id === cotaPendingWallId) { setCotaPendingWallId(null); return; }
       const el = {
-        id: uid(), type: "cota", mode: cotaMode, wallAId: cotaPendingWallId, wallBId: hit.id,
-        ...(cotaMode === "face" ? { faceA: cotaFaceA, faceB: cotaFaceB } : null),
+        id: uid(), type: "cota", wallAId: cotaPendingWallId, wallBId: hit.id,
+        // "faceCustom" is stored as plain "face" plus its own explicit
+        // faceA/faceB — the two old fixed presets stay exactly as they
+        // always were (mode "face"/"faceExt", no faceA/faceB stamped),
+        // this is purely an ADDITIONAL way to place one, not a
+        // replacement for either.
+        mode: cotaMode === "faceCustom" ? "face" : cotaMode,
+        ...(cotaMode === "faceCustom" ? { faceA: cotaFaceA, faceB: cotaFaceB } : null),
       };
       setCotaPendingWallId(null);
       commitElements([...elements, el]);
@@ -3248,6 +3254,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             {[
               { id: "face", label: "Face a face" },
               { id: "eixo", label: "Eixo a eixo" },
+              { id: "faceExt", label: "Face ext. a face ext." },
+              // Additional to the two fixed presets above, not a
+              // replacement for either — those two keep doing exactly what
+              // they always did (both faces internal, or both external).
+              // This one lets each wall's own face be picked independently,
+              // for anything neither preset covers (mixed, e.g. one wall's
+              // outer face to the other's inner face).
+              { id: "faceCustom", label: "Face mista (por parede)" },
               { id: "espessura", label: "Espessura" },
               { id: "opening", label: "Porta/janela" },
             ].map(m => (
@@ -3258,11 +3272,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               </button>
             ))}
           </div>
-          {/* Which face of EACH wall — independently, so "face externa da
-              1ª parede até face interna da 2ª" (or any other combination)
-              is just as reachable as the two old fixed presets (both
-              internal, or both external) used to be. */}
-          {cotaMode === "face" && (
+          {cotaMode === "faceCustom" && (
             <div className="flex flex-wrap items-center gap-3 mb-1 text-[10px]" style={{ color: C.mute }}>
               {[{ label: "1ª parede", value: cotaFaceA, set: setCotaFaceA }, { label: "2ª parede", value: cotaFaceB, set: setCotaFaceB }].map(f => (
                 <span key={f.label} className="flex items-center gap-1">
