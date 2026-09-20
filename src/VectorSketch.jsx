@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -841,6 +841,23 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     onChange(next);
   }
   function patchSelected(patch) { if (!selectedId) return; commitElements(elements.map(e => e.id === selectedId ? { ...e, ...patch } : e)); }
+
+  // Swaps a door for a window (or vice versa) in place — same wallId, x/y
+  // and width, so the opening stays exactly where it was drawn, instead of
+  // making the user delete and re-place it just because they picked the
+  // wrong family on-site. Height/peitoril/doorType-windowType/panels reset
+  // to that family's own usual defaults, since a door's 2.10m height paired
+  // with a window's 1.00m peitoril would poke out of the wall's top.
+  function substituteOpening(el, newType) {
+    const tagPrefix = newType === "door" ? "P" : "J";
+    const count = elements.filter(x => x.type === newType && x.id !== el.id).length;
+    const shared = { id: el.id, x: el.x, y: el.y, wallId: el.wallId, tag: `${tagPrefix}${count + 1}`, width: el.width, condition: el.condition || "A confirmar", demolir: el.demolir, construir: el.construir, tagRotation: el.tagRotation };
+    const next = newType === "door"
+      ? { ...shared, type: "door", height: 2.10, doorType: DOOR_TYPES[0], panels: 1 }
+      : { ...shared, type: "window", height: 1.20, peitoril: 1.00, windowType: WINDOW_TYPES[0], panels: 2 };
+    commitElements(elements.map(e => e.id === el.id ? next : e));
+    setSelectedId(next.id);
+  }
 
   function zoomAround(relX, relY, factor) {
     setVb(v => {
@@ -3171,6 +3188,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <button onClick={() => patchSelected({ tagRotation: ((selected.tagRotation || 0) + 90) % 360 })}
                 className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
                 <RotateCcw size={11} /> Girar etiqueta 90°
+              </button>
+              <button onClick={() => substituteOpening(selected, selected.type === "door" ? "window" : "door")}
+                className="flex items-center gap-1 px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, border: `1px solid ${C.gold}` }}>
+                <Repeat size={11} /> Substituir por {selected.type === "door" ? "janela" : "porta"}
               </button>
             </div>
           )}
