@@ -727,10 +727,11 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
           dimensionGroup = null;
         }
       }
-      // A soft, translucent light blue reads as "selected" without the
-      // stark white wireframe looking like a construction/error outline —
-      // same idea a CAD/BIM viewer's own selection highlight uses.
-      const SELECT_COLOR = 0x6FC3E8;
+      // A soft, translucent aqua reads as "selected" without the stark
+      // white wireframe looking like a construction/error outline, and
+      // stays clearly distinct from any wall/floor material color it
+      // might be sitting on top of.
+      const SELECT_COLOR = 0x4DD9C7;
       const wireMat = () => new THREE.MeshBasicMaterial({ color: SELECT_COLOR, wireframe: true, transparent: true, opacity: 0.85 });
       // Distinct id for whatever a mesh actually represents (a wall, a
       // door/window, or a floor zone) — used to collapse a ray's several
