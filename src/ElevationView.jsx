@@ -22,7 +22,7 @@ const GAP_DIM_ROW_Y = -10;
 // stacked just above the door/window's own top edge.
 const TAG_LINE_GAP = 10;
 
-export default function ElevationView({ level, wallId }) {
+export default function ElevationView({ level, wallId, spanStartM, spanEndM }) {
   const elements = level.sketchElements || [];
   const wall = elements.find(e => e.id === wallId && e.type === "wall");
   if (!wall) {
@@ -38,22 +38,34 @@ export default function ElevationView({ level, wallId }) {
   const tagFontSize = toNum(level.tagFontSize, 7);
   const fontFamily = fontFamilyCss(level.fontFamily);
 
-  const lengthM = toNum(wall.length, 1);
+  // An Elevação is a view of what's actually visible from INSIDE one room —
+  // a wall's own stored length runs corner to corner, which can reach well
+  // past a partition into a completely different room. spanStartM/spanEndM
+  // (from wallSpanForRoom, App.jsx) clip this view to just the sub-run
+  // whose face actually borders the selected room; omitted, it falls back
+  // to the wall's own full length (e.g. any other future caller).
+  const fullLengthM = toNum(wall.length, 1);
+  const spanStart = spanStartM ?? 0, spanEnd = spanEndM ?? fullLengthM;
+  const lengthM = Math.max(0.1, spanEnd - spanStart);
   const heightM = toNum(wall.height, 2.8);
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, wlen = Math.hypot(dx, dy) || 1;
   const ux = dx / wlen, uy = dy / wlen;
 
   // Door/window x,y live in the plan's own drawing units (the same space
-  // as the wall's own x1/y1/x2/y2) — projecting onto the wall's direction
-  // and converting GRID units -> meters (the same conversion wallDimensions
-  // uses in VectorSketch) gives each opening's position along THIS view's
-  // horizontal axis.
+  // as the wall's own x1/y1/x2/y2) — projecting onto the wall's direction,
+  // converting GRID units -> meters (the same conversion wallDimensions
+  // uses in VectorSketch) and shifting by spanStart gives each opening's
+  // position along THIS view's own horizontal axis, 0 at the clipped span's
+  // own start rather than the wall's far corner. Openings whose center
+  // falls outside the span belong to the wall's other room-facing run, not
+  // this one, so they're left out entirely.
   const opens = elements
     .filter(e => (e.type === "door" || e.type === "window") && e.wallId === wall.id)
     .map(o => {
       const posUnits = (o.x - wall.x1) * ux + (o.y - wall.y1) * uy;
-      return { ...o, posM: (posUnits / GRID) * scale };
+      return { ...o, posM: (posUnits / GRID) * scale - spanStart };
     })
+    .filter(o => o.posM >= -0.01 && o.posM <= lengthM + 0.01)
     .sort((a, b) => a.posM - b.posM);
 
   const lengthPx = lengthM * PX_PER_M, heightPx = heightM * PX_PER_M;

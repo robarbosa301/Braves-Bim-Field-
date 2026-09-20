@@ -6,6 +6,7 @@ import {
   windowToM,
   levelToMeters,
   buildLevantamentoSchema,
+  wallSpanForRoom,
 } from "./App.jsx";
 import { conditionColor, phaseColor } from "./theme.js";
 import { wallThicknessM } from "./constants.js";
@@ -34,6 +35,34 @@ describe("conditionColor / phaseColor", () => {
 
   it("returns null (no phase override) for an untouched element", () => {
     expect(phaseColor({})).toBeNull();
+  });
+});
+
+describe("wallSpanForRoom", () => {
+  // A 10m wall (0..400px @ 0.5 sketchScale) — a partition splits off a
+  // "Sala" whose own polygon, traced along the wall's inner face, only
+  // covers the first ~4m of that run. The Elevação must clip to that
+  // sub-span (and everything past it, like a door on the far side of the
+  // partition), not the wall's full 10m length.
+  const level = { sketchScale: "0.5" };
+  const wall = { x1: 0, y1: 0, x2: 400, y2: 0, wallType: "Alvenaria 15cm" };
+
+  it("clips to the room polygon's own span along the wall's face, not the wall's full length", () => {
+    level.sketchElements = [{
+      type: "room", name: "Sala",
+      points: [{ x: 3, y: 3 }, { x: 157, y: 3 }, { x: 157, y: 297 }, { x: 3, y: 297 }],
+    }];
+    const span = wallSpanForRoom(level, wall, "Sala");
+    expect(span.startPx).toBeCloseTo(3, 0);
+    expect(span.endPx).toBeCloseTo(157, 0);
+    expect(span.endPx).toBeLessThan(400); // never the wall's own full length
+  });
+
+  it("falls back to the wall's full length when no room polygon matches (e.g. the exterior side)", () => {
+    level.sketchElements = [{ type: "room", name: "Outra sala", points: [{ x: 200, y: 3 }, { x: 397, y: 3 }, { x: 397, y: 297 }, { x: 200, y: 297 }] }];
+    const span = wallSpanForRoom(level, wall, "Sala");
+    expect(span.startPx).toBe(0);
+    expect(span.endPx).toBe(400);
   });
 });
 

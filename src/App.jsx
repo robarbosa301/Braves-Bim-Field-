@@ -248,6 +248,33 @@ function wallRoomAdjacency(level, wall) {
     faceB: roomAt({ x: mid.x - nx * 12, y: mid.y - ny * 12 }),
   };
 }
+// A wall's own x1/y1..x2/y2 span its full corner-to-corner run — but an
+// Elevação is a view of what's actually inside ONE room, and a partition
+// meeting this wall further along the same run splits off a portion that
+// belongs to a different room entirely. Clips to just the sub-span whose
+// FACE actually borders this room, found from the room polygon's own
+// vertices (it's traced along that face, offset from the wall's centerline
+// by roughly half its thickness) instead of the wall's full length.
+export function wallSpanForRoom(level, wall, roomName) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const room = (level.sketchElements || []).find(e => e.type === "room" && e.name === roomName);
+  if (!room) return { startPx: 0, endPx: len };
+  const scale = toNum(level.sketchScale, 0.5);
+  const halfThickPx = (wallThicknessM(wall) / 2 / scale) * GRID;
+  const tolerance = halfThickPx + GRID * 0.6;
+  const along = room.points
+    .map(p => {
+      const relX = p.x - wall.x1, relY = p.y - wall.y1;
+      return { pos: relX * ux + relY * uy, perp: Math.abs(relX * nx + relY * ny) };
+    })
+    .filter(p => p.perp <= tolerance)
+    .map(p => p.pos);
+  if (!along.length) return { startPx: 0, endPx: len };
+  return { startPx: Math.max(0, Math.min(...along)), endPx: Math.min(len, Math.max(...along)) };
+}
 export function wallToM(w, toM) {
   return {
     id: w.id, tag: w.tag || "", x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2), height: toNum(w.height, 2.8),
@@ -1733,12 +1760,17 @@ export default function PranchetaBIM() {
                     {/* The 4 walls of a room, one under the other — not a
                         one-at-a-time picker — so the whole ambiente is
                         visible without extra taps. */}
-                    {elevationRoomWalls.map(w => (
-                      <div key={w.id}>
-                        <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
-                        <ElevationView level={croquiLevel} wallId={w.id} />
-                      </div>
-                    ))}
+                    {elevationRoomWalls.map(w => {
+                      const scale = toNum(croquiLevel.sketchScale, 0.5);
+                      const toM = (px) => (px / GRID) * scale;
+                      const span = wallSpanForRoom(croquiLevel, w, elevationRoomName);
+                      return (
+                        <div key={w.id}>
+                          <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
+                          <ElevationView level={croquiLevel} wallId={w.id} spanStartM={toM(span.startPx)} spanEndM={toM(span.endPx)} />
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center text-sm py-10" style={{ color: C.mute }}>Selecione um ambiente com paredes para ver as elevações.</div>
