@@ -1324,7 +1324,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           ? { id: uid(), type: "floor", points: traced, area: areaM2, floorType: FLOOR_TYPES[0], floorColor: "#B08A5C" }
           : { id: uid(), type: "room", points: traced, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
         commitElements([...elements, el]);
-        if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(""); }
+        if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(`Ambiente ${elements.filter(e => e.type === "room").length + 1}`); }
         // Placing a room/floor is a one-shot action, not a mode you stay in
         // — leaving "tool" here afterward silently disabled every wall
         // dimension (editable/draggable only in "selecionar") right when
@@ -1412,7 +1412,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       : { id: uid(), type: "room", points: polygon, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
     commitElements([...elements, el]);
     setPolygon([]);
-    if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(""); }
+    if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(`Ambiente ${elements.filter(e => e.type === "room").length + 1}`); }
     setTool("selecionar");
   }
 

@@ -814,7 +814,29 @@ export default function PranchetaBIM() {
     const newRoomIds = new Set(newElements.filter(e => e.type === "room" && e.roomId).map(e => e.roomId));
     const removedRoomIds = [...oldRoomIds].filter(id => !newRoomIds.has(id));
     if (removedRoomIds.length) updateRooms(rs => rs.filter(r => !removedRoomIds.includes(r.id)));
-    updateLevels(ls => ls.map(l => l.id === levelId ? { ...l, sketchElements: newElements, sketchScale: newScale ?? l.sketchScale } : l));
+
+    // A room polygon closed in the Croqui (manual points, auto-trace, or a
+    // wall split) used to only become a real Ambientes entry once the user
+    // typed a name in the popup and hit "Salvar" — dismissing that popup
+    // with "X" left the polygon drawn on screen but invisible to the header
+    // count, the Ambientes table and everywhere else that reads rooms[].
+    // Stamping a roomId + default name onto every unlinked room polygon the
+    // moment it's committed makes it count immediately; renaming later just
+    // relabels the same record instead of creating it for the first time.
+    const existingRoomIds = new Set(rooms.map(r => r.id));
+    let nextRoomNum = rooms.length + 1;
+    const roomsToAdd = [];
+    const patchedElements = newElements.map(e => {
+      if (e.type !== "room" || (e.roomId && existingRoomIds.has(e.roomId))) return e;
+      const roomId = e.roomId || uid();
+      const name = e.name || `Ambiente ${nextRoomNum++}`;
+      roomsToAdd.push({ id: roomId, name, level: level?.name || "", area: String(e.area ?? 0), height: String(level?.wallHeightDefault || "2.80"), use: "", condition: "A confirmar", notes: "", photos: 0, geo: null, floors: [] });
+      existingRoomIds.add(roomId);
+      return { ...e, roomId, name };
+    });
+    if (roomsToAdd.length) updateRooms(rs => [...rs, ...roomsToAdd]);
+
+    updateLevels(ls => ls.map(l => l.id === levelId ? { ...l, sketchElements: patchedElements, sketchScale: newScale ?? l.sketchScale } : l));
   }
   function updateLevelMeta(levelId, patch) {
     updateLevels(ls => ls.map(l => l.id === levelId ? { ...l, ...patch } : l));
