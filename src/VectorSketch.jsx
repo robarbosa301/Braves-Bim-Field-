@@ -203,29 +203,27 @@ function cotaGeometry(el, elements, scale) {
     if (!w) return null;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-    const t = Math.max(0, Math.min(len, el.atPx ?? len / 2));
+    // Dragged ALONG the wall (ux,uy) — a horizontal wall's tick only ever
+    // moves left/right, a vertical wall's only up/down, in EITHER
+    // direction (no clamp to the wall's own [0,len] extent, which used to
+    // silently refuse to move it any further once it neared a corner —
+    // that's what actually read as "can't drag it out"). The tick's own
+    // crossing span (nx,ny) stays exactly the wall's thickness — that IS
+    // the measurement — only where along the wall it sits moves.
+    const t = (el.atPx ?? len / 2) + toNum(el.offsetPx, 0);
     const cx = w.x1 + ux * t, cy = w.y1 + uy * t;
     const halfThickPx = (wallThicknessM(w) / 2 / scale) * GRID;
-    // Dragged straight out from the wall (nx,ny) — same "the whole ruler
-    // slides as one rigid unit" convention every other cota mode already
-    // uses (see face/eixo/faceExt and opening above, which both bake
-    // offsetPx into x1/y1/x2/y2 too): the tick's OWN length always stays
-    // exactly the wall's thickness (that IS the measurement), but the
-    // entire tick — not just the label — can be pushed further out along
-    // this line, so it can be lined up at the same distance as whatever
-    // other external dimension row it needs to sit alongside, instead of
-    // being stuck pinned to the wall while only the number floats free of
-    // it. dragNx/dragNy (not lineAngleDeg, which is this tick's own
-    // CROSSING angle — needed as-is so the text reads across the wall, not
-    // along it) is what the drag handler below actually nudges along.
-    const pushPx = toNum(el.offsetPx, 0);
-    const ox = nx * pushPx, oy = ny * pushPx;
     return {
-      x1: cx - nx * halfThickPx + ox, y1: cy - ny * halfThickPx + oy,
-      x2: cx + nx * halfThickPx + ox, y2: cy + ny * halfThickPx + oy,
-      labelX: cx + ux * 16 + ox, labelY: cy + uy * 16 + oy,
+      x1: cx - nx * halfThickPx, y1: cy - ny * halfThickPx,
+      x2: cx + nx * halfThickPx, y2: cy + ny * halfThickPx,
+      labelX: cx + ux * 16, labelY: cy + uy * 16,
+      // dragNx/dragNy doubles as the render's own tick-mark direction
+      // below (the little perpendicular caps at each end of the line) —
+      // ux,uy is perpendicular to THIS tick's own crossing span (nx,ny),
+      // which is exactly the cap direction wants, the same way every
+      // other mode's dragNx/dragNy already lines up with its own caps.
       valueM: wallThicknessM(w), lineAngleDeg: Math.atan2(ny, nx) * 180 / Math.PI,
-      dragNx: nx, dragNy: ny,
+      dragNx: ux, dragNy: uy,
     };
   }
   if (el.mode === "opening") {
@@ -3923,9 +3921,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           // The direction a drag actually nudges along — NOT derived from
           // lineAngleDeg (that one's purely the label's own text rotation,
           // e.g. "espessura" needs its text rotated to read ACROSS the
-          // wall while the drag itself needs to push straight OUT from it,
-          // two different directions for that mode specifically) —
-          // cotaGeometry returns the correct one per mode directly.
+          // wall no matter which way a drag can move it) — cotaGeometry
+          // returns the correct one per mode directly.
           const nx = g.dragNx, ny = g.dragNy;
           // A "Porta/janela" cota defaults to that family's own cota color
           // and size (doorDimColor/windowDimColor, doorWindowDimFontSize —
