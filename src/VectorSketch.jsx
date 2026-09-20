@@ -17,6 +17,11 @@ import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRo
 // findMergeableWall/mergeWallPair) live below, unexported, since nothing
 // else in the app needs them.
 
+// Vertical spacing between a door/window's name (tag) and its dimensions
+// line, stacked above the opening — mirrors ElevationView's own TAG_LINE_GAP
+// so a plan and its elevation read the same way.
+const TAG_LINE_GAP = 9;
+
 // 2D fill hint per floor family (Piso tool) — same base tones ThreeDView's
 // getWallTexture uses for its own procedural textures, so a floor reads as
 // roughly the same material in both views instead of an arbitrary color
@@ -504,8 +509,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [showAbove, setShowAbove] = useState(false);
   const [draggingLabel, setDraggingLabel] = useState(null);
   const [draggingDimLabel, setDraggingDimLabel] = useState(null);
-  const [draggingGapDimLabel, setDraggingGapDimLabel] = useState(null);
-  const [editingDim, setEditingDim] = useState(null);
   const [editingWallLen, setEditingWallLen] = useState(null);
   const [editingLumDim, setEditingLumDim] = useState(null);
   const [editingParallelDim, setEditingParallelDim] = useState(null);
@@ -532,9 +535,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const scale = toNum(level.sketchScale, 0.5);
   const wallHeightDefault = level.wallHeightDefault || "2.80";
   const dimColor = level.dimColor || "#4A4A46";
-  // Door/window gap dimensions (wallDimensions, below) get their own pair
-  // of colors instead of sharing dimColor (that one's for the OTHER
-  // dimension kind — the parallel-wall distances), so a door-adjacent
+  // Door/window sill/height dimensions in the Elevação view get their own
+  // pair of colors instead of sharing dimColor (that one's for the overall
+  // exterior wall dimensions here in the plan), so a door-adjacent
   // measurement and a window-adjacent one can be told apart at a glance.
   const doorDimColor = level.doorDimColor || "#4A4A46";
   const windowDimColor = level.windowDimColor || "#4A4A46";
@@ -738,7 +741,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (window.visualViewport) window.visualViewport.removeEventListener("resize", measure);
       if (ro) ro.disconnect();
     };
-  }, [tool, planMode, editingDim, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel, fullscreen]);
+  }, [tool, planMode, editingWallLen, editingParallelDim, namingId, showBelow, showAbove, belowLevel, aboveLevel, fullscreen]);
 
   const viewBox = vb || { x: 0, y: 0, w: dims.w, h: dims.h };
 
@@ -888,7 +891,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       setRotationDeg(start.rotation + (angle - start.angle));
       return;
     }
-    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel || draggingGapDimLabel)) onCanvasPointerMove(e);
+    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel)) onCanvasPointerMove(e);
   }
   function onTouchEndCanvas(e) {
     if (e.touches.length < 2) pinch.current = null;
@@ -1145,7 +1148,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function handleTap(e) {
     if (justDraggedOnCanvas.current) { justDraggedOnCanvas.current = false; return; }
     if (e.touches && e.touches.length > 1) return;
-    if (draggingLabel || draggingDimLabel || draggingGapDimLabel) return;
+    if (draggingLabel || draggingDimLabel) return;
     e.preventDefault();
     // Must be the true unsnapped pointer position, not svgPoint()'s
     // grid-snapped one — findNearbyEndpoint below does its own
@@ -1601,73 +1604,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     return pxToMeters(pos);
   }
 
-  function applyDimEdit() {
-    if (!editingDim) return;
-    const { wallId, gapIndex, value, ux, uy } = editingDim;
-    const w = wallsById[wallId];
-    if (!w) { setEditingDim(null); return; }
-    const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === wallId)
-      .map(o => ({ ...o, pos: (o.x - w.x1) * ux + (o.y - w.y1) * uy, halfW: (toNum(o.width, 0.8) / scale) * GRID / 2 }))
-      .sort((a, b) => a.pos - b.pos);
-    const dx0 = w.x2 - w.x1, dy0 = w.y2 - w.y1, len = Math.hypot(dx0, dy0) || 1;
-    const startInset = joinedWallFaceInset(w.id, w.x1, w.y1);
-    const endInset = joinedWallFaceInset(w.id, w.x2, w.y2);
-    const gaps = [];
-    let cursor = startInset;
-    opens.forEach(o => { const start = o.pos - o.halfW, end = o.pos + o.halfW; if (start - cursor > 3) gaps.push({ start: cursor, end: start, afterOpeningId: o.id }); cursor = Math.max(cursor, end); });
-    if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null });
-    const gap = gaps[gapIndex];
-    if (!gap) { setEditingDim(null); return; }
-    const newLenPx = Math.max(2, (toNum(value) / scale) * GRID);
-    const rawDelta = newLenPx - (gap.end - gap.start);
-    if (Math.abs(rawDelta) < 0.01) { setEditingDim(null); return; }
-
-    if (gap.afterOpeningId) {
-      const fromIdx = opens.findIndex(o => o.id === gap.afterOpeningId);
-      const shifted = opens.slice(fromIdx);
-      const prevEnd = fromIdx > 0 ? opens[fromIdx - 1].pos + opens[fromIdx - 1].halfW : startInset;
-      const minDelta = prevEnd - (shifted[0].pos - shifted[0].halfW) + 2;
-      const maxDelta = (len - endInset) - (shifted[shifted.length - 1].pos + shifted[shifted.length - 1].halfW) - 2;
-      const delta = Math.max(minDelta, Math.min(maxDelta, rawDelta));
-      const shiftIds = new Set(shifted.map(o => o.id));
-      let lastXY = null;
-      commitElements(elements.map(e => {
-        if (!shiftIds.has(e.id)) return e;
-        const nx = e.x + ux * delta, ny = e.y + uy * delta;
-        lastXY = { x: nx, y: ny };
-        return { ...e, x: nx, y: ny };
-      }));
-      if (lastXY) ensureVisible(lastXY.x, lastXY.y);
-    } else if (opens.length) {
-      // Trailing gap, from the last opening to the wall's far end — grow
-      // or shrink it by moving that last opening away from/toward the
-      // end, mirroring the leading-gap case above, instead of resizing
-      // the wall itself (which would change the room's overall size just
-      // to nudge one door's position).
-      const last = opens[opens.length - 1];
-      const prevEnd = opens.length > 1 ? opens[opens.length - 2].pos + opens[opens.length - 2].halfW : startInset;
-      const minPos = prevEnd + last.halfW + 2;
-      const maxPos = (len - endInset) - last.halfW - 2;
-      const newPos = Math.max(minPos, Math.min(maxPos, last.pos - rawDelta));
-      const posDelta = newPos - last.pos;
-      if (Math.abs(posDelta) >= 0.01) {
-        const nx = last.x + ux * posDelta, ny = last.y + uy * posDelta;
-        commitElements(elements.map(e => e.id === last.id ? { ...e, x: nx, y: ny } : e));
-        ensureVisible(nx, ny);
-      }
-    } else {
-      // No openings at all on this wall — nothing to move, so this "gap"
-      // is just the wall's own usable length; fall back to resizing it.
-      const minLen = cursor + endInset + 2;
-      const newLen = Math.max(minLen, len + rawDelta);
-      const newX2 = w.x1 + ux * newLen, newY2 = w.y1 + uy * newLen;
-      const newLenM = pxToMeters(dist({ x: w.x1, y: w.y1 }, { x: newX2, y: newY2 }));
-      commitElements(elements.map(e => e.id === w.id ? { ...e, x2: newX2, y2: newY2, length: newLenM } : e));
-      ensureVisible(newX2, newY2);
-    }
-    setEditingDim(null);
-  }
-
   // An auto-traced room (the "Ambiente" tool's tap-once-inside mode) is
   // only ever computed at the moment it's traced — dragging, stretching or
   // straightening a wall that borders it afterward doesn't move the
@@ -1948,59 +1884,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setDraggingDimLabel(null);
     isDraggingRef.current = false;
   }
-  // Same idea as readDimNudge/beginDragDimLabel above, for the gap
-  // dimensions between a wall's own corners/openings (wallDimensions)
-  // instead of between two parallel walls. Stored on the wall itself,
-  // keyed by the opening that starts the next segment (or "end" for the
-  // last gap, after every opening) since a wall can have several of
-  // these gaps.
-  function readGapDimNudge(wallId, key) {
-    const w = wallsById[wallId];
-    const raw = w && w.gapDimNudge && w.gapDimNudge[key];
-    return raw && typeof raw === "object" ? raw : { perp: 0, along: 0 };
-  }
-  function beginDragGapDimLabel(wallId, key, ux, uy, nx, ny, gapLen, startEdit, e) {
-    if (tool !== "selecionar") return;
-    if (e.touches && e.touches.length > 1) return;
-    e.stopPropagation(); e.preventDefault();
-    const startNudge = readGapDimNudge(wallId, key);
-    setDraggingGapDimLabel({ wallId, key, ux, uy, nx, ny, gapLen, startP: svgPointRaw(e), startNudge, moved: false, startEdit });
-  }
-  function onGapDimLabelDragMove(e) {
-    if (!draggingGapDimLabel) return;
-    const p = svgPointRaw(e);
-    const d = draggingGapDimLabel;
-    if (!d.moved) {
-      if (dist(p, d.startP) < 3) return;
-      pushHistory();
-      isDraggingRef.current = true;
-      setDraggingGapDimLabel(s => (s ? { ...s, moved: true } : s));
-    }
-    const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
-    const deltaPerp = dxp * d.nx + dyp * d.ny;
-    const deltaAlong = dxp * d.ux + dyp * d.uy;
-    // Perpendicular: only a little room to pull it closer to the wall than
-    // the default — the label's own glyph height plus the wall's stroke
-    // width already eat into that gap, so letting it go much closer reads
-    // as sitting on top of the wall itself — and plenty of room to push it
-    // further out (past whatever else is crowding it), without an upper
-    // bound tight enough to need per-room context the way the parallel-
-    // wall dimension's clamp does.
-    const perp = Math.max(-GRID * 0.25, Math.min(GRID * 3, d.startNudge.perp + deltaPerp));
-    // Along: stay within this gap's own span, with a small margin so the
-    // label can't slide on top of the opening or corner at either end.
-    const alongMargin = Math.min(8, d.gapLen / 2);
-    const maxAlong = Math.max(0, d.gapLen / 2 - alongMargin);
-    const along = Math.max(-maxAlong, Math.min(maxAlong, d.startNudge.along + deltaAlong));
-    commitElements(elements.map(el => el.id === d.wallId
-      ? { ...el, gapDimNudge: { ...(el.gapDimNudge || {}), [d.key]: { perp, along } } }
-      : el));
-  }
-  function onGapDimLabelDragEnd() {
-    if (draggingGapDimLabel && !draggingGapDimLabel.moved) draggingGapDimLabel.startEdit();
-    setDraggingGapDimLabel(null);
-    isDraggingRef.current = false;
-  }
   function rotateRoomLabel(el) {
     const field = planMode === "forro" ? "ceilingLabelRotation" : "labelRotation";
     const next = ((el[field] || 0) + 90) % 360;
@@ -2052,7 +1935,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function onCanvasPointerMove(e) {
     onLabelDragMove(e);
     onDimLabelDragMove(e);
-    onGapDimLabelDragMove(e);
     if (!dragSession) return;
     if (e.cancelable) e.preventDefault();
     const p = svgPointRaw(e);
@@ -2103,7 +1985,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
   }
   function onCanvasPointerUp() {
-    onLabelDragEnd(); onDimLabelDragEnd(); onGapDimLabelDragEnd();
+    onLabelDragEnd(); onDimLabelDragEnd();
     // Dragging a wall or one of its endpoints commits on every move frame
     // (isDraggingRef suppresses the history push, not the commit itself),
     // so by the time the pointer lifts, `elements` already holds the
@@ -2267,7 +2149,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // without zooming the whole drawing out.
   function clampOffsetToView(baseX, baseY, offX, offY) {
     if (!contentBounds) return { x: baseX + offX, y: baseY + offY };
-    const MARGIN = 24;
+    // Wide enough for wallLabelOffset's "extra" push (18 + TAG_LINE_GAP,
+    // when a centered opening's own two-line tag needs clearing) to
+    // actually land clear of that tag instead of being clamped back down
+    // on top of it.
+    const MARGIN = 24 + TAG_LINE_GAP;
     let k = 1;
     if (offX > 0) k = Math.min(k, Math.max(0, (contentBounds.maxX + MARGIN - baseX) / offX));
     else if (offX < 0) k = Math.min(k, Math.max(0, (baseX - (contentBounds.minX - MARGIN)) / -offX));
@@ -2306,120 +2192,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const dist = D + towardWall * ASCENT + extra;
     return { x: offDir.x * dist, y: offDir.y * dist };
   }
-  // A wall's own x1,y1/x2,y2 sit on its CENTERLINE, which is also where a
-  // perpendicular wall's centerline meets it at a corner — but the actual
-  // usable gap to a door or window starts at that neighbor's FACE, not
-  // its centerline. Finds a wall joined at this exact endpoint (if any)
-  // and returns half its thickness in px, else 0.
-  function joinedWallFaceInset(wallId, px, py) {
-    const other = elements.find(e => e.type === "wall" && e.id !== wallId &&
-      (dist({ x: e.x1, y: e.y1 }, { x: px, y: py }) < 3 || dist({ x: e.x2, y: e.y2 }, { x: px, y: py }) < 3));
-    return other ? (wallThicknessM(other) / 2 / scale) * GRID : 0;
-  }
-  function wallDimensions(w) {
-    const opens = elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === w.id && phaseVisible(e));
-    const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const nx = -uy, ny = ux;
-    // Close to the wall, but with enough clearance that the number and its
-    // tick line don't visually sit on top of the wall's own stroke once
-    // the sketch is zoomed out to fit a whole room (half a grid square, a
-    // fine gap at 1:1 zoom, reads as touching once scaled down that far).
-    const offset = GRID * 0.75;
-    const startInset = joinedWallFaceInset(w.id, w.x1, w.y1);
-    const endInset = joinedWallFaceInset(w.id, w.x2, w.y2);
-    const openIvs = opens.map(o => {
-      const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
-      const halfW = (toNum(o.width, 0.8) / scale) * GRID / 2;
-      return { id: o.id, start: pos - halfW, end: pos + halfW };
-    });
-    // A partition wall meeting this one partway along its own span (a
-    // T-junction) breaks the dimension chain the same way a door or
-    // window does — without this, a gap silently skips straight through
-    // it to whatever's next (a far corner, another opening), measuring
-    // "corner to door" across an interior wall instead of the "partition
-    // to door" a room actually needs. Only its own two end corners are
-    // excluded (pos near 0 or len) since those are already handled by
-    // startInset/endInset above, not by a break mid-span.
-    const joinIvs = [];
-    elements.forEach(o => {
-      if (o.type !== "wall" || o.id === w.id) return;
-      [{ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }].forEach(pt => {
-        const proj = projectPointOnSegment(pt, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
-        if (dist(pt, proj) > 3) return;
-        const pos = (proj.x - w.x1) * ux + (proj.y - w.y1) * uy;
-        if (pos < 6 || pos > len - 6) return;
-        const halfW = (wallThicknessM(o) / 2 / scale) * GRID;
-        joinIvs.push({ id: o.id, start: pos - halfW, end: pos + halfW });
-      });
-    });
-    const ivs = [...openIvs, ...joinIvs].sort((a, b) => a.start - b.start);
-    if (!ivs.length) return null;
-    // A gap bounded by a door on one side and a window on the other is rare
-    // enough (and ambiguous enough) that it isn't worth resolving — the
-    // "after" opening (already tracked for the nudge key) wins ties.
-    const openingTypeById = {};
-    opens.forEach(o => { openingTypeById[o.id] = o.type; });
-    const gapColor = (afterId, beforeId) => {
-      const t = openingTypeById[afterId] || openingTypeById[beforeId];
-      return t === "door" ? doorDimColor : t === "window" ? windowDimColor : "#4A4A46";
-    };
-    const gapFontSize = (afterId, beforeId) => {
-      const t = openingTypeById[afterId] || openingTypeById[beforeId];
-      return (t === "door" || t === "window") ? doorWindowDimFontSize : dimFontSize;
-    };
-    const gaps = [];
-    let cursor = startInset, prevId = null;
-    ivs.forEach(iv => {
-      if (iv.start - cursor > 3) gaps.push({ start: cursor, end: iv.start, afterOpeningId: iv.id, beforeOpeningId: prevId });
-      if (iv.end > cursor) { cursor = iv.end; prevId = iv.id; }
-    });
-    if ((len - endInset) - cursor > 3) gaps.push({ start: cursor, end: len - endInset, afterOpeningId: null, beforeOpeningId: prevId });
-    return gaps.map((g, i) => {
-      const { start: s, end: e2 } = g;
-      const key = g.afterOpeningId || "end";
-      const gapLen = e2 - s;
-      // Same manual nudge idea as the parallel-wall dimensions: perp moves
-      // the whole line closer to/further from the wall, along slides the
-      // label within this gap's own span. Persisted on the wall (keyed by
-      // the gap's own opening/corner) so it survives remounting.
-      const nudge = readGapDimNudge(w.id, key);
-      const perp = Math.max(-GRID * 0.25, Math.min(GRID * 3, nudge.perp));
-      const alongMargin = Math.min(8, gapLen / 2);
-      const maxAlong = Math.max(0, gapLen / 2 - alongMargin);
-      const along = Math.max(-maxAlong, Math.min(maxAlong, nudge.along));
-      const offsetTotal = offset + perp;
-      const p1 = { x: w.x1 + ux * s + nx * offsetTotal, y: w.y1 + uy * s + ny * offsetTotal };
-      const p2 = { x: w.x1 + ux * e2 + nx * offsetTotal, y: w.y1 + uy * e2 + ny * offsetTotal };
-      const midX = (p1.x + p2.x) / 2 + ux * along, midY = (p1.y + p2.y) / 2 + uy * along;
-      const lenM = (((e2 - s) / GRID) * scale).toFixed(2);
-      const isEditing = editingDim && editingDim.wallId === w.id && editingDim.gapIndex === i;
-      const editable = tool === "selecionar" && selectedId === w.id;
-      const startEdit = () => setEditingDim({ wallId: w.id, gapIndex: i, value: lenM, ux, uy });
-      const angleDeg = labelAngleDeg(w);
-      const gc = gapColor(g.afterOpeningId, g.beforeOpeningId);
-      const gfs = gapFontSize(g.afterOpeningId, g.beforeOpeningId);
-      return (
-        <g key={w.id + "-dim-" + i}>
-          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={gc} strokeWidth="0.75" />
-          <line x1={p1.x - nx * 4} y1={p1.y - ny * 4} x2={p1.x + nx * 4} y2={p1.y + ny * 4} stroke={gc} strokeWidth="0.75" />
-          <line x1={p2.x - nx * 4} y1={p2.y - ny * 4} x2={p2.x + nx * 4} y2={p2.y + ny * 4} stroke={gc} strokeWidth="0.75" />
-          <g transform={`rotate(${angleDeg} ${midX} ${midY - 3})`}>
-            {editable && (
-              <rect x={midX - 12} y={midY - 12} width="24" height="12" fill={isEditing ? gc : "transparent"} opacity={isEditing ? 0.3 : 1}
-                style={{ cursor: "move" }}
-                onMouseDown={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)}
-                onTouchStart={e => beginDragGapDimLabel(w.id, key, ux, uy, nx, ny, gapLen, startEdit, e)} />
-            )}
-            <text x={midX} y={midY - 3} fontSize={gfs} fill={gc} textAnchor="middle"
-              style={{ pointerEvents: "none" }}>{lenM}</text>
-          </g>
-        </g>
-      );
-    });
-  }
-
   function ghostLevel(lvl, color) {
     if (!lvl) return null;
     const els = lvl.sketchElements || [];
@@ -2490,7 +2262,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
             <span key={id} className="contents">
-              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingDim(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); }} title={label}
+              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); }} title={label}
                 className="flex items-center justify-center p-2 rounded"
                 style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
                 <Icon size={16} />
@@ -2702,17 +2474,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       )}
 
-      {editingDim && (
-        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
-          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Distância (m):</span>
-          <input autoFocus type="text" inputMode="decimal" value={editingDim.value} onChange={e => setEditingDim({ ...editingDim, value: e.target.value })}
-            onKeyDown={e => e.key === "Enter" && applyDimEdit()}
-            className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
-          <button onClick={applyDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
-          <button onClick={() => setEditingDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
-        </div>
-      )}
-
       {editingWallLen && (
         <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Comprimento (m):</span>
@@ -2918,7 +2679,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               const nearCenter = elements
                 .some(o => (o.type === "door" || o.type === "window") && o.wallId === el.id && phaseVisible(o)
                   && Math.abs(((o.x - el.x1) * wdx + (o.y - el.y1) * wdy) / wlen - wlen * 0.5) < 45);
-              const off = wallLabelOffset(el, nearCenter ? 18 : 0);
+              const off = wallLabelOffset(el, nearCenter ? 18 + TAG_LINE_GAP : 0);
               const { x: lx, y: ly } = clampOffsetToView(midX, midY, off.x, off.y);
               return (
                 <text x={lx} y={ly} fontSize="10" fill={phaseStyleColor(el) || "#6b6660"} textAnchor="middle"
@@ -2929,7 +2690,6 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 </text>
               );
             })()}
-            {planMode === "piso" && wallDimensions(el)}
             {selectedId === el.id && tool === "selecionar" && (
               <>
                 <circle cx={el.x1} cy={el.y1} r="6" fill="#726F68" stroke="#1B1E1A" strokeWidth="1" style={{ cursor: "grab" }}
@@ -3121,7 +2881,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   stroke="#1B1E1A" strokeWidth="1" style={{ pointerEvents: "none" }} />
               ))}
               <g transform={el.tagRotation ? `rotate(${el.tagRotation} ${el.x} ${el.y - 14})` : undefined}>
-                <text x={el.x} y={el.y - 14} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.tag ? `${el.tag} · ` : ""}{el.width}×{el.height} · {panels}f</text>
+                {/* Name (tag) on its own line, dimensions below it — same
+                    break used in the Elevação view, instead of one long
+                    line cramming "P1 · 0.8×2.1 · 1f" together. */}
+                {el.tag && (
+                  <text x={el.x} y={el.y - 14 - TAG_LINE_GAP} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.tag}</text>
+                )}
+                <text x={el.x} y={el.y - 14} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.width}×{el.height} · {panels}f</text>
               </g>
             </g>
           );
