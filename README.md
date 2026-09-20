@@ -49,7 +49,19 @@ service cloud.firestore {
 }
 ```
 
-Como não há autenticação, qualquer pessoa com o código do projeto (ou que descubra a chave do Firebase) pode ler/escrever esses dados — é a mesma limitação de segurança que o app já tinha originalmente como Artifact.
+Como não há autenticação por trás do próprio dado (o login abaixo é só uma conveniência de "achar meus projetos", não uma trava de acesso), qualquer pessoa com o código do projeto (ou que descubra a chave do Firebase) pode ler/escrever esses dados — é a mesma limitação de segurança que o app já tinha originalmente como Artifact.
+
+### Login com Google (opcional — sincroniza "Meus Projetos" entre aparelhos)
+
+Sem login, "Meus Projetos" (na tela inicial) só lista o que foi criado/aberto NESTE aparelho (IndexedDB). Com login pelo Google (`src/auth.js`), a mesma lista passa a acompanhar a conta: criar ou abrir um projeto logado grava o vínculo em `kv/user-projects:{uid}` (mesma coleção `kv` de cima, sem regra nova), e outro aparelho logado na mesma conta puxa esses códigos e mescla com o que já tem localmente. O app funciona 100% sem login — é opcional, e só aparece quando o Firebase está configurado.
+
+#### Como ativar
+
+1. No [console do Firebase](https://console.firebase.google.com), abra **Authentication** → **Sign-in method** (primeira vez: clique em "Get started").
+2. Ative o provedor **Google**, escolha um e-mail de suporte do projeto e salve.
+3. Em **Authentication → Settings → Authorized domains**, adicione o domínio onde o app é servido (por padrão `localhost` e os domínios `.firebaseapp.com`/`.web.app` já vêm liberados — um domínio próprio, como `usuario.github.io`, precisa ser adicionado manualmente ou o login falha com "auth/unauthorized-domain").
+
+Usa `signInWithRedirect` (não popup) porque um popup de login costuma não abrir dentro de um PWA instalado em tela cheia no iOS — o redirect sempre funciona, mesmo nesse caso.
 
 ### Monitoramento de erros (Sentry)
 

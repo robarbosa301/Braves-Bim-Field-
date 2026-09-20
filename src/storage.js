@@ -79,6 +79,24 @@ export async function syncProjectMeta(code, meta) {
   } catch (e) { return false; }
 }
 
+// A logged-in user's own project list — same "kv" collection every other
+// shared value already goes through (no new Firestore rule needed), just
+// keyed by uid instead of project code. This is what makes "Meus Projetos"
+// follow the person instead of the device: created/joined on a phone while
+// logged in, it shows up on an iPad logged into the same account too.
+export async function getUserProjects(uid) {
+  if (!uid) return [];
+  const raw = await safeGet(`user-projects:${uid}`, true);
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch (e) { return []; }
+}
+export async function addUserProject(uid, meta) {
+  if (!uid || !meta?.code) return;
+  const list = await getUserProjects(uid);
+  const next = [meta, ...list.filter(p => p.code !== meta.code)].slice(0, 200);
+  await safeSet(`user-projects:${uid}`, JSON.stringify(next), true);
+}
+
 // ---- local device cache (IndexedDB) ----------------------------------------
 // Separate from safeGet/safeSet's localStorage fallback above: this is a
 // dedicated key/value store used for larger per-device payloads (a whole

@@ -10,3 +10,10 @@ export const toNum = (v, fallback = 0) => {
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
 export const genCode = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+
+export function composeAddress(b) {
+  if (!b) return "";
+  const line1 = [b.street, b.number].filter(Boolean).join(", ");
+  const line2 = [b.neighborhood, b.city, b.state].filter(Boolean).join(", ");
+  return [line1, line2].filter(Boolean).join(" — ");
+}

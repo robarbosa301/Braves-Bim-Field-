@@ -10,7 +10,8 @@ import {
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
 import { C, mono, heading, conditionColor, PHASE_VIEWS } from "./theme.js";
-import { toNum, uid } from "./utils.js";
+import { toNum, uid, composeAddress } from "./utils.js";
+export { composeAddress };
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import JoinScreen from "./JoinScreen.jsx";
 import VectorSketch from "./VectorSketch.jsx";
@@ -114,12 +115,6 @@ function buildLevelsFromCount(count) {
   return lv;
 }
 
-export function composeAddress(b) {
-  if (!b) return "";
-  const line1 = [b.street, b.number].filter(Boolean).join(", ");
-  const line2 = [b.neighborhood, b.city, b.state].filter(Boolean).join(", ");
-  return [line1, line2].filter(Boolean).join(" — ");
-}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Rasterizes a live Croqui <svg> for the PDF export below — jsPDF can only
 // embed raster images (PNG/JPEG), not SVG markup directly. Drawing an

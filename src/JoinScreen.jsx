@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { Tablet, Smartphone, Building2, ArrowUpRight, RefreshCw } from "lucide-react";
+import { Tablet, Smartphone, Building2, ArrowUpRight, RefreshCw, LogIn, LogOut } from "lucide-react";
 import { C, mono, heading } from "./theme.js";
-import { genCode } from "./utils.js";
-import { idbGet } from "./storage.js";
+import { genCode, composeAddress } from "./utils.js";
+import { idbGet, idbSet, getUserProjects, addUserProject } from "./storage.js";
+import { firebaseEnabled } from "./firebase.js";
+import { signInWithGoogle, signOutUser, watchAuthState, consumeRedirectResult } from "./auth.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
 import { CornerBrackets } from "./ElementRows.jsx";
 
@@ -117,10 +119,38 @@ export default function JoinScreen({ onJoin }) {
   }, [building.cep]);
   const [savedProjects, setSavedProjects] = useState([]);
   const [showAllProjects, setShowAllProjects] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     idbGet("projects-index").then(list => setSavedProjects(list || []));
   }, []);
+
+  // Login is entirely optional — every device keeps working off its own
+  // local projects-index with no account at all. Logging in just also pulls
+  // in whatever this same Google account already created/joined from OTHER
+  // devices (getUserProjects), merged into the same list by project code so
+  // it reads as one "Meus Projetos", not two separate ones.
+  useEffect(() => {
+    consumeRedirectResult().finally(() => {
+      const unsub = watchAuthState(setUser);
+      return unsub;
+    });
+  }, []);
+  useEffect(() => {
+    if (!user) return;
+    getUserProjects(user.uid).then(cloudList => {
+      if (!cloudList.length) return;
+      setSavedProjects(local => {
+        const byCode = new Map(local.map(p => [p.code, p]));
+        cloudList.forEach(p => byCode.set(p.code, { ...byCode.get(p.code), ...p }));
+        const merged = [...byCode.values()];
+        idbSet("projects-index", merged);
+        return merged;
+      });
+    });
+  }, [user]);
 
   function goToBuilding() {
     const finalCode = genCode();
@@ -129,12 +159,18 @@ export default function JoinScreen({ onJoin }) {
   }
   async function handleJoinExisting(codeOverride) {
     setBusy(true);
-    await onJoin((codeOverride || code).trim().toUpperCase(), role, null);
+    const finalCode = (codeOverride || code).trim().toUpperCase();
+    await onJoin(finalCode, role, null);
+    if (user) {
+      const joined = savedProjects.find(p => p.code === finalCode);
+      addUserProject(user.uid, { code: finalCode, name: joined?.name || finalCode, address: joined?.address || "", roomsCount: joined?.roomsCount || 0 });
+    }
     setBusy(false);
   }
   async function handleCreateBuilding() {
     setBusy(true);
     await onJoin(code, role, building);
+    if (user) addUserProject(user.uid, { code, name: building.name, address: composeAddress(building), roomsCount: 0 });
     setBusy(false);
   }
 
@@ -243,6 +279,40 @@ export default function JoinScreen({ onJoin }) {
             ))}
           </div>
         </div>
+
+        {firebaseEnabled && (
+          <div className="braves-wipe-in mb-4" style={{ animationDelay: "1.0s" }}>
+            <div className="flex items-center justify-between p-2.5 rounded-xl" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              {user ? (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {user.photoURL
+                      ? <img src={user.photoURL} alt="" className="w-6 h-6 rounded-full" />
+                      : <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ background: C.goldTint, color: C.gold, fontSize: 11 }}>{(user.displayName || user.email || "?")[0].toUpperCase()}</div>}
+                    <span className="text-[11px] truncate" style={{ color: C.chalk }}>{user.displayName || user.email}</span>
+                  </div>
+                  <button onClick={async () => { setAuthBusy(true); setAuthError(""); try { await signOutUser(); } catch (e) { setAuthError("Não deu pra sair agora — tente de novo."); } setAuthBusy(false); }} disabled={authBusy}
+                    className="flex items-center gap-1 text-[11px] px-2 py-1 rounded shrink-0" style={{ color: C.mute }}>
+                    <LogOut size={12} /> Sair
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-[11px]" style={{ color: C.mute }}>Entre pra ver seus projetos em qualquer aparelho</span>
+                  <button onClick={async () => {
+                    setAuthBusy(true); setAuthError("");
+                    try { await signInWithGoogle(); } catch (e) { setAuthError("Não deu pra entrar agora — verifique sua internet e tente de novo."); }
+                    setAuthBusy(false);
+                  }} disabled={authBusy}
+                    className="flex items-center gap-1 text-[11px] px-2 py-1 rounded shrink-0" style={{ ...heading, fontWeight: 600, color: C.gold, background: C.goldTint, border: `1px solid ${C.gold}` }}>
+                    <LogIn size={12} /> Entrar com Google
+                  </button>
+                </>
+              )}
+            </div>
+            {authError && <div className="text-[10px] mt-1" style={{ color: C.bad }}>{authError}</div>}
+          </div>
+        )}
 
         <div className="braves-wipe-in" style={{ animationDelay: "1.05s" }}>
           <div className="grid grid-cols-2 gap-2.5 mb-3">

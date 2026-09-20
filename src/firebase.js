@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,13 +14,15 @@ const config = {
 export const firebaseEnabled = Boolean(config.apiKey && config.projectId);
 
 let db = null;
+let auth = null;
 if (firebaseEnabled) {
   const app = getApps()[0] || initializeApp(config);
   db = getFirestore(app);
+  auth = getAuth(app);
 } else {
   console.warn(
     "Firebase não configurado (variáveis VITE_FIREBASE_* ausentes) — sincronização entre dispositivos desativada, cada aparelho salva só localmente. Veja o README para configurar."
   );
 }
 
-export { db };
+export { db, auth };
