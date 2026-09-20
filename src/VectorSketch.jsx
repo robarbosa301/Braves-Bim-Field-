@@ -161,6 +161,102 @@ function nearestParallelWallDims(walls) {
   }
   return out;
 }
+// Same centerline-to-centerline connecting axis nearestParallelWallDims
+// builds for a wall's NEAREST facing neighbor, but for an EXPLICIT pair the
+// user picked by hand with the "Cota" tool — so it skips the "is this
+// really the closest match" ranking and the minimum-overlap/minimum-distance
+// filters that would silently refuse an edge case a manual measurement
+// shouldn't have to care about. Falls back to wall A's own midpoint when
+// the two walls don't actually overlap along A's length at all (e.g. two
+// walls facing each other but offset past one another), so the tool still
+// draws SOMETHING instead of a degenerate zero-length line.
+function wallToWallAxis(a, b) {
+  const ax = a.x2 - a.x1, ay = a.y2 - a.y1;
+  const alen = Math.hypot(ax, ay) || 1;
+  const ux = ax / alen, uy = ay / alen;
+  const nx = -uy, ny = ux;
+  const bmx = (b.x1 + b.x2) / 2, bmy = (b.y1 + b.y2) / 2;
+  const signedDist = (bmx - a.x1) * nx + (bmy - a.y1) * ny;
+  const projB1 = (b.x1 - a.x1) * ux + (b.y1 - a.y1) * uy;
+  const projB2 = (b.x2 - a.x1) * ux + (b.y2 - a.y1) * uy;
+  const overlapMin = Math.max(0, Math.min(projB1, projB2));
+  const overlapMax = Math.min(alen, Math.max(projB1, projB2));
+  const hasOverlap = overlapMax > overlapMin;
+  const midT = hasOverlap ? (overlapMin + overlapMax) / 2 : alen / 2;
+  const p1 = { x: a.x1 + ux * midT, y: a.y1 + uy * midT };
+  const p2 = { x: p1.x + nx * signedDist, y: p1.y + ny * signedDist };
+  return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, distPx: Math.abs(signedDist) };
+}
+// The full render geometry (line endpoints + label position + value in
+// meters) for one manually-placed "cota" element — shared between the
+// actual SVG render and findAt's hit-testing, so a manual dimension is
+// exactly as tappable/selectable as everything else on the sheet instead
+// of being a render-only decoration nobody can select or delete.
+// Modes: "eixo" (centerline to centerline), "face" (facing/inner faces —
+// the clear span), "faceExt" (outer faces — overall including both wall
+// thicknesses), "espessura" (one wall's own thickness), "opening" (a
+// door/window's own width, in plan).
+function cotaGeometry(el, elements, scale) {
+  const byId = id => elements.find(e => e.id === id);
+  if (el.mode === "espessura") {
+    const w = byId(el.wallId);
+    if (!w) return null;
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    const t = Math.max(0, Math.min(len, el.atPx ?? len / 2));
+    const cx = w.x1 + ux * t, cy = w.y1 + uy * t;
+    const halfThickPx = (wallThicknessM(w) / 2 / scale) * GRID;
+    return {
+      x1: cx - nx * halfThickPx, y1: cy - ny * halfThickPx,
+      x2: cx + nx * halfThickPx, y2: cy + ny * halfThickPx,
+      labelX: cx + ux * 16, labelY: cy + uy * 16,
+      valueM: wallThicknessM(w), lineAngleDeg: Math.atan2(ny, nx) * 180 / Math.PI,
+    };
+  }
+  if (el.mode === "opening") {
+    const o = byId(el.refId);
+    const w = o && byId(o.wallId);
+    if (!o || !w) return null;
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    const posUnits = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
+    const halfWPx = (toNum(o.width, 0.8) / 2 / scale) * GRID;
+    const offsetPx = 16;
+    const cx = w.x1 + ux * posUnits + nx * offsetPx, cy = w.y1 + uy * posUnits + ny * offsetPx;
+    return {
+      x1: cx - ux * halfWPx, y1: cy - uy * halfWPx,
+      x2: cx + ux * halfWPx, y2: cy + uy * halfWPx,
+      labelX: cx, labelY: cy,
+      valueM: toNum(o.width, 0.8), lineAngleDeg: Math.atan2(uy, ux) * 180 / Math.PI,
+    };
+  }
+  // face / eixo / faceExt: between two walls the user tapped in sequence.
+  const a = byId(el.wallAId), b = byId(el.wallBId);
+  if (!a || !b) return null;
+  const axis = wallToWallAxis(a, b);
+  const dx = axis.x2 - axis.x1, dy = axis.y2 - axis.y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const halfThickAPx = (wallThicknessM(a) / 2 / scale) * GRID;
+  const halfThickBPx = (wallThicknessM(b) / 2 / scale) * GRID;
+  let x1 = axis.x1, y1 = axis.y1, x2 = axis.x2, y2 = axis.y2;
+  if (el.mode === "face") {
+    x1 += ux * halfThickAPx; y1 += uy * halfThickAPx;
+    x2 -= ux * halfThickBPx; y2 -= uy * halfThickBPx;
+  } else if (el.mode === "faceExt") {
+    x1 -= ux * halfThickAPx; y1 -= uy * halfThickAPx;
+    x2 += ux * halfThickBPx; y2 += uy * halfThickBPx;
+  }
+  const halfSumM = wallThicknessM(a) / 2 + wallThicknessM(b) / 2;
+  const distM = (axis.distPx / GRID) * scale;
+  const valueM = el.mode === "face" ? Math.max(0, distM - halfSumM) : el.mode === "faceExt" ? distM + halfSumM : distM;
+  let dimDeg = Math.atan2(uy, ux) * 180 / Math.PI;
+  if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
+  return { x1, y1, x2, y2, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2, valueM: +valueM.toFixed(2), lineAngleDeg: dimDeg };
+}
+const COTA_MODE_LABEL = {
+  face: "Face a face", eixo: "Eixo a eixo", faceExt: "Face ext. a face ext.",
+  espessura: "Espessura da parede", opening: "Largura (porta/janela)",
+};
 // Auto-traces a room polygon by flood-filling the open floor area starting
 // from a clicked point, stopping at wall faces — the "click inside" room
 // tool, as opposed to tracing each corner by hand. Works on a grid finer
@@ -567,6 +663,17 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // above/below, which isn't in this level's own elements/wallsById.
   const [alignRef, setAlignRef] = useState(null);
   const [alignMsg, setAlignMsg] = useState("");
+  // "Cota" (manual dimension): a sub-mode picker (face a face / eixo a eixo
+  // / face externa / espessura / porta-janela) plus, for the two-wall
+  // modes, the first wall tapped while waiting for the second — the same
+  // two-tap pattern as Estender/Alinhar above. This exists because the
+  // automatic dimensions (nearestParallelWallDims, the per-wall length
+  // label) only ever cover a handful of fixed cases; anything else on a
+  // real engineering drawing — a chained wall-segment breakdown, an
+  // overall outer-to-outer building width, an opening's own width in
+  // plan — has no automatic equivalent, so the user places it by hand.
+  const [cotaMode, setCotaMode] = useState("face");
+  const [cotaPendingWallId, setCotaPendingWallId] = useState(null);
   // Tela cheia: the whole editor floats out of the app's normal scrolling
   // layout into a fixed full-viewport portal so the canvas can use the
   // entire phone screen — the toolbar rows and the selected-element panel
@@ -1143,6 +1250,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (d < bestWD) { bestWD = d; bestWall = w; }
     });
     if (bestWall && bestWD < 16) return bestWall;
+    // Checked before rooms/pisos — a manually-placed cota's line/label
+    // often sits right over a room's open floor area, which would
+    // otherwise always win the point-in-polygon test below and make the
+    // cota impossible to tap at all once it's inside a room.
+    const cotas = elements.filter(e => e.type === "cota");
+    let bestCota = null, bestCotaD = Infinity;
+    cotas.forEach(el => {
+      const g = cotaGeometry(el, elements, scale);
+      if (!g) return;
+      const proj = projectPointOnSegment(p, { x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 });
+      const d = Math.min(dist(p, proj), dist(p, { x: g.labelX, y: g.labelY }));
+      if (d < bestCotaD) { bestCotaD = d; bestCota = el; }
+    });
+    if (bestCota && bestCotaD < 14) return bestCota;
     // Checked before rooms: a "piso" zone is drawn specifically because it
     // doesn't just mirror the room underneath it (a wet-area-only tile
     // zone, say), so a tap landing inside one most likely means that zone,
@@ -1180,6 +1301,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (el.type === "room" || el.type === "floor") {
       const xs = el.points.map(p => p.x), ys = el.points.map(p => p.y);
       return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    }
+    if (el.type === "cota") {
+      const g = cotaGeometry(el, elements, scale);
+      if (!g) return null;
+      return { minX: Math.min(g.x1, g.x2, g.labelX), maxX: Math.max(g.x1, g.x2, g.labelX), minY: Math.min(g.y1, g.y2, g.labelY), maxY: Math.max(g.y1, g.y2, g.labelY) };
     }
     return null;
   }
@@ -1324,6 +1450,39 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       setAlignRef(null);
       const err = alignWallTo(hit, ref);
       setAlignMsg(err || "");
+      return;
+    }
+
+    if (tool === "cota") {
+      if (cotaMode === "espessura") {
+        const hit = findAt(p);
+        if (!hit || hit.type !== "wall") return;
+        const dx = hit.x2 - hit.x1, dy = hit.y2 - hit.y1, len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const atPx = Math.max(0, Math.min(len, (p.x - hit.x1) * ux + (p.y - hit.y1) * uy));
+        const el = { id: uid(), type: "cota", mode: "espessura", wallId: hit.id, atPx };
+        commitElements([...elements, el]);
+        setSelectedId(el.id);
+        return;
+      }
+      if (cotaMode === "opening") {
+        const hit = findAt(p);
+        if (!hit || (hit.type !== "door" && hit.type !== "window")) return;
+        const el = { id: uid(), type: "cota", mode: "opening", refId: hit.id };
+        commitElements([...elements, el]);
+        setSelectedId(el.id);
+        return;
+      }
+      // face / eixo / faceExt: two walls tapped in sequence, same pattern
+      // as Alinhar/Estender above — first tap holds, second tap commits.
+      const hit = findAt(p);
+      if (!hit || hit.type !== "wall") return;
+      if (!cotaPendingWallId) { setCotaPendingWallId(hit.id); return; }
+      if (hit.id === cotaPendingWallId) { setCotaPendingWallId(null); return; }
+      const el = { id: uid(), type: "cota", mode: cotaMode, wallAId: cotaPendingWallId, wallBId: hit.id };
+      setCotaPendingWallId(null);
+      commitElements([...elements, el]);
+      setSelectedId(el.id);
       return;
     }
 
@@ -2373,6 +2532,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "cortar", label: "Cortar parede", Icon: Scissors },
     { id: "estender", label: "Estender parede", Icon: ArrowLeftRight },
     { id: "alinhar", label: "Alinhar paredes", Icon: AlignCenterVertical },
+    { id: "cota", label: "Cota", Icon: Ruler },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
   const FORRO_TOOLS = [
@@ -2421,7 +2581,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
             <span key={id} className="contents">
-              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); }} title={label}
+              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); setCotaPendingWallId(null); }} title={label}
                 className="flex items-center justify-center p-2 rounded"
                 style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
                 <Icon size={16} />
@@ -2632,6 +2792,32 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       )}
 
+      {tool === "cota" && planMode === "piso" && (
+        <div className="mb-2">
+          <div className="flex flex-wrap gap-1.5 mb-1">
+            {[
+              { id: "face", label: "Face a face" },
+              { id: "eixo", label: "Eixo a eixo" },
+              { id: "faceExt", label: "Face ext. a face ext." },
+              { id: "espessura", label: "Espessura" },
+              { id: "opening", label: "Porta/janela" },
+            ].map(m => (
+              <button key={m.id} onClick={() => { setCotaMode(m.id); setCotaPendingWallId(null); }}
+                className="px-2 py-1 rounded text-[10px]"
+                style={{ ...heading, fontWeight: 600, background: cotaMode === m.id ? C.gold : C.panelAlt, color: cotaMode === m.id ? "#141311" : C.mute, border: `1px solid ${cotaMode === m.id ? C.gold : C.line}` }}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10px]" style={{ color: C.mute }}>
+            {cotaMode === "espessura" ? "Toque na parede: mostra a espessura dela."
+              : cotaMode === "opening" ? "Toque numa porta ou janela: mostra a largura dela em planta."
+              : cotaPendingWallId ? "Agora toque na segunda parede (o mais paralela possível da primeira)."
+              : "Toque na primeira parede, depois na segunda."}
+          </div>
+        </div>
+      )}
+
       {namingId && (
         <div className="flex items-center gap-2 mb-2 p-2 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Nome do ambiente:</span>
@@ -2822,9 +3008,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={extendSourceId === el.id || alignRef?.id === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
-              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRef?.id === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={extendSourceId === el.id || alignRef?.id === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
+              stroke={extendSourceId === el.id || alignRef?.id === el.id || cotaPendingWallId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
+              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRef?.id === el.id || cotaPendingWallId === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={extendSourceId === el.id || alignRef?.id === el.id || cotaPendingWallId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {/* Every wall used to carry its own bare length label — floating
                 text with no leader/tick line, right in the middle of the
@@ -3016,6 +3202,27 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </g>
           );
         })}
+        {planMode === "piso" && elements.filter(el => el.type === "cota").map(el => {
+          const g = cotaGeometry(el, elements, scale);
+          if (!g) return null;
+          const nx = -Math.sin(g.lineAngleDeg * Math.PI / 180), ny = Math.cos(g.lineAngleDeg * Math.PI / 180);
+          const color = el.color || dimColor;
+          const fontSize = toNum(el.fontSize, dimFontSize);
+          const isSel = selectedId === el.id;
+          return (
+            <g key={el.id} opacity={isSel ? 1 : 0.9}>
+              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke={isSel ? "#726F68" : color} strokeWidth={isSel ? 1.6 : 0.9} />
+              <line x1={g.x1 - nx * 4} y1={g.y1 - ny * 4} x2={g.x1 + nx * 4} y2={g.y1 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" />
+              <line x1={g.x2 - nx * 4} y1={g.y2 - ny * 4} x2={g.x2 + nx * 4} y2={g.y2 + ny * 4} stroke={isSel ? "#726F68" : color} strokeWidth="0.9" />
+              <g transform={g.lineAngleDeg ? `rotate(${g.lineAngleDeg} ${g.labelX} ${g.labelY})` : undefined}>
+                {dimLabelOpaqueBg && <rect x={g.labelX - 15} y={g.labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
+                <text x={g.labelX} y={g.labelY + 1} fontSize={fontSize} fill={isSel ? "#726F68" : color} textAnchor="middle" fontWeight="600"
+                  fontFamily={el.fontFamily ? fontFamilyCss(el.fontFamily) : undefined}
+                  style={{ pointerEvents: "none" }}>{el.mode === "espessura" ? `${Math.round(g.valueM * 100)} cm` : `${g.valueM.toFixed(2)} m`}</text>
+              </g>
+            </g>
+          );
+        })}
         {planMode === "piso" && elements.filter(el => el.type === "stair" && phaseVisible(el)).map(el => (
           <g key={el.id}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={selectedId === el.id ? "#726F68" : "#6B6862"} strokeWidth="10" strokeLinecap="round" opacity="0.7"
@@ -3153,7 +3360,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-medium" style={{ color: C.gold }}>
-              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "stair" ? `Escada ${selected.tag}` : "Luminária"}
+              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${COTA_MODE_LABEL[selected.mode] || ""}` : "Luminária"}
             </span>
             <button onClick={() => setSelectedId(null)}><X size={14} color={C.gold} /></button>
           </div>
@@ -3320,6 +3527,29 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               )}
             </div>
           )}
+          {selected.type === "cota" && (() => {
+            const g = cotaGeometry(selected, elements, scale);
+            return (
+              <div className="flex items-center gap-2 flex-wrap text-[11px]" style={{ color: C.chalk }}>
+                <span style={{ color: C.mute }}>Valor:</span>
+                <span style={{ ...mono, fontWeight: 700 }}>
+                  {g ? (selected.mode === "espessura" ? `${Math.round(g.valueM * 100)} cm` : `${g.valueM.toFixed(2)} m`) : "— (referência apagada)"}
+                </span>
+                <span style={{ color: C.mute }}>Cor:</span>
+                <input type="color" value={selected.color || dimColor} onChange={e => patchSelected({ color: e.target.value })}
+                  className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+                {selected.color && (
+                  <button onClick={() => patchSelected({ color: undefined })} className="text-[10px] underline" style={{ color: C.mute }}>usar cor padrão</button>
+                )}
+                <NumField value={toNum(selected.fontSize, dimFontSize)} onChange={v => patchSelected({ fontSize: v })} unit="tam. fonte" w="w-10" />
+                <span style={{ color: C.mute }}>Fonte:</span>
+                <select value={selected.fontFamily || level.fontFamily || "padrao"} onChange={e => patchSelected({ fontFamily: e.target.value })}
+                  className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+                  {FONT_FAMILIES.map(f => <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>{f.label}</option>)}
+                </select>
+              </div>
+            );
+          })()}
           <button onClick={() => {
             const ids = new Set([selected.id, ...(selected.type === "wall" ? elements.filter(e => (e.type === "door" || e.type === "window") && e.wallId === selected.id).map(e => e.id) : [])]);
             setDeletedStack(s => [...s, elements.filter(e => ids.has(e.id))]);
