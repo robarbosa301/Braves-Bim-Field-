@@ -969,54 +969,43 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = [],
         {statusMsg && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-center p-6" style={{ color: C.mute }}>{statusMsg}</div>
         )}
-        {!statusMsg && selectedWallInfo && (
-          <div className="absolute top-2 right-2 left-2 sm:left-auto sm:w-60 rounded-lg p-2.5 text-[11px]"
-            style={{ background: "rgba(20,19,17,0.92)", border: `1px solid ${C.line}`, color: C.chalk, backdropFilter: "blur(4px)" }}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="font-semibold" style={{ color: C.gold }}>
-                {selectedWallInfo.kind === "wall" ? `Parede ${selectedWallInfo.tag}`
-                  : selectedWallInfo.kind === "door" ? `Porta ${selectedWallInfo.tag}`
-                    : selectedWallInfo.kind === "window" ? `Janela ${selectedWallInfo.tag}`
-                      : `Piso · ${selectedWallInfo.floorType}`}
-              </span>
-              <button onClick={() => setSelectedWallInfo(null)} style={{ color: C.mute, fontSize: 16, lineHeight: 1 }}>×</button>
+        {!statusMsg && selectedWallInfo && (() => {
+          const info = selectedWallInfo;
+          // Comprimento/altura/espessura (ou largura/altura) já aparecem
+          // desenhados em cima do próprio elemento (ver buildWallDimension-
+          // Group/buildOpeningDimensionGroup) — repeti-los aqui em texto só
+          // engordava o painel. Cada tipo vira UMA linha de resumo (sem
+          // rótulo por campo) em vez de uma pilha de "Campo: valor".
+          const summary = info.kind === "wall"
+            ? `${info.wallType} · ${(info.lengthM * info.heightM).toFixed(1)} m² · ${(info.lengthM * info.heightM * info.thicknessM).toFixed(2)} m³`
+            : info.kind === "door" || info.kind === "window"
+              ? `${info.wallTag} · ${info.kind === "door" ? info.doorType : info.windowType} · ${info.panels}f`
+              : `${info.areaM2} m²`;
+          const ambiente = (info.faceA || info.faceB)
+            ? (info.faceA === info.faceB ? info.faceA : `${info.faceA} / ${info.faceB}`)
+            : null;
+          return (
+            <div className="absolute top-2 right-2 left-2 sm:left-auto sm:w-72 rounded-lg px-2.5 py-1.5 text-[11px]"
+              style={{ background: "rgba(20,19,17,0.92)", border: `1px solid ${C.line}`, color: C.chalk, backdropFilter: "blur(4px)" }}>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold shrink-0" style={{ color: C.gold }}>
+                  {info.kind === "wall" ? `Parede ${info.tag}`
+                    : info.kind === "door" ? `Porta ${info.tag}`
+                      : info.kind === "window" ? `Janela ${info.tag}`
+                        : `Piso · ${info.floorType}`}
+                </span>
+                <span className="flex-1 text-right truncate" style={{ color: C.mute }}>{summary}</span>
+                <button onClick={() => setSelectedWallInfo(null)} className="shrink-0" style={{ color: C.mute, fontSize: 16, lineHeight: 1 }}>×</button>
+              </div>
+              {(ambiente || info._hitTotal > 1) && (
+                <div className="flex items-center gap-2 text-[10px] mt-0.5" style={{ color: C.mute }}>
+                  {ambiente && <span className="truncate">{ambiente}</span>}
+                  {info._hitTotal > 1 && <span className="ml-auto shrink-0" style={{ color: C.gold }}>{info._hitIndex + 1}/{info._hitTotal} aqui · toque de novo</span>}
+                </div>
+              )}
             </div>
-            {selectedWallInfo.kind === "wall" && (
-              <div className="space-y-1" style={{ color: C.mute }}>
-                <div>Material: <span style={{ color: C.chalk }}>{selectedWallInfo.wallType}</span></div>
-                <div>Dimensões: <span style={{ color: C.chalk }}>{selectedWallInfo.lengthM.toFixed(2)} × {selectedWallInfo.heightM.toFixed(2)} m · {(selectedWallInfo.thicknessM * 100).toFixed(0)} cm</span></div>
-                <div>Área: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM).toFixed(2)} m²</span></div>
-                <div>Volume: <span style={{ color: C.chalk }}>{(selectedWallInfo.lengthM * selectedWallInfo.heightM * selectedWallInfo.thicknessM).toFixed(3)} m³</span></div>
-                <div>Ambiente: <span style={{ color: C.chalk }}>
-                  {selectedWallInfo.faceA === selectedWallInfo.faceB ? selectedWallInfo.faceA : `${selectedWallInfo.faceA} / ${selectedWallInfo.faceB}`}
-                </span></div>
-              </div>
-            )}
-            {(selectedWallInfo.kind === "door" || selectedWallInfo.kind === "window") && (
-              <div className="space-y-1" style={{ color: C.mute }}>
-                <div>Parede: <span style={{ color: C.chalk }}>{selectedWallInfo.wallTag}</span></div>
-                <div>Material: <span style={{ color: C.chalk }}>{selectedWallInfo.kind === "door" ? selectedWallInfo.doorType : selectedWallInfo.windowType}</span></div>
-                <div>Dimensões: <span style={{ color: C.chalk }}>{selectedWallInfo.widthM.toFixed(2)} × {selectedWallInfo.heightM.toFixed(2)} m</span></div>
-                <div>Folhas: <span style={{ color: C.chalk }}>{selectedWallInfo.panels}</span></div>
-                {(selectedWallInfo.faceA || selectedWallInfo.faceB) && (
-                  <div>Ambiente: <span style={{ color: C.chalk }}>
-                    {selectedWallInfo.faceA === selectedWallInfo.faceB ? selectedWallInfo.faceA : `${selectedWallInfo.faceA} / ${selectedWallInfo.faceB}`}
-                  </span></div>
-                )}
-              </div>
-            )}
-            {selectedWallInfo.kind === "floor" && (
-              <div className="space-y-1" style={{ color: C.mute }}>
-                <div>Área: <span style={{ color: C.chalk }}>{selectedWallInfo.areaM2} m²</span></div>
-              </div>
-            )}
-            {selectedWallInfo._hitTotal > 1 && (
-              <div className="mt-1.5 pt-1.5" style={{ color: C.gold, borderTop: `1px solid ${C.line}` }}>
-                {selectedWallInfo._hitIndex + 1} de {selectedWallInfo._hitTotal} neste ponto — toque de novo no mesmo lugar para ver o próximo (atrás/dentro).
-              </div>
-            )}
-          </div>
-        )}
+          );
+        })()}
       </div>
       {!statusMsg && <p ref={hintRef} className="text-[11px] mt-1.5 text-center" style={{ color: C.mute }}>Arraste: girar · pinça: zoom · 2 dedos: mover · 3 dedos: subir/descer · toque num elemento: ver detalhes</p>}
     </div>
