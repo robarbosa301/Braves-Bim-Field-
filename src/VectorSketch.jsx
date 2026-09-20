@@ -798,6 +798,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [editingWallLen, setEditingWallLen] = useState(null);
   const [editingLumDim, setEditingLumDim] = useState(null);
   const [editingParallelDim, setEditingParallelDim] = useState(null);
+  // Which automatic exterior-perimeter dimension (a chain segment or an
+  // overall run total — see exteriorPerimeterChains) is currently showing
+  // its own tiny "Apagar esta cota" popup, tapped open the same way a
+  // face-a-face pair's edit box opens above.
+  const [selectedExtDim, setSelectedExtDim] = useState(null);
   const [dragSession, setDragSession] = useState(null);
   const [splittingWall, setSplittingWall] = useState(null);
   const pinch = useRef(null);
@@ -2095,6 +2100,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setEditingParallelDim(null);
   }
 
+  // Automatic dimensions (the face-a-face pairs above, and the exterior
+  // perimeter chain/overall further below) aren't stored elements — they're
+  // recomputed fresh from the wall geometry every render, so there's
+  // nothing to "delete" the normal way. Redundant ones a real project
+  // doesn't need still have to go somewhere though, so each one gets a
+  // stable string key and the level itself remembers which keys the user
+  // asked to hide (level.hiddenAutoDims) — kept apart from the undo/redo
+  // stack (that one's scoped to sketchElements, not level metadata), which
+  // is why there's a one-tap "restaurar" to bring them all back rather
+  // than relying on Voltar.
+  const hiddenAutoDims = level.hiddenAutoDims || [];
+  function hideAutoDim(key) { onMeta({ hiddenAutoDims: [...hiddenAutoDims, key] }); }
+  function restoreAutoDims() { onMeta({ hiddenAutoDims: [] }); }
+
   function luminariaDimensions(lm) {
     const walls = elements.filter(e => e.type === "wall");
     const lums = elements.filter(e => e.type === "luminaria" && e.id !== lm.id);
@@ -2960,7 +2979,25 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             onKeyDown={e => e.key === "Enter" && applyParallelDimEdit()}
             className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
           <button onClick={applyParallelDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+          <button onClick={() => { hideAutoDim(editingParallelDim.key); setEditingParallelDim(null); }} title="Apagar esta cota"
+            className="p-1.5 rounded shrink-0" style={{ background: "rgba(193,84,63,0.16)", border: `1px solid ${C.bad}` }}><Trash2 size={13} color={C.bad} /></button>
           <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
+        </div>
+      )}
+      {selectedExtDim && (
+        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+          <span className="text-[11px]" style={{ color: C.gold }}>{selectedExtDim.label}</span>
+          <button onClick={() => { hideAutoDim(selectedExtDim.key); setSelectedExtDim(null); }} title="Apagar esta cota"
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: "rgba(193,84,63,0.16)", color: C.bad, border: `1px solid ${C.bad}` }}>
+            <Trash2 size={12} /> Apagar
+          </button>
+          <button onClick={() => setSelectedExtDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
+        </div>
+      )}
+      {hiddenAutoDims.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>
+          <span>{hiddenAutoDims.length} cota(s) automática(s) apagada(s) neste nível.</span>
+          <button onClick={restoreAutoDims} className="ml-auto underline shrink-0" style={{ color: C.gold }}>Restaurar todas</button>
         </div>
       )}
       </div>
@@ -3192,6 +3229,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           ));
         })()}
         {planMode === "piso" && nearestParallelWallDims(mergeCollinearWallRuns(elements.filter(el => el.type === "wall" && phaseVisible(el)))).map(d => {
+          const pwKey = "pw:" + [d.aId, d.bId].sort().join("|");
+          if (hiddenAutoDims.includes(pwKey)) return null;
           const dx = d.x2 - d.x1, dy = d.y2 - d.y1, len = Math.hypot(dx, dy) || 1;
           const ux = dx / len, uy = dy / len;
           const nx = -uy, ny = ux;
@@ -3285,7 +3324,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const editable = tool === "selecionar";
           const isEditing = editingParallelDim && editingParallelDim.movingWallId === movingWallId
             && editingParallelDim.fixedWallId === fixedWallId;
-          const startEdit = () => { setSelectedId(movingWallId); setEditingParallelDim({ movingWallId, fixedWallId, value: faceDistM }); };
+          const startEdit = () => { setSelectedId(movingWallId); setSelectedExtDim(null); setEditingParallelDim({ movingWallId, fixedWallId, value: faceDistM, key: pwKey }); };
           return (
             <g key={`pw-${d.aId}-${d.bId}`} opacity="0.9">
               <line x1={fx1} y1={fy1} x2={fx2} y2={fy2} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
@@ -3324,38 +3363,61 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const at = (t, offset) => ({ x: run.x1 + run.ux * t + run.nx * offset, y: run.y1 + run.uy * t + run.ny * offset });
           const overallP1 = at(0, overallOffset), overallP2 = at(run.len, overallOffset), overallMid = at(run.len / 2, overallOffset);
           const totalM = (run.len / GRID) * scale;
+          const overallKey = `extoverall:${run.id}`;
+          const pick = (key, label) => (e) => {
+            if (tool !== "selecionar") return;
+            e.stopPropagation(); e.preventDefault();
+            setEditingParallelDim(null);
+            setSelectedExtDim({ key, label });
+          };
           return (
-            <g key={`ext-${run.id}`} opacity="0.9" pointerEvents="none">
+            <g key={`ext-${run.id}`} opacity="0.9">
               {/* Chain row: every corner-to-opening/opening-to-opening gap
                   along this exterior run — the "blue" annotations, hugging
-                  right outside the wall. */}
+                  right outside the wall. Each one can be tapped (while
+                  Selecionar is active) to bring up its own "Apagar esta
+                  cota" — these aren't stored elements, so hiding one just
+                  adds its key to the level's own hiddenAutoDims instead of
+                  deleting anything. */}
               {run.segs.map((seg, i) => {
+                const segKey = `extseg:${run.id}:${Math.round(seg.a)}:${Math.round(seg.b)}`;
+                if (hiddenAutoDims.includes(segKey)) return null;
                 const p1 = at(seg.a, chainOffset), p2 = at(seg.b, chainOffset);
                 const mid = at((seg.a + seg.b) / 2, chainOffset);
                 const segM = ((seg.b - seg.a) / GRID) * scale;
                 return (
                   <g key={i}>
-                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={dimColor} strokeWidth="0.75" />
-                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" />
-                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" />
+                    <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={dimColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p1.x - run.nx * 3.5} y1={p1.y - run.ny * 3.5} x2={p1.x + run.nx * 3.5} y2={p1.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" pointerEvents="none" />
+                    <line x1={p2.x - run.nx * 3.5} y1={p2.y - run.ny * 3.5} x2={p2.x + run.nx * 3.5} y2={p2.y + run.ny * 3.5} stroke={dimColor} strokeWidth="0.75" pointerEvents="none" />
                     <g transform={dimDeg ? `rotate(${dimDeg} ${mid.x} ${mid.y})` : undefined}>
-                      {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" />}
-                      <text x={mid.x} y={mid.y + 1} fontSize={Math.max(6, dimFontSize - 1.5)} fill={dimColor} textAnchor="middle">{segM.toFixed(2)}</text>
+                      {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
+                      <text x={mid.x} y={mid.y + 1} fontSize={Math.max(6, dimFontSize - 1.5)} fill={dimColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
+                      {tool === "selecionar" && (
+                        <rect x={mid.x - 18} y={mid.y - 11} width="36" height="22" fill="transparent" style={{ cursor: "pointer" }}
+                          onMouseDown={pick(segKey, `Cota do vão · ${segM.toFixed(2)} m`)} onTouchStart={pick(segKey, `Cota do vão · ${segM.toFixed(2)} m`)} />
+                      )}
                     </g>
                   </g>
                 );
               })}
               {/* Overall row: this run's whole length, corner to corner —
                   the "red" annotation, further out past the chain. */}
-              <g>
-                <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={dimColor} strokeWidth="1" />
-                <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={dimColor} strokeWidth="1" />
-                <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={dimColor} strokeWidth="1" />
-                <g transform={dimDeg ? `rotate(${dimDeg} ${overallMid.x} ${overallMid.y})` : undefined}>
-                  {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" />}
-                  <text x={overallMid.x} y={overallMid.y + 1} fontSize={dimFontSize} fill={dimColor} textAnchor="middle" fontWeight="700">{totalM.toFixed(2)} m</text>
+              {!hiddenAutoDims.includes(overallKey) && (
+                <g>
+                  <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={dimColor} strokeWidth="1" pointerEvents="none" />
+                  <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={dimColor} strokeWidth="1" pointerEvents="none" />
+                  <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={dimColor} strokeWidth="1" pointerEvents="none" />
+                  <g transform={dimDeg ? `rotate(${dimDeg} ${overallMid.x} ${overallMid.y})` : undefined}>
+                    {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" pointerEvents="none" />}
+                    <text x={overallMid.x} y={overallMid.y + 1} fontSize={dimFontSize} fill={dimColor} textAnchor="middle" fontWeight="700" style={{ pointerEvents: "none" }}>{totalM.toFixed(2)} m</text>
+                    {tool === "selecionar" && (
+                      <rect x={overallMid.x - 20} y={overallMid.y - 12} width="40" height="24" fill="transparent" style={{ cursor: "pointer" }}
+                        onMouseDown={pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`)} onTouchStart={pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`)} />
+                    )}
+                  </g>
                 </g>
-              </g>
+              )}
             </g>
           );
         })}
