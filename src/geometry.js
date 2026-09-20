@@ -80,7 +80,17 @@ export function fitViewBoxToElements(elements, w, h) {
     const p = ((o.x - wl.x1) * wdx + (o.y - wl.y1) * wdy) / wlen;
     return Math.abs(p - wlen * 0.5) < 45;
   });
-  const pad = hasCenteredOpening ? 35 : 0;
+  // The automatic exterior perimeter dimensions (chain row + "Cota total"
+  // overall row — see exteriorPerimeterChains in VectorSketch) render OUTSIDE
+  // the wall lines themselves, roughly halfThickness + 46px further out on
+  // every exterior side. Without reserving room for them here, a small/tight
+  // drawing's own bounding box (walls/doors/windows/rooms only) can fit
+  // snugly enough that those rows land partly or fully outside the fitted
+  // viewBox — invisible and untappable even though the drawing "looks" fully
+  // framed. Reserved whenever there's at least one wall, since the exterior
+  // chain always renders around any closed or open perimeter.
+  const extDimMargin = walls.length ? 60 : 0;
+  const pad = (hasCenteredOpening ? 35 : 0) + extDimMargin;
   const contentW = Math.max(30, maxX - minX) + pad, contentH = Math.max(30, maxY - minY) + pad;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   let newW = contentW * 1.3, newH = newW / aspect;

@@ -203,7 +203,11 @@ function cotaGeometry(el, elements, scale) {
     if (!w) return null;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-    const t = Math.max(0, Math.min(len, el.atPx ?? len / 2));
+    // Dragged along the wall itself (the only direction that makes sense
+    // for "where along this wall's length does the thickness tick sit") —
+    // reuses offsetPx as a delta on top of the original tap position
+    // instead of a fixed absolute, same as every other mode.
+    const t = Math.max(0, Math.min(len, (el.atPx ?? len / 2) + toNum(el.offsetPx, 0)));
     const cx = w.x1 + ux * t, cy = w.y1 + uy * t;
     const halfThickPx = (wallThicknessM(w) / 2 / scale) * GRID;
     return {
@@ -1236,7 +1240,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       setRotationDeg(start.rotation + (angle - start.angle));
       return;
     }
-    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel)) onCanvasPointerMove(e);
+    if (e.touches.length === 1 && (dragSession || draggingLabel || draggingDimLabel || draggingExtDim || draggingCota)) onCanvasPointerMove(e);
   }
   function onTouchEndCanvas(e) {
     if (e.touches.length < 2) pinch.current = null;
@@ -3486,7 +3490,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   // a plain tap (no movement) still falls through to
                   // startEdit via onDimLabelDragEnd, same as the room-name
                   // label pattern.
-                  <rect x={labelX - 22} y={labelY - 14} width="44" height="28" fill={isEditing ? pwColor : "transparent"} opacity={isEditing ? 0.3 : 1}
+                  // Square and centered on the label's own rotation pivot —
+                  // a non-square box here covers a DIFFERENT footprint
+                  // depending on this dimension's own angle (dimDeg isn't
+                  // always 0/90°), so a finger landing right on the number
+                  // could still miss a lopsided hit box after rotation.
+                  <rect x={labelX - 26} y={labelY - 26} width="52" height="52" fill={isEditing ? pwColor : "transparent"} opacity={isEditing ? 0.3 : 1}
                     style={{ cursor: "move" }}
                     onMouseDown={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)}
                     onTouchStart={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)} />
@@ -3558,7 +3567,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                       {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                       <text x={mid.x} y={mid.y + 1} fontSize={segFontSize} fill={segColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
                       {tool === "selecionar" && (
-                        <rect x={mid.x - 18} y={mid.y - 11} width="36" height="22" fill="transparent" style={{ cursor: "move" }}
+                        <rect x={mid.x - 24} y={mid.y - 24} width="48" height="48" fill="transparent" style={{ cursor: "move" }}
                           onMouseDown={e => beginDragExtDim(chainRowKey, run.nx, run.ny, onTap, e)} onTouchStart={e => beginDragExtDim(chainRowKey, run.nx, run.ny, onTap, e)} />
                       )}
                     </g>
@@ -3581,7 +3590,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                       {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" pointerEvents="none" />}
                       <text x={overallMid.x} y={overallMid.y + 1} fontSize={overallFontSize} fill={overallColor} textAnchor="middle" fontWeight="700" style={{ pointerEvents: "none" }}>{totalM.toFixed(2)} m</text>
                       {tool === "selecionar" && (
-                        <rect x={overallMid.x - 20} y={overallMid.y - 12} width="40" height="24" fill="transparent" style={{ cursor: "move" }}
+                        <rect x={overallMid.x - 26} y={overallMid.y - 26} width="52" height="52" fill="transparent" style={{ cursor: "move" }}
                           onMouseDown={e => beginDragExtDim(overallKey, run.nx, run.ny, onTap, e)} onTouchStart={e => beginDragExtDim(overallKey, run.nx, run.ny, onTap, e)} />
                       )}
                     </g>
@@ -3617,7 +3626,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   fontFamily={el.fontFamily ? fontFamilyCss(el.fontFamily) : undefined}
                   style={{ pointerEvents: "none" }}>{el.mode === "espessura" ? `${Math.round(g.valueM * 100)} cm` : `${g.valueM.toFixed(2)} m`}</text>
                 {tool === "selecionar" && (
-                  <rect x={g.labelX - 20} y={g.labelY - 12} width="40" height="24" fill="transparent" style={{ cursor: "move" }}
+                  // A square, centered exactly on the rotation pivot
+                  // (g.labelX, g.labelY) — a non-square hit box here would
+                  // cover a DIFFERENT footprint depending on this cota's own
+                  // angle (dimDeg can be anything, not just 0/90°), so a
+                  // finger landing right on the visible number could still
+                  // miss it after rotation. Squared and centered on the
+                  // pivot maps onto itself at any angle, so it can't.
+                  <rect x={g.labelX - 26} y={g.labelY - 26} width="52" height="52" fill="transparent" style={{ cursor: "move" }}
                     onMouseDown={e => beginDragCota(el, nx, ny, e)} onTouchStart={e => beginDragCota(el, nx, ny, e)} />
                 )}
               </g>
@@ -3671,9 +3687,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                     break used in the Elevação view, instead of one long
                     line cramming "P1 · 0.8×2.1 · 1f" together. */}
                 {el.tag && (
-                  <text x={el.x} y={el.y - 14 - TAG_LINE_GAP} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.tag}</text>
+                  <text x={el.x} y={el.y - 14 - TAG_LINE_GAP} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{el.tag}</text>
                 )}
-                <text x={el.x} y={el.y - 14} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle">{el.width}×{el.height} · {panels}f</text>
+                <text x={el.x} y={el.y - 14} fontSize={tagFontSize} fill={phaseStyleColor(el) || tagColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{el.width}×{el.height} · {panels}f</text>
               </g>
               {isDoor && doorProjection(el, widthPx, panels)}
             </g>
