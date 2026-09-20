@@ -436,7 +436,6 @@ export default function PranchetaBIM() {
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [croquiLevelId, setCroquiLevelId] = useState(null);
   const [croquiViewMode, setCroquiViewMode] = useState("2d");
-  const [elevationWallId, setElevationWallId] = useState(null);
   // Walls have no direct room link of their own — which ambiente a wall
   // belongs to is worked out the same way as everywhere else (see
   // wallRoomAdjacency / activeRoomWallFaces), so picking the ambiente first
@@ -1648,22 +1647,9 @@ export default function PranchetaBIM() {
                 ) : croquiViewMode === "elevacao" ? (
                   elevationRoomOptions.length > 0 ? (
                     <div className="flex items-center gap-1 min-w-0">
-                      <select value={elevationRoomName || ""} onChange={e => {
-                        const name = e.target.value;
-                        setElevationRoomName(name);
-                        const walls = (croquiLevel?.sketchElements || []).filter(w => {
-                          if (w.type !== "wall") return false;
-                          const adj = wallRoomAdjacency(croquiLevel, w);
-                          return adj.faceA === name || adj.faceB === name;
-                        });
-                        setElevationWallId(walls[0]?.id || null);
-                      }} className="text-xs px-2 py-1.5 rounded w-24 truncate"
+                      <select value={elevationRoomName || ""} onChange={e => setElevationRoomName(e.target.value)} className="text-xs px-2 py-1.5 rounded w-24 truncate"
                         style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
                         {elevationRoomOptions.map(name => <option key={name} value={name}>{name}</option>)}
-                      </select>
-                      <select value={elevationWallId || ""} onChange={e => setElevationWallId(e.target.value)} className="text-xs px-2 py-1.5 rounded w-20 truncate"
-                        style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
-                        {elevationRoomWalls.map(w => <option key={w.id} value={w.id}>{w.tag}</option>)}
                       </select>
                     </div>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
@@ -1693,15 +1679,11 @@ export default function PranchetaBIM() {
                   </button>
                   <button onClick={() => {
                     setCroquiViewMode("elevacao");
+                    if (elevationRoomOptions.includes(elevationRoomName)) return;
                     const walls = croquiLevel?.sketchElements?.filter(e => e.type === "wall") || [];
-                    const currentWall = walls.find(w => w.id === elevationWallId);
-                    const currentAdj = currentWall ? wallRoomAdjacency(croquiLevel, currentWall) : null;
-                    const roomStillValid = currentAdj && (currentAdj.faceA === elevationRoomName || currentAdj.faceB === elevationRoomName);
-                    if (currentWall && roomStillValid) return;
                     const firstWall = walls[0] || null;
                     const firstRoomName = firstWall ? wallRoomAdjacency(croquiLevel, firstWall).faceA : null;
                     setElevationRoomName(firstRoomName);
-                    setElevationWallId(firstWall?.id || null);
                   }} className="px-2.5 py-1 rounded text-[11px]"
                     style={{ ...heading, fontWeight: 600, background: croquiViewMode === "elevacao" ? C.gold : "transparent", color: croquiViewMode === "elevacao" ? "#141311" : C.mute }}>
                     Elevação
@@ -1734,7 +1716,21 @@ export default function PranchetaBIM() {
               )}
               {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
               {croquiViewMode === "elevacao" && croquiLevel && (
-                <ElevationView level={croquiLevel} wallId={elevationWallId} />
+                elevationRoomWalls.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* The 4 walls of a room, one under the other — not a
+                        one-at-a-time picker — so the whole ambiente is
+                        visible without extra taps. */}
+                    {elevationRoomWalls.map(w => (
+                      <div key={w.id}>
+                        <div className="text-[11px] font-semibold mb-1" style={{ color: C.gold }}>Parede {w.tag}</div>
+                        <ElevationView level={croquiLevel} wallId={w.id} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center text-sm py-10" style={{ color: C.mute }}>Selecione um ambiente com paredes para ver as elevações.</div>
+                )
               )}
               {croquiViewMode === "elevacao" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
             </div>
