@@ -221,7 +221,7 @@ function cotaGeometry(el, elements, scale) {
     const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
     const posUnits = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
     const halfWPx = (toNum(o.width, 0.8) / 2 / scale) * GRID;
-    const offsetPx = 16;
+    const offsetPx = 16 + toNum(el.offsetPx, 0);
     const cx = w.x1 + ux * posUnits + nx * offsetPx, cy = w.y1 + uy * posUnits + ny * offsetPx;
     return {
       x1: cx - ux * halfWPx, y1: cy - uy * halfWPx,
@@ -246,6 +246,14 @@ function cotaGeometry(el, elements, scale) {
     x1 -= ux * halfThickAPx; y1 -= uy * halfThickAPx;
     x2 += ux * halfThickBPx; y2 += uy * halfThickBPx;
   }
+  // Dragged (perpendicular to the measuring line, i.e. parallel to the two
+  // walls) so the whole dimension can slide along the room — the same
+  // freedom nearestParallelWallDims' own face-a-face pairs already have,
+  // now on a manually-placed one too.
+  const dragNx = -uy, dragNy = ux;
+  const offsetPx = toNum(el.offsetPx, 0);
+  x1 += dragNx * offsetPx; y1 += dragNy * offsetPx;
+  x2 += dragNx * offsetPx; y2 += dragNy * offsetPx;
   const halfSumM = wallThicknessM(a) / 2 + wallThicknessM(b) / 2;
   const distM = (axis.distPx / GRID) * scale;
   const valueM = el.mode === "face" ? Math.max(0, distM - halfSumM) : el.mode === "faceExt" ? distM + halfSumM : distM;
@@ -266,15 +274,26 @@ function wallSpanForRoomLocal(wall, room, scale) {
   const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
   const halfThickPx = (wallThicknessM(wall) / 2 / scale) * GRID;
   const tolerance = halfThickPx + GRID * 0.6;
-  const along = room.points
-    .map(p => {
-      const relX = p.x - wall.x1, relY = p.y - wall.y1;
-      return { pos: relX * ux + relY * uy, perp: Math.abs(relX * nx + relY * ny) };
-    })
-    .filter(p => p.perp <= tolerance)
-    .map(p => p.pos);
-  if (!along.length) return null;
-  return { startPx: Math.max(0, Math.min(...along)), endPx: Math.min(len, Math.max(...along)) };
+  // Edge-based, same reasoning as App.jsx's own wallSpanForRoom: only a
+  // room-polygon EDGE whose BOTH endpoints sit within tolerance actually
+  // runs alongside this wall — a lone distant vertex landing within
+  // tolerance by coincidence (a jog or notch elsewhere on the room) must
+  // not pull the span out past where the wall really borders this room.
+  const pts = room.points;
+  let minAlong = Infinity, maxAlong = -Infinity, found = false;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const relAx = a.x - wall.x1, relAy = a.y - wall.y1;
+    const relBx = b.x - wall.x1, relBy = b.y - wall.y1;
+    const perpA = relAx * nx + relAy * ny, perpB = relBx * nx + relBy * ny;
+    if (Math.abs(perpA) > tolerance || Math.abs(perpB) > tolerance) continue;
+    const posA = relAx * ux + relAy * uy, posB = relBx * ux + relBy * uy;
+    minAlong = Math.min(minAlong, posA, posB);
+    maxAlong = Math.max(maxAlong, posA, posB);
+    found = true;
+  }
+  if (!found) return null;
+  return { startPx: Math.max(0, Math.min(len, minAlong)), endPx: Math.min(len, Math.max(0, maxAlong)) };
 }
 function isWallExteriorLocal(wall, rooms, scale) {
   if (!rooms.length) return true;
@@ -810,6 +829,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // its own tiny "Apagar esta cota" popup, tapped open the same way a
   // face-a-face pair's edit box opens above.
   const [selectedExtDim, setSelectedExtDim] = useState(null);
+  // Drag state for the exterior perimeter chain/overall rows — same
+  // "perpendicular nudge, persisted elsewhere" shape as draggingDimLabel
+  // above, just written into level.autoDimStyles[key].offset (via onMeta)
+  // instead of a wall's own dimNudge, since a chain row isn't tied to any
+  // one wall pair.
+  const [draggingExtDim, setDraggingExtDim] = useState(null);
+  // Drag state for a manually-placed "cota" element's own perpendicular
+  // offset (el.offsetPx) — same shape again, this time persisted on the
+  // element itself via commitElements since a cota IS a real element.
+  const [draggingCota, setDraggingCota] = useState(null);
   const [dragSession, setDragSession] = useState(null);
   const [splittingWall, setSplittingWall] = useState(null);
   const pinch = useRef(null);
@@ -2120,6 +2149,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const hiddenAutoDims = level.hiddenAutoDims || [];
   function hideAutoDim(key) { onMeta({ hiddenAutoDims: [...hiddenAutoDims, key] }); }
   function restoreAutoDims() { onMeta({ hiddenAutoDims: [] }); }
+  // Same idea, for a per-instance color/font/offset override instead of a
+  // hide — "we can't have ONE color for every cota" — every automatic
+  // dimension already defaults sensibly (dimColor, or doorDimColor/
+  // windowDimColor for whichever ones are a door/window's own width), but
+  // any ONE of them can still be picked out and given its own look or
+  // nudged further from the wall, without touching the rest.
+  const autoDimStyles = level.autoDimStyles || {};
+  function autoDimStyle(key) { return autoDimStyles[key] || {}; }
+  function setAutoDimStyle(key, patch) {
+    onMeta({ autoDimStyles: { ...autoDimStyles, [key]: { ...autoDimStyle(key), ...patch } } });
+  }
+  function clearAutoDimStyle(key, field) {
+    const next = { ...autoDimStyle(key) };
+    delete next[field];
+    onMeta({ autoDimStyles: { ...autoDimStyles, [key]: next } });
+  }
 
   function luminariaDimensions(lm) {
     const walls = elements.filter(e => e.type === "wall");
@@ -2281,6 +2326,69 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setDraggingDimLabel(null);
     isDraggingRef.current = false;
   }
+  // Same perpendicular-nudge drag as beginDragDimLabel above, for the
+  // exterior chain/overall rows — a plain tap still opens the "Apagar esta
+  // cota" popup (via the pick() handler that starts it), a real drag just
+  // pushes that whole row further from, or closer to, the wall.
+  function beginDragExtDim(key, nx, ny, onTap, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    const startOffset = toNum(autoDimStyle(key).offset, 0);
+    setDraggingExtDim({ key, nx, ny, startP: svgPointRaw(e), startOffset, moved: false, onTap });
+  }
+  function onExtDimDragMove(e) {
+    if (!draggingExtDim) return;
+    const p = svgPointRaw(e);
+    const d = draggingExtDim;
+    if (!d.moved) {
+      if (dist(p, d.startP) < 3) return;
+      isDraggingRef.current = true;
+      setDraggingExtDim(s => (s ? { ...s, moved: true } : s));
+    }
+    const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
+    const deltaPerp = dxp * d.nx + dyp * d.ny;
+    const nextOffset = Math.max(-60, Math.min(150, d.startOffset + deltaPerp));
+    setAutoDimStyle(d.key, { offset: nextOffset });
+  }
+  function onExtDimDragEnd() {
+    if (draggingExtDim && !draggingExtDim.moved) draggingExtDim.onTap();
+    if (draggingExtDim && draggingExtDim.moved) justDraggedOnCanvas.current = true;
+    setDraggingExtDim(null);
+    isDraggingRef.current = false;
+  }
+  // Drag a manual "Cota" element's own offsetPx (see cotaGeometry) — a
+  // plain tap still selects it (opening its normal color/fonte panel
+  // below the canvas), a real drag nudges it perpendicular to its own
+  // measuring line instead.
+  function beginDragCota(el, nx, ny, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    if (multiSelectMode) { toggleSelectionMember(el.id); return; }
+    setDraggingCota({ id: el.id, nx, ny, startP: svgPointRaw(e), startOffset: toNum(el.offsetPx, 0), moved: false });
+  }
+  function onCotaDragMove(e) {
+    if (!draggingCota) return;
+    const p = svgPointRaw(e);
+    const d = draggingCota;
+    if (!d.moved) {
+      if (dist(p, d.startP) < 3) return;
+      pushHistory();
+      isDraggingRef.current = true;
+      setDraggingCota(s => (s ? { ...s, moved: true } : s));
+    }
+    const dxp = p.x - d.startP.x, dyp = p.y - d.startP.y;
+    const deltaPerp = dxp * d.nx + dyp * d.ny;
+    const nextOffset = Math.max(-80, Math.min(80, d.startOffset + deltaPerp));
+    commitElements(elements.map(el => el.id === d.id ? { ...el, offsetPx: nextOffset } : el));
+  }
+  function onCotaDragEnd() {
+    if (draggingCota && !draggingCota.moved) setSelectedId(draggingCota.id);
+    if (draggingCota && draggingCota.moved) justDraggedOnCanvas.current = true;
+    setDraggingCota(null);
+    isDraggingRef.current = false;
+  }
   function rotateRoomLabel(el) {
     const field = planMode === "forro" ? "ceilingLabelRotation" : "labelRotation";
     const next = ((el[field] || 0) + 90) % 360;
@@ -2334,6 +2442,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   function onCanvasPointerMove(e) {
     onLabelDragMove(e);
     onDimLabelDragMove(e);
+    onExtDimDragMove(e);
+    onCotaDragMove(e);
     if (!dragSession) return;
     if (e.cancelable) e.preventDefault();
     const p = svgPointRaw(e);
@@ -2384,7 +2494,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
   }
   function onCanvasPointerUp() {
-    onLabelDragEnd(); onDimLabelDragEnd();
+    onLabelDragEnd(); onDimLabelDragEnd(); onExtDimDragEnd(); onCotaDragEnd();
     // Dragging a wall or one of its endpoints commits on every move frame
     // (isDraggingRef suppresses the history push, not the commit itself),
     // so by the time the pointer lifts, `elements` already holds the
@@ -2979,28 +3089,54 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <button onClick={() => setEditingWallLen(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
         </div>
       )}
-      {editingParallelDim && (
-        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
-          <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Face a face (m):</span>
-          <input autoFocus type="text" inputMode="decimal" value={editingParallelDim.value} onChange={e => setEditingParallelDim({ ...editingParallelDim, value: e.target.value })}
-            onKeyDown={e => e.key === "Enter" && applyParallelDimEdit()}
-            className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
-          <button onClick={applyParallelDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
-          <button onClick={() => { hideAutoDim(editingParallelDim.key); setEditingParallelDim(null); }} title="Apagar esta cota"
-            className="p-1.5 rounded shrink-0" style={{ background: "rgba(193,84,63,0.16)", border: `1px solid ${C.bad}` }}><Trash2 size={13} color={C.bad} /></button>
-          <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
-        </div>
-      )}
-      {selectedExtDim && (
-        <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
-          <span className="text-[11px]" style={{ color: C.gold }}>{selectedExtDim.label}</span>
-          <button onClick={() => { hideAutoDim(selectedExtDim.key); setSelectedExtDim(null); }} title="Apagar esta cota"
-            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: "rgba(193,84,63,0.16)", color: C.bad, border: `1px solid ${C.bad}` }}>
-            <Trash2 size={12} /> Apagar
-          </button>
-          <button onClick={() => setSelectedExtDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
-        </div>
-      )}
+      {editingParallelDim && (() => {
+        const pwStyle = autoDimStyle(editingParallelDim.key);
+        return (
+          <div className="flex flex-col gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] shrink-0" style={{ color: C.gold }}>Face a face (m):</span>
+              <input autoFocus type="text" inputMode="decimal" value={editingParallelDim.value} onChange={e => setEditingParallelDim({ ...editingParallelDim, value: e.target.value })}
+                onKeyDown={e => e.key === "Enter" && applyParallelDimEdit()}
+                className="w-16 px-2 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.08)", color: C.chalk, border: `1px solid ${C.line}` }} />
+              <button onClick={applyParallelDimEdit} className="text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: C.gold, color: "#141311" }}>Aplicar</button>
+              <button onClick={() => { hideAutoDim(editingParallelDim.key); setEditingParallelDim(null); }} title="Apagar esta cota"
+                className="p-1.5 rounded shrink-0" style={{ background: "rgba(193,84,63,0.16)", border: `1px solid ${C.bad}` }}><Trash2 size={13} color={C.bad} /></button>
+              <button onClick={() => setEditingParallelDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]" style={{ color: C.mute }}>
+              <span>Cor:</span>
+              <input type="color" value={pwStyle.color || dimColor} onChange={e => setAutoDimStyle(editingParallelDim.key, { color: e.target.value })}
+                className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+              {pwStyle.color && <button onClick={() => clearAutoDimStyle(editingParallelDim.key, "color")} className="text-[10px] underline">usar cor padrão</button>}
+              <NumField value={toNum(pwStyle.fontSize, dimFontSize)} onChange={v => setAutoDimStyle(editingParallelDim.key, { fontSize: v })} unit="tam. fonte" w="w-10" />
+              {pwStyle.fontSize !== undefined && <button onClick={() => clearAutoDimStyle(editingParallelDim.key, "fontSize")} className="text-[10px] underline">padrão</button>}
+            </div>
+          </div>
+        );
+      })()}
+      {selectedExtDim && (() => {
+        const extStyle = autoDimStyle(selectedExtDim.key);
+        return (
+          <div className="flex flex-col gap-1.5 mb-1.5 p-1.5 rounded" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px]" style={{ color: C.gold }}>{selectedExtDim.label}</span>
+              <button onClick={() => { hideAutoDim(selectedExtDim.key); setSelectedExtDim(null); }} title="Apagar esta cota"
+                className="flex items-center gap-1 text-[11px] px-2 py-1 rounded ml-auto shrink-0" style={{ background: "rgba(193,84,63,0.16)", color: C.bad, border: `1px solid ${C.bad}` }}>
+                <Trash2 size={12} /> Apagar
+              </button>
+              <button onClick={() => setSelectedExtDim(null)} className="text-[11px] px-1 shrink-0" style={{ color: C.mute }}><X size={13} /></button>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]" style={{ color: C.mute }}>
+              <span>Cor:</span>
+              <input type="color" value={extStyle.color || selectedExtDim.defaultColor || dimColor} onChange={e => setAutoDimStyle(selectedExtDim.key, { color: e.target.value })}
+                className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+              {extStyle.color && <button onClick={() => clearAutoDimStyle(selectedExtDim.key, "color")} className="text-[10px] underline">usar cor padrão</button>}
+              <NumField value={toNum(extStyle.fontSize, selectedExtDim.defaultFontSize ?? dimFontSize)} onChange={v => setAutoDimStyle(selectedExtDim.key, { fontSize: v })} unit="tam. fonte" w="w-10" />
+              {extStyle.fontSize !== undefined && <button onClick={() => clearAutoDimStyle(selectedExtDim.key, "fontSize")} className="text-[10px] underline">padrão</button>}
+            </div>
+          </div>
+        );
+      })()}
       {hiddenAutoDims.length > 0 && (
         <div className="flex items-center gap-1.5 mb-1.5 p-1.5 rounded text-[10px]" style={{ background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>
           <span>{hiddenAutoDims.length} cota(s) automática(s) apagada(s) neste nível.</span>
@@ -3332,11 +3468,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const isEditing = editingParallelDim && editingParallelDim.movingWallId === movingWallId
             && editingParallelDim.fixedWallId === fixedWallId;
           const startEdit = () => { setSelectedId(movingWallId); setSelectedExtDim(null); setEditingParallelDim({ movingWallId, fixedWallId, value: faceDistM, key: pwKey }); };
+          const pwStyle = autoDimStyle(pwKey);
+          const pwColor = pwStyle.color || dimColor;
+          const pwFontSize = toNum(pwStyle.fontSize, dimFontSize);
           return (
             <g key={`pw-${d.aId}-${d.bId}`} opacity="0.9">
-              <line x1={fx1} y1={fy1} x2={fx2} y2={fy2} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
-              <line x1={fx1 - nx * 4} y1={fy1 - ny * 4} x2={fx1 + nx * 4} y2={fy1 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
-              <line x1={fx2 - nx * 4} y1={fy2 - ny * 4} x2={fx2 + nx * 4} y2={fy2 + ny * 4} stroke={dimColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={fx1} y1={fy1} x2={fx2} y2={fy2} stroke={pwColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={fx1 - nx * 4} y1={fy1 - ny * 4} x2={fx1 + nx * 4} y2={fy1 + ny * 4} stroke={pwColor} strokeWidth="0.9" pointerEvents="none" />
+              <line x1={fx2 - nx * 4} y1={fy2 - ny * 4} x2={fx2 + nx * 4} y2={fy2 + ny * 4} stroke={pwColor} strokeWidth="0.9" pointerEvents="none" />
               <g transform={dimDeg ? `rotate(${dimDeg} ${labelX} ${labelY})` : undefined}>
                 {editable && (
                   // Bigger than the visible pill below it — a touch-friendly
@@ -3347,13 +3486,13 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   // a plain tap (no movement) still falls through to
                   // startEdit via onDimLabelDragEnd, same as the room-name
                   // label pattern.
-                  <rect x={labelX - 22} y={labelY - 14} width="44" height="28" fill={isEditing ? dimColor : "transparent"} opacity={isEditing ? 0.3 : 1}
+                  <rect x={labelX - 22} y={labelY - 14} width="44" height="28" fill={isEditing ? pwColor : "transparent"} opacity={isEditing ? 0.3 : 1}
                     style={{ cursor: "move" }}
                     onMouseDown={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)}
                     onTouchStart={e => wallA && beginDragDimLabel(wallA, d.bId, ux, uy, nx, ny, d.overlapMin, d.overlapMax, faceLen, labelT, startEdit, e)} />
                 )}
                 {dimLabelOpaqueBg && <rect x={labelX - 15} y={labelY - 7} width="30" height="10" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
-                <text x={labelX} y={labelY + 1} fontSize="8" fill={dimColor} textAnchor="middle" fontWeight="600"
+                <text x={labelX} y={labelY + 1} fontSize={pwFontSize} fill={pwColor} textAnchor="middle" fontWeight="600"
                   style={{ pointerEvents: "none" }}>{faceDistM} m</text>
               </g>
             </g>
@@ -3363,29 +3502,32 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           elements.filter(e => (e.type !== "wall" && e.type !== "door" && e.type !== "window") || phaseVisible(e)), scale
         ).map(run => {
           const CHAIN_GAP = 16, OVERALL_GAP = 30;
-          const chainOffset = run.halfThickPx + CHAIN_GAP;
-          const overallOffset = chainOffset + OVERALL_GAP;
+          const chainRowKey = `extchainrow:${run.id}`, overallKey = `extoverall:${run.id}`;
+          // Both rows keep their own drag offset — moving the chain row
+          // in/out (to dodge a room label, say) never has to also drag the
+          // overall total row, and vice versa.
+          const chainOffset = run.halfThickPx + CHAIN_GAP + toNum(autoDimStyle(chainRowKey).offset, 0);
+          const overallOffset = run.halfThickPx + CHAIN_GAP + OVERALL_GAP + toNum(autoDimStyle(overallKey).offset, 0);
           let dimDeg = Math.atan2(run.uy, run.ux) * 180 / Math.PI;
           if (dimDeg > 90 || dimDeg < -90) dimDeg += 180;
           const at = (t, offset) => ({ x: run.x1 + run.ux * t + run.nx * offset, y: run.y1 + run.uy * t + run.ny * offset });
           const overallP1 = at(0, overallOffset), overallP2 = at(run.len, overallOffset), overallMid = at(run.len / 2, overallOffset);
           const totalM = (run.len / GRID) * scale;
-          const overallKey = `extoverall:${run.id}`;
-          const pick = (key, label) => (e) => {
-            if (tool !== "selecionar") return;
-            e.stopPropagation(); e.preventDefault();
+          const pick = (key, label, defaultColor, defaultFontSize) => () => {
             setEditingParallelDim(null);
-            setSelectedExtDim({ key, label });
+            setSelectedExtDim({ key, label, defaultColor, defaultFontSize });
           };
           return (
             <g key={`ext-${run.id}`} opacity="0.9">
               {/* Chain row: every corner-to-opening/opening-to-opening gap
                   along this exterior run — the "blue" annotations, hugging
                   right outside the wall. Each one can be tapped (while
-                  Selecionar is active) to bring up its own "Apagar esta
-                  cota" — these aren't stored elements, so hiding one just
-                  adds its key to the level's own hiddenAutoDims instead of
-                  deleting anything. */}
+                  Selecionar is active) to bring up its own color/fonte and
+                  "Apagar esta cota" — these aren't stored elements, so
+                  hiding/restyling one just keys into the level's own
+                  hiddenAutoDims/autoDimStyles instead of touching an
+                  element. Dragging any one of them (instead of just
+                  tapping) nudges the WHOLE chain row in/out together. */}
               {run.segs.map((seg, i) => {
                 const segKey = `extseg:${run.id}:${Math.round(seg.a)}:${Math.round(seg.b)}`;
                 if (hiddenAutoDims.includes(segKey)) return null;
@@ -3398,10 +3540,15 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 // the manual Cota tool already make — instead of every gap
                 // and every opening reading as one flat "cotas" color, which
                 // made it look like changing one swatch should recolor
-                // everything and never actually did.
-                const segColor = seg.kind === "door" ? doorDimColor : seg.kind === "window" ? windowDimColor : dimColor;
-                const segFontSize = seg.kind === "gap" ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
+                // everything and never actually did. Any one segment can
+                // still override its own color/size on top of that default.
+                const segDefaultColor = seg.kind === "door" ? doorDimColor : seg.kind === "window" ? windowDimColor : dimColor;
+                const segDefaultFontSize = seg.kind === "gap" ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
+                const segStyle = autoDimStyle(segKey);
+                const segColor = segStyle.color || segDefaultColor;
+                const segFontSize = toNum(segStyle.fontSize, segDefaultFontSize);
                 const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : "vão";
+                const onTap = pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`, segDefaultColor, segDefaultFontSize);
                 return (
                   <g key={i}>
                     <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={segColor} strokeWidth="0.75" pointerEvents="none" />
@@ -3411,8 +3558,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                       {dimLabelOpaqueBg && <rect x={mid.x - 13} y={mid.y - 6} width="26" height="9" fill="#DCDCD8" opacity="0.85" pointerEvents="none" />}
                       <text x={mid.x} y={mid.y + 1} fontSize={segFontSize} fill={segColor} textAnchor="middle" style={{ pointerEvents: "none" }}>{segM.toFixed(2)}</text>
                       {tool === "selecionar" && (
-                        <rect x={mid.x - 18} y={mid.y - 11} width="36" height="22" fill="transparent" style={{ cursor: "pointer" }}
-                          onMouseDown={pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`)} onTouchStart={pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`)} />
+                        <rect x={mid.x - 18} y={mid.y - 11} width="36" height="22" fill="transparent" style={{ cursor: "move" }}
+                          onMouseDown={e => beginDragExtDim(chainRowKey, run.nx, run.ny, onTap, e)} onTouchStart={e => beginDragExtDim(chainRowKey, run.nx, run.ny, onTap, e)} />
                       )}
                     </g>
                   </g>
@@ -3420,21 +3567,27 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               })}
               {/* Overall row: this run's whole length, corner to corner —
                   the "red" annotation, further out past the chain. */}
-              {!hiddenAutoDims.includes(overallKey) && (
-                <g>
-                  <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={dimColor} strokeWidth="1" pointerEvents="none" />
-                  <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={dimColor} strokeWidth="1" pointerEvents="none" />
-                  <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={dimColor} strokeWidth="1" pointerEvents="none" />
-                  <g transform={dimDeg ? `rotate(${dimDeg} ${overallMid.x} ${overallMid.y})` : undefined}>
-                    {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" pointerEvents="none" />}
-                    <text x={overallMid.x} y={overallMid.y + 1} fontSize={dimFontSize} fill={dimColor} textAnchor="middle" fontWeight="700" style={{ pointerEvents: "none" }}>{totalM.toFixed(2)} m</text>
-                    {tool === "selecionar" && (
-                      <rect x={overallMid.x - 20} y={overallMid.y - 12} width="40" height="24" fill="transparent" style={{ cursor: "pointer" }}
-                        onMouseDown={pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`)} onTouchStart={pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`)} />
-                    )}
+              {!hiddenAutoDims.includes(overallKey) && (() => {
+                const overallStyle = autoDimStyle(overallKey);
+                const overallColor = overallStyle.color || dimColor;
+                const overallFontSize = toNum(overallStyle.fontSize, dimFontSize);
+                const onTap = pick(overallKey, `Cota total · ${totalM.toFixed(2)} m`, dimColor, dimFontSize);
+                return (
+                  <g>
+                    <line x1={overallP1.x} y1={overallP1.y} x2={overallP2.x} y2={overallP2.y} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
+                    <line x1={overallP1.x - run.nx * 4} y1={overallP1.y - run.ny * 4} x2={overallP1.x + run.nx * 4} y2={overallP1.y + run.ny * 4} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
+                    <line x1={overallP2.x - run.nx * 4} y1={overallP2.y - run.ny * 4} x2={overallP2.x + run.nx * 4} y2={overallP2.y + run.ny * 4} stroke={overallColor} strokeWidth="1" pointerEvents="none" />
+                    <g transform={dimDeg ? `rotate(${dimDeg} ${overallMid.x} ${overallMid.y})` : undefined}>
+                      {dimLabelOpaqueBg && <rect x={overallMid.x - 16} y={overallMid.y - 7} width="32" height="10" fill="#DCDCD8" opacity="0.9" pointerEvents="none" />}
+                      <text x={overallMid.x} y={overallMid.y + 1} fontSize={overallFontSize} fill={overallColor} textAnchor="middle" fontWeight="700" style={{ pointerEvents: "none" }}>{totalM.toFixed(2)} m</text>
+                      {tool === "selecionar" && (
+                        <rect x={overallMid.x - 20} y={overallMid.y - 12} width="40" height="24" fill="transparent" style={{ cursor: "move" }}
+                          onMouseDown={e => beginDragExtDim(overallKey, run.nx, run.ny, onTap, e)} onTouchStart={e => beginDragExtDim(overallKey, run.nx, run.ny, onTap, e)} />
+                      )}
+                    </g>
                   </g>
-                </g>
-              )}
+                );
+              })()}
             </g>
           );
         })}
@@ -3463,6 +3616,10 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 <text x={g.labelX} y={g.labelY + 1} fontSize={fontSize} fill={isSel ? "#726F68" : color} textAnchor="middle" fontWeight="600"
                   fontFamily={el.fontFamily ? fontFamilyCss(el.fontFamily) : undefined}
                   style={{ pointerEvents: "none" }}>{el.mode === "espessura" ? `${Math.round(g.valueM * 100)} cm` : `${g.valueM.toFixed(2)} m`}</text>
+                {tool === "selecionar" && (
+                  <rect x={g.labelX - 20} y={g.labelY - 12} width="40" height="24" fill="transparent" style={{ cursor: "move" }}
+                    onMouseDown={e => beginDragCota(el, nx, ny, e)} onTouchStart={e => beginDragCota(el, nx, ny, e)} />
+                )}
               </g>
             </g>
           );

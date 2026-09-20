@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, TriangleAlert, Rotate3d, Box, Home,
-  DoorOpen, Scissors, Table2
+  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut
 } from "lucide-react";
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
@@ -265,15 +265,30 @@ export function wallSpanForRoom(level, wall, roomName) {
   const scale = toNum(level.sketchScale, 0.5);
   const halfThickPx = (wallThicknessM(wall) / 2 / scale) * GRID;
   const tolerance = halfThickPx + GRID * 0.6;
-  const along = room.points
-    .map(p => {
-      const relX = p.x - wall.x1, relY = p.y - wall.y1;
-      return { pos: relX * ux + relY * uy, perp: Math.abs(relX * nx + relY * ny) };
-    })
-    .filter(p => p.perp <= tolerance)
-    .map(p => p.pos);
-  if (!along.length) return null;
-  return { startPx: Math.max(0, Math.min(...along)), endPx: Math.min(len, Math.max(...along)) };
+  // Walk the room polygon's own EDGES (not just its individual vertices) —
+  // a room with a jog, a notch, or extra flood-traced points elsewhere on
+  // its outline can have a lone vertex that happens to land within
+  // tolerance of this wall's infinite line by coincidence, even though
+  // it's nowhere near the actual boundary edge that runs along this wall.
+  // Requiring BOTH endpoints of an edge to sit within tolerance (a real
+  // edge that actually runs alongside the wall) is what the old
+  // per-vertex check was really trying to approximate, and doesn't pick
+  // up that kind of unrelated far-away point.
+  const pts = room.points;
+  let minAlong = Infinity, maxAlong = -Infinity, found = false;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const relAx = a.x - wall.x1, relAy = a.y - wall.y1;
+    const relBx = b.x - wall.x1, relBy = b.y - wall.y1;
+    const perpA = relAx * nx + relAy * ny, perpB = relBx * nx + relBy * ny;
+    if (Math.abs(perpA) > tolerance || Math.abs(perpB) > tolerance) continue;
+    const posA = relAx * ux + relAy * uy, posB = relBx * ux + relBy * uy;
+    minAlong = Math.min(minAlong, posA, posB);
+    maxAlong = Math.max(maxAlong, posA, posB);
+    found = true;
+  }
+  if (!found) return null;
+  return { startPx: Math.max(0, Math.min(len, minAlong)), endPx: Math.min(len, Math.max(0, maxAlong)) };
 }
 export function wallsForRoom(level, roomName) {
   return (level.sketchElements || [])
@@ -575,6 +590,31 @@ export default function PranchetaBIM() {
   // here mirrors how the user actually thinks of a wall: as part of a room,
   // not a bare tag in a flat list.
   const [elevationRoomName, setElevationRoomName] = useState(null);
+  // Elevação has no pan/zoom of its own (unlike the Croqui's canvas) — each
+  // wall's own sheet just renders at a fixed size, so a room with several
+  // walls means a lot of scrolling to see them all. A simple CSS scale on
+  // the stack of sheets (not a full SVG viewBox rework, which ElevationView
+  // doesn't have) lets more of them fit on screen at once, the same way
+  // zooming out in the Croqui shows more of the plan.
+  const [elevationZoom, setElevationZoom] = useState(1);
+  // CSS transform:scale is purely visual — it doesn't shrink how much
+  // space the element reserves in the page's own layout/scroll flow, so
+  // zooming out would otherwise just leave a growing gap of empty space
+  // below a smaller-looking drawing instead of actually fitting more
+  // sheets on screen. Measuring the stack's own natural (unscaled) height
+  // and explicitly sizing its wrapper down to height*zoom is what makes
+  // the scroll area itself shrink along with the zoom.
+  const elevationScaleRef = useRef(null);
+  const [elevationNaturalHeight, setElevationNaturalHeight] = useState(0);
+  useEffect(() => {
+    const el = elevationScaleRef.current;
+    if (!el) return;
+    const measure = () => setElevationNaturalHeight(el.scrollHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [croquiViewMode, elevationRoomName]);
   const [phaseView2D, setPhaseView2D] = useState("tudo");
   // "Vistas" sits behind one button, closed by default — same pattern as
   // the Sincronização tab's DADOS DO IMÓVEL panel.
@@ -1778,6 +1818,12 @@ export default function PranchetaBIM() {
                         style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
                         {elevationRoomOptions.map(name => <option key={name} value={name}>{name}</option>)}
                       </select>
+                      <button onClick={() => setElevationZoom(z => Math.max(0.35, +(z - 0.15).toFixed(2)))} title="Diminuir (ver mais folhas)"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomOut size={13} color={C.chalk} /></button>
+                      <button onClick={() => setElevationZoom(1)} title="Zoom padrão" className="px-1.5 py-1.5 rounded text-[10px] shrink-0"
+                        style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>{Math.round(elevationZoom * 100)}%</button>
+                      <button onClick={() => setElevationZoom(z => Math.min(2, +(z + 0.15).toFixed(2)))} title="Aumentar"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomIn size={13} color={C.chalk} /></button>
                     </div>
                   ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
                 ) : (
@@ -1844,6 +1890,8 @@ export default function PranchetaBIM() {
               {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
               {croquiViewMode === "elevacao" && croquiLevel && (
                 elevationRoomWalls.length > 0 ? (
+                  <div style={{ height: elevationNaturalHeight ? elevationNaturalHeight * elevationZoom : undefined, overflow: "hidden" }}>
+                  <div ref={elevationScaleRef} style={{ transform: `scale(${elevationZoom})`, transformOrigin: "top left" }}>
                   <div className="space-y-4">
                     {/* The 4 walls of a room, one under the other — not a
                         one-at-a-time picker — so the whole ambiente is
@@ -1878,6 +1926,8 @@ export default function PranchetaBIM() {
                         </div>
                       );
                     })}
+                  </div>
+                  </div>
                   </div>
                 ) : (
                   <div className="text-center text-sm py-10" style={{ color: C.mute }}>Selecione um ambiente com paredes para ver as elevações.</div>

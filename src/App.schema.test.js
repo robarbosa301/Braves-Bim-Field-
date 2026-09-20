@@ -72,6 +72,31 @@ describe("wallSpanForRoom", () => {
     level.sketchElements = [];
     expect(wallSpanForRoom(level, wall, "Sala")).toBeNull();
   });
+
+  it("ignores a lone far-away vertex that happens to sit within tolerance of the wall's line, when no actual room EDGE runs along it there", () => {
+    // An L-shaped room whose real boundary along this wall only spans
+    // 3..200px — but a "finger" elsewhere in its own outline pokes a
+    // single vertex back up near the wall's line (x=350) without either
+    // of ITS OWN two edges actually running alongside the wall. The old
+    // per-vertex check picked up that lone coincidental vertex and
+    // stretched the span out to it; requiring a full edge (both endpoints
+    // within tolerance) correctly leaves it out.
+    const wideWall = { x1: 0, y1: 0, x2: 600, y2: 0, wallType: "Alvenaria 15cm" };
+    const lShapedLevel = {
+      sketchScale: "0.5",
+      sketchElements: [{
+        type: "room", name: "Sala",
+        points: [
+          { x: 3, y: 3 }, { x: 200, y: 3 }, { x: 200, y: 150 },
+          { x: 350, y: 150 }, { x: 350, y: 8 }, { x: 300, y: 150 }, { x: 3, y: 150 },
+        ],
+      }],
+    };
+    const span = wallSpanForRoom(lShapedLevel, wideWall, "Sala");
+    expect(span.startPx).toBeCloseTo(3, 0);
+    expect(span.endPx).toBeCloseTo(200, 0);
+    expect(span.endPx).toBeLessThan(300); // never stretched out to the stray finger vertex at 350
+  });
 });
 
 describe("wallsForRoom", () => {
