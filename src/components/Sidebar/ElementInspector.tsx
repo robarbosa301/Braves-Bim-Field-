@@ -40,6 +40,13 @@ export function ElementInspector({ elemento }: { elemento: BimElement }) {
           {elemento.cobrimentoProjeto !== undefined && `, cobrimento ${elemento.cobrimentoProjeto}cm`}.
         </p>
       )}
+      {elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
+        <p className="hint">
+          O pilar real continua mais {(elemento.continuaAteM * 100).toFixed(0)}cm até a viga baldrame (linha
+          tracejada no 3D) — esse trecho é um lance de pilar fora do escopo atual (fundação/arranque/baldrame),
+          não contabilizado nos quantitativos deste elemento.
+        </p>
+      )}
 
       <div className="tabs">
         <button className={aba === 'editar' ? 'active' : ''} onClick={() => setAba('editar')}>

@@ -297,6 +297,26 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
     }
   }
 
+  // O pilar de arranque, tal como modelado no IFC, para exatamente no nível de referência
+  // do pavimento — mas a viga baldrame nasce mais acima, no nível 0.00 real da obra
+  // (confirmado nos desenhos de forma: Elevação da viga = 150cm acima do nível -150 do
+  // pilar). Ou seja, na obra real existe um trecho de pilar entre o topo do arranque e a
+  // viga que não faz parte deste elemento no IFC (é outro lance de pilar, fora do escopo
+  // atual). Para não inflar o quantitativo de concreto/fôrma do arranque com um trecho que
+  // não é dele, isso NÃO estica a geometria — só guarda até onde a viga fica, pra o
+  // visualizador desenhar um indicador (tracejado) mostrando que o pilar continua ali.
+  const vigasImportadas = elementos.filter((e): e is VigaBaldrame => e.tipo === 'viga_baldrame');
+  if (vigasImportadas.length > 0) {
+    const topoVigasY = Math.max(...vigasImportadas.map((v) => v.posicao.y));
+    for (const el of elementos) {
+      if (el.tipo !== 'pilar_arranque') continue;
+      const topoAtualY = el.posicao.y + el.geometria.altura;
+      if (topoVigasY > topoAtualY + 0.01) {
+        (el as PilarArranque).continuaAteM = topoVigasY - topoAtualY;
+      }
+    }
+  }
+
   if (elementos.length > 0) {
     const minY = Math.min(...elementos.map((e) => e.posicao.y));
     for (const el of elementos) el.posicao.y -= minY;
