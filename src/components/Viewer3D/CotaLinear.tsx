@@ -1,8 +1,7 @@
 import { Line, Html } from '@react-three/drei';
 
 function formatarMedida(m: number): string {
-  if (m >= 1) return `${m.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m`;
-  return `${Math.round(m * 1000)} mm`;
+  return `${Math.round(m * 100)} cm`;
 }
 
 interface Props {
@@ -63,21 +62,14 @@ export function CotasCaixa({
   const folga = 0.12;
   return (
     <group>
-      <CotaLinear eixo="x" medidaM={comprimento} offset={[0, 0, -largura / 2 - folga]} rotulo="compr." cor={cor} />
-      <CotaLinear eixo="z" medidaM={largura} offset={[comprimento / 2 + folga, 0, 0]} rotulo="larg." cor={cor} />
-      <CotaLinear
-        eixo="y"
-        medidaM={altura}
-        offset={[comprimento / 2 + folga, altura / 2, -largura / 2 - folga]}
-        rotulo="alt."
-        cor={cor}
-      />
+      <CotaLinear eixo="x" medidaM={comprimento} offset={[0, 0, -largura / 2 - folga]} cor={cor} />
+      <CotaLinear eixo="z" medidaM={largura} offset={[comprimento / 2 + folga, 0, 0]} cor={cor} />
+      <CotaLinear eixo="y" medidaM={altura} offset={[comprimento / 2 + folga, altura / 2, -largura / 2 - folga]} cor={cor} />
       {espessuraTabua !== undefined && (
         <CotaLinear
           eixo="z"
           medidaM={espessuraTabua}
           offset={[-comprimento / 2 - folga, altura + folga, largura / 2 + espessuraTabua / 2]}
-          rotulo="esp. tábua"
           cor={cor}
         />
       )}

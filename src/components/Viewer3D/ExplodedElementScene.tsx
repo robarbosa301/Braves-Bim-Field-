@@ -149,7 +149,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
                   ? [geometria.comprimento / 2 + 0.12, 0.1, 0]
                   : [0, 0.1, -geometria.largura / 2 - 0.12]
             }
-            rotulo={`⌀${n(grupo.diametroMm, 1)}mm · linear`}
+            rotulo={`⌀${n(grupo.diametroMm, 1)}mm`}
           />
         </>
       ),
