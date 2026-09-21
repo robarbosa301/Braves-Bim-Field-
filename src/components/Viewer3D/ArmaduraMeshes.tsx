@@ -76,7 +76,15 @@ interface PilarProps {
   cor: string;
 }
 
-/** Barras longitudinais ao redor do perímetro + estribos ao longo da altura do pilar. */
+/** Comprimento visual do "pé" do gancho de ancoragem (só ilustrativo — não é uma cota de projeto). */
+const GANCHO_ANCORAGEM_M = 0.12;
+
+/**
+ * Barras longitudinais ao redor do perímetro + estribos ao longo da altura do pilar, mais a
+ * ancoragem na sapata: cada barra longitudinal desce `comprimentoAncoragem` abaixo da base do
+ * pilar (dentro do volume da sapata) e faz um gancho em L na ponta — é essa ancoragem que
+ * amarra o pilar de arranque à armadura da sapata.
+ */
 export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
   const cobM = armadura.cobrimento / 100;
   // w = extensão em X, d = extensão em Z — mesma convenção do ConcretoBox (X=comprimento, Z=largura).
@@ -84,6 +92,7 @@ export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
   const d = geometria.largura - 2 * cobM;
   const raio = armadura.longitudinais.diametro / 2000;
   const pontos = pontosPerimetro(armadura.longitudinais.quantidade, w, d);
+  const ancoragemM = armadura.comprimentoAncoragem / 100;
 
   const qtdEstribos = Math.max(1, Math.floor((geometria.altura * 100) / armadura.estribo.espacamento) + 1);
   const alturasEstribo = posicoesEquidistantes(qtdEstribos, geometria.altura).map((v) => v + geometria.altura / 2);
@@ -95,14 +104,34 @@ export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
     [-w / 2, 0, -d / 2],
   ];
 
+  const alturaTotalBarra = geometria.altura + ancoragemM;
+  const centroYBarra = geometria.altura - alturaTotalBarra / 2; // = (altura - ancoragemM) / 2
+
   return (
     <group>
-      {pontos.map(([x, z], i) => (
-        <mesh key={`long-${i}`} position={[x, geometria.altura / 2, z]}>
-          <cylinderGeometry args={[raio, raio, geometria.altura, 8]} />
-          <meshStandardMaterial color={cor} />
-        </mesh>
-      ))}
+      {pontos.map(([x, z], i) => {
+        const raioRadial = Math.hypot(x, z) || 1;
+        const dirX = x / raioRadial;
+        const dirZ = z / raioRadial;
+        const yPe = -ancoragemM;
+        return (
+          <group key={`long-${i}`}>
+            <mesh position={[x, centroYBarra, z]}>
+              <cylinderGeometry args={[raio, raio, alturaTotalBarra, 8]} />
+              <meshStandardMaterial color={cor} />
+            </mesh>
+            {/* gancho em L: dobra horizontal na ponta embutida na sapata */}
+            <Line
+              points={[
+                [x, yPe, z],
+                [x + dirX * GANCHO_ANCORAGEM_M, yPe, z + dirZ * GANCHO_ANCORAGEM_M],
+              ]}
+              color={cor}
+              lineWidth={2}
+            />
+          </group>
+        );
+      })}
       {alturasEstribo.map((y, i) => (
         <Line key={`estribo-${i}`} points={retanguloEstribo.map(([x, , z]) => [x, y, z])} color={cor} lineWidth={2} />
       ))}
