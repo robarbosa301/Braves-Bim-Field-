@@ -7,6 +7,7 @@ import { ConcretoBox } from './ConcretoBox';
 import { FormaBox } from './FormaBox';
 import { TroncoConcreto, TroncoForma } from './TroncoMesh';
 import { GrupoArmaduraVisual } from './GrupoArmaduraVisual';
+import { CotaLinear, CotasCaixa } from './CotaLinear';
 import { corArmadura, corConcreto, corForma } from './statusColor';
 
 function n(v: number, casas = 2) {
@@ -58,12 +59,17 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   const concretoTronco = troncoCalc ? calcularConcreto(troncoCalc.volumeM3, elemento.traco) : undefined;
 
   // Monta a pilha de níveis, de baixo pra cima: fôrma(s) -> cada grupo de armadura -> concreto(s).
-  type Nivel = { altura: number; conteudo: ReactNode; rotulo: ReactNode };
+  type Nivel = { altura: number; conteudo: ReactNode; rotulo: ReactNode; gapExtra?: number };
   const niveis: Nivel[] = [];
 
   niveis.push({
     altura: geometria.altura,
-    conteudo: <FormaBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corForma(elemento)} explode={0.1} />,
+    conteudo: (
+      <>
+        <FormaBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corForma(elemento)} explode={0.1} />
+        <CotasCaixa comprimento={geometria.comprimento} largura={geometria.largura} altura={geometria.altura} />
+      </>
+    ),
     rotulo: (
       <Rotulo
         posicao={[xRotulo, geometria.altura / 2, 0]}
@@ -76,7 +82,12 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   if (tronco && troncoCalc) {
     niveis.push({
       altura: tronco.altura,
-      conteudo: <TroncoForma comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corForma(elemento)} />,
+      conteudo: (
+        <>
+          <TroncoForma comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corForma(elemento)} />
+          <CotasCaixa comprimento={tronco.comprimento} largura={tronco.largura} altura={tronco.altura} />
+        </>
+      ),
       rotulo: (
         <Rotulo
           posicao={[xRotulo, tronco.altura / 2, 0]}
@@ -88,21 +99,41 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   }
 
   for (const grupo of q.armadura.grupos) {
+    const barraCorreEmZ = grupo.descricao.toLowerCase().includes('direção z');
     niveis.push({
       altura: slotAltura,
+      // grupos de armadura ficam um pouco mais espaçados entre si que fôrma/concreto — ajuda a
+      // distinguir camadas parecidas, como as duas direções da malha inferior da sapata.
+      gapExtra: gap * 0.6,
       conteudo: (
-        <GrupoArmaduraVisual
-          grupo={grupo}
-          comprimentoDisponivel={geometria.comprimento}
-          larguraDisponivel={geometria.largura}
-          cor={corArmadura(elemento)}
-        />
+        <>
+          <GrupoArmaduraVisual
+            grupo={grupo}
+            comprimentoDisponivel={geometria.comprimento}
+            larguraDisponivel={geometria.largura}
+            cor={corArmadura(elemento)}
+          />
+          <CotaLinear
+            eixo={barraCorreEmZ ? 'z' : 'x'}
+            medidaM={grupo.comprimentoUnitarioM}
+            offset={
+              barraCorreEmZ
+                ? [geometria.comprimento / 2 + 0.12, 0.1, 0]
+                : [0, 0.1, -geometria.largura / 2 - 0.12]
+            }
+            rotulo={`⌀${n(grupo.diametroMm, 1)}mm ·`}
+          />
+        </>
       ),
       rotulo: (
         <Rotulo
           posicao={[xRotulo, 0, 0]}
           titulo={grupo.descricao}
-          linhas={[`${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`, `${n(grupo.comprimentoUnitarioM)} m/un · ${n(grupo.pesoKg, 1)} kg total`]}
+          linhas={[
+            `${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`,
+            `${n(grupo.comprimentoUnitarioM)} m/un`,
+            `${n(grupo.comprimentoTotalM)} m total · ${n(grupo.pesoKg, 1)} kg`,
+          ]}
         />
       ),
     });
@@ -110,7 +141,12 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
 
   niveis.push({
     altura: geometria.altura,
-    conteudo: <ConcretoBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corConcreto(elemento)} />,
+    conteudo: (
+      <>
+        <ConcretoBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corConcreto(elemento)} />
+        <CotasCaixa comprimento={geometria.comprimento} largura={geometria.largura} altura={geometria.altura} />
+      </>
+    ),
     rotulo: (
       <Rotulo
         posicao={[xRotulo, geometria.altura / 2, 0]}
@@ -127,7 +163,12 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   if (tronco && troncoCalc && concretoTronco) {
     niveis.push({
       altura: tronco.altura,
-      conteudo: <TroncoConcreto comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corConcreto(elemento)} />,
+      conteudo: (
+        <>
+          <TroncoConcreto comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corConcreto(elemento)} />
+          <CotasCaixa comprimento={tronco.comprimento} largura={tronco.largura} altura={tronco.altura} />
+        </>
+      ),
       rotulo: (
         <Rotulo
           posicao={[xRotulo, tronco.altura / 2, 0]}
@@ -145,7 +186,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   let yAtual = 0;
   const posicionados = niveis.map((nivel) => {
     const y = yAtual;
-    yAtual += nivel.altura + gap;
+    yAtual += nivel.altura + gap + (nivel.gapExtra ?? 0);
     return { ...nivel, y };
   });
 

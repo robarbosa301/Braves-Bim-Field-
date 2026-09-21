@@ -419,6 +419,18 @@ button:disabled {
   font-size: 12.5px;
 }
 
+.cota-3d {
+  background: rgba(14, 30, 36, 0.9);
+  border: 1px solid #1f6a7a;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #a5f3fc;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .placeholder {
   color: #8a919c;
   font-size: 0.85rem;

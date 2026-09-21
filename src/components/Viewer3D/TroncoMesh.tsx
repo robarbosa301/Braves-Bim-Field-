@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { DoubleSide } from 'three';
+import { Edges } from '@react-three/drei';
 import { criarGeometriaTronco } from './frustumGeometry';
 
 const ESPESSURA_TABUA = 0.025; // m, mesma espessura usada em FormaBox
@@ -24,6 +25,8 @@ export function TroncoConcreto({ comprimentoBase, larguraBase, comprimentoTopo, 
   return (
     <mesh geometry={geo} position={[0, y0, 0]} castShadow receiveShadow>
       <meshStandardMaterial color={cor} side={DoubleSide} />
+      {/* aresta sempre visível — o afunilamento do tronco é sutil e some no volume geral da obra sem ela */}
+      <Edges color="#000000" opacity={0.35} transparent scale={1} />
     </mesh>
   );
 }
@@ -45,6 +48,7 @@ export function TroncoForma({ comprimentoBase, larguraBase, comprimentoTopo, lar
   return (
     <mesh geometry={geo} position={[0, y0, 0]}>
       <meshStandardMaterial color={cor} side={DoubleSide} />
+      <Edges color="#000000" opacity={0.35} transparent scale={1} />
     </mesh>
   );
 }

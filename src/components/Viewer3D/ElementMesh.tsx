@@ -80,6 +80,7 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
         <mesh position={[0, altura + elemento.continuaAteM / 2, 0]}>
           <boxGeometry args={[comprimento, elemento.continuaAteM, largura]} />
           <meshStandardMaterial color="#6f7580" transparent opacity={0.55} />
+          <Edges color="#ffcc00" opacity={0.7} transparent scale={1} />
         </mesh>
       )}
     </group>

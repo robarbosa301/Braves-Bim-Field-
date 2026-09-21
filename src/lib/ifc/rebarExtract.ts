@@ -137,3 +137,89 @@ export function agruparBarras(barras: BarraInfo[]): GrupoArmaduraImportada[] {
   }
   return resultado;
 }
+
+export interface GrupoPorDirecao {
+  direcao: 'comprimento' | 'largura';
+  quantidade: number;
+  diametroMm: number;
+  comprimentoMedioM: number;
+}
+
+function paraGrupoPorDirecao(lista: BarraInfo[], direcao: GrupoPorDirecao['direcao']): GrupoPorDirecao {
+  return {
+    direcao,
+    quantidade: lista.length,
+    diametroMm: lista.reduce((a, b) => a + b.diametroMm, 0) / lista.length,
+    comprimentoMedioM: lista.reduce((a, b) => a + b.comprimentoCm, 0) / lista.length / 100,
+  };
+}
+
+/**
+ * Separa as barras da malha inferior/superior da sapata pelas suas duas direções reais (o IFC do
+ * Eberick soma X e Y num único grupo "Sapatas (inferior)", sem preservar as posições N do projeto
+ * — ex. N6/N7 — então a única forma de recuperar as duas camadas é pelo comprimento de cada barra:
+ * numa sapata retangular, as barras que correm ao longo do comprimento medem diferente das que
+ * correm ao longo da largura). Agrupa por comprimento arredondado ao cm e funde clusters a menos
+ * de 3cm um do outro (ruído numérico).
+ *
+ * O comprimento real de cada barra inclui dobras/folgas que a gente não modela com exatidão, então
+ * casar cada cluster com a dimensão de referência mais próxima em valor absoluto não é confiável
+ * (uma barra pode "sobrar" ou "faltar" alguns cm por causa disso). O que é sempre verdade é a
+ * ORDEM: a barra que corre na maior dimensão da sapata é sempre a mais longa das duas. Por isso,
+ * com exatamente 2 clusters, casamos pela ordem (mais curta → menor dimensão, mais longa → maior
+ * dimensão) em vez do valor absoluto. Sapata quadrada (só um cluster) devolve um único grupo.
+ */
+export function separarPorDirecao(
+  barras: BarraInfo[],
+  comprimentoRefCm: number,
+  larguraRefCm: number,
+): GrupoPorDirecao[] {
+  if (barras.length === 0) return [];
+  const porComprimento = new Map<number, BarraInfo[]>();
+  for (const b of barras) {
+    const chave = Math.round(b.comprimentoCm);
+    const lista = porComprimento.get(chave) ?? [];
+    lista.push(b);
+    porComprimento.set(chave, lista);
+  }
+  const clusters = [...porComprimento.entries()].sort((a, b) => a[0] - b[0]);
+
+  const fundidos: BarraInfo[][] = [];
+  for (const [, lista] of clusters) {
+    const ultimo = fundidos[fundidos.length - 1];
+    if (ultimo) {
+      const mediaUltimo = ultimo.reduce((a, b) => a + b.comprimentoCm, 0) / ultimo.length;
+      const mediaAtual = lista.reduce((a, b) => a + b.comprimentoCm, 0) / lista.length;
+      if (Math.abs(mediaAtual - mediaUltimo) < 3) {
+        ultimo.push(...lista);
+        continue;
+      }
+    }
+    fundidos.push([...lista]);
+  }
+
+  if (fundidos.length === 1) {
+    const mediaCm = fundidos[0].reduce((a, b) => a + b.comprimentoCm, 0) / fundidos[0].length;
+    const direcao: GrupoPorDirecao['direcao'] =
+      Math.abs(mediaCm - comprimentoRefCm) <= Math.abs(mediaCm - larguraRefCm) ? 'comprimento' : 'largura';
+    return [paraGrupoPorDirecao(fundidos[0], direcao)];
+  }
+
+  if (fundidos.length === 2) {
+    const ordenados = [...fundidos].sort(
+      (a, b) => a.reduce((s, x) => s + x.comprimentoCm, 0) / a.length - b.reduce((s, x) => s + x.comprimentoCm, 0) / b.length,
+    );
+    const [menorDim, maiorDim]: GrupoPorDirecao['direcao'][] =
+      comprimentoRefCm <= larguraRefCm ? ['comprimento', 'largura'] : ['largura', 'comprimento'];
+    return [paraGrupoPorDirecao(ordenados[0], menorDim), paraGrupoPorDirecao(ordenados[1], maiorDim)];
+  }
+
+  // mais de 2 clusters é incomum (ex. sapata com barras de reforço extra) — casa cada um pela
+  // proximidade absoluta com uma das duas dimensões, como aproximação razoável.
+  return fundidos.map((lista) => {
+    const mediaCm = lista.reduce((a, b) => a + b.comprimentoCm, 0) / lista.length;
+    const direcao: GrupoPorDirecao['direcao'] =
+      Math.abs(mediaCm - comprimentoRefCm) <= Math.abs(mediaCm - larguraRefCm) ? 'comprimento' : 'largura';
+    return paraGrupoPorDirecao(lista, direcao);
+  });
+}

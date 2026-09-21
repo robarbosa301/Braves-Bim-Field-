@@ -6,7 +6,7 @@ import { pesoLinearKgM } from '../steel';
 import { asNum, asRefId, asStr, getArgs, getType, parseStepModel, type Arg, type StepModel } from './stepParser';
 import { applyTransform, resolvePlacement, type Transform } from './placement';
 import { extrairGeometria, extrairGeometriaSapata } from './geometryExtract';
-import { agruparBarras, parseReinforcingBar, type BarraInfo, type GrupoArmaduraImportada } from './rebarExtract';
+import { agruparBarras, parseReinforcingBar, separarPorDirecao, type BarraInfo, type GrupoArmaduraImportada } from './rebarExtract';
 
 export interface Pavimento {
   id: number;
@@ -119,6 +119,24 @@ function converterGrupo(g: GrupoArmaduraImportada): GrupoArmaduraResultado {
   };
 }
 
+function converterGrupoDirecao(
+  categoria: string,
+  rotuloDirecao: string,
+  d: { quantidade: number; diametroMm: number; comprimentoMedioM: number },
+): GrupoArmaduraResultado {
+  const comprimentoTotalM = d.quantidade * d.comprimentoMedioM;
+  const pesoKg = comprimentoTotalM * pesoLinearKgM(d.diametroMm);
+  return {
+    descricao: `${categoria} — ${rotuloDirecao} (⌀${d.diametroMm.toFixed(1)}mm)`,
+    quantidade: d.quantidade,
+    diametroMm: d.diametroMm,
+    comprimentoUnitarioM: d.comprimentoMedioM,
+    comprimentoTotalM,
+    pesoKg,
+    volumeM3: pesoKg / DENSIDADE_ACO_KG_M3,
+  };
+}
+
 function buscarGrupo(
   grupos: GrupoArmaduraImportada[],
   tag: string,
@@ -190,13 +208,36 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
       }
       const posicao = posicaoMundo(model, objectPlacementId, geoSapata.centroBaseLocal, placementCache);
 
-      const gruposSapata = gruposArmadura.filter((g) => g.tag === tag && g.categoria.toLowerCase().includes('sapata'));
-      const totalBarras = gruposSapata.reduce((a, g) => a + g.quantidade, 0);
-      const diametro = gruposSapata[0]?.diametroMm ?? 10;
-      const qtdX = Math.max(1, Math.round(totalBarras / 2));
-      const qtdY = Math.max(1, totalBarras - qtdX);
       const comprimentoM = geoSapata.base.comprimento / 100;
       const larguraM = geoSapata.base.largura / 100;
+
+      // O IFC do Eberick soma as duas direções da malha (ex. N6 e N7 no desenho) num único grupo
+      // "Sapatas (inferior)" — sem os números de posição de projeto. Separamos pela direção real
+      // de cada barra (comprimento dela bate com o comprimento ou com a largura da sapata), que é
+      // a única informação disponível no IFC para reconstruir as duas camadas.
+      const barrasSapataPorCategoria = new Map<string, BarraInfo[]>();
+      for (const b of barras) {
+        if (b.tag !== tag || !b.categoria.toLowerCase().includes('sapata')) continue;
+        const lista = barrasSapataPorCategoria.get(b.categoria) ?? [];
+        lista.push(b);
+        barrasSapataPorCategoria.set(b.categoria, lista);
+      }
+      const armaduraImportadaSapata: GrupoArmaduraResultado[] = [];
+      let direcoesMalhaPrincipal: ReturnType<typeof separarPorDirecao> = [];
+      for (const [categoria, lista] of barrasSapataPorCategoria) {
+        const direcoes = separarPorDirecao(lista, comprimentoM * 100 - 2 * cobrimento, larguraM * 100 - 2 * cobrimento);
+        if (direcoesMalhaPrincipal.length === 0) direcoesMalhaPrincipal = direcoes;
+        for (const d of direcoes) {
+          const rotuloDirecao = d.direcao === 'comprimento' ? 'direção X — comprimento' : 'direção Z — largura';
+          armaduraImportadaSapata.push(converterGrupoDirecao(categoria, rotuloDirecao, d));
+        }
+      }
+
+      const dirX = direcoesMalhaPrincipal.find((d) => d.direcao === 'comprimento');
+      const dirY = direcoesMalhaPrincipal.find((d) => d.direcao === 'largura');
+      const diametro = dirX?.diametroMm ?? dirY?.diametroMm ?? 10;
+      const qtdX = Math.max(1, dirX?.quantidade ?? Math.ceil((direcoesMalhaPrincipal[0]?.quantidade ?? 2) / 2));
+      const qtdY = Math.max(1, dirY?.quantidade ?? Math.floor((direcoesMalhaPrincipal[0]?.quantidade ?? 2) / 2));
       const espX = qtdX > 1 ? (larguraM * 100 - 2 * cobrimento) / (qtdX - 1) : 15;
       const espY = qtdY > 1 ? (comprimentoM * 100 - 2 * cobrimento) / (qtdY - 1) : 15;
 
@@ -225,7 +266,7 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
           cobrimento,
           gancho: 10,
         },
-        armaduraImportada: gruposSapata.map(converterGrupo),
+        armaduraImportada: armaduraImportadaSapata,
       };
       elementos.push(sapata);
       continue;
