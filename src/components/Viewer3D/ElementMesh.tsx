@@ -5,7 +5,7 @@ import { FormaBox } from './FormaBox';
 import { TroncoConcreto, TroncoForma } from './TroncoMesh';
 import { ArmaduraPilarMesh, ArmaduraSapataMesh, ArmaduraVigaMesh } from './ArmaduraMeshes';
 import { corArmadura, corConcreto, corForma } from './statusColor';
-import { Edges, Line } from '@react-three/drei';
+import { Edges } from '@react-three/drei';
 
 interface Props {
   elemento: BimElement;
@@ -76,18 +76,11 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
       {camadas.has('armadura') && elemento.tipo === 'viga_baldrame' && (
         <ArmaduraVigaMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
       )}
-      {elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
-        <Line
-          points={[
-            [0, altura, 0],
-            [0, altura + elemento.continuaAteM, 0],
-          ]}
-          color="#8a919c"
-          dashed
-          dashSize={0.05}
-          gapSize={0.04}
-          lineWidth={1.5}
-        />
+      {camadas.has('concreto') && elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
+        <mesh position={[0, altura + elemento.continuaAteM / 2, 0]}>
+          <boxGeometry args={[comprimento, elemento.continuaAteM, largura]} />
+          <meshStandardMaterial color="#6f7580" transparent opacity={0.55} />
+        </mesh>
       )}
     </group>
   );
