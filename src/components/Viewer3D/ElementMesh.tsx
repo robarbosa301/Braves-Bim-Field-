@@ -26,8 +26,23 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
     onSelecionar(elemento.id);
   }
 
+  // Altura total da peça (base + tronco + trecho de continuação, quando existem) — o destaque de
+  // seleção envolve a peça inteira, não só o bloco da base, e fica visível em qualquer combinação
+  // de camadas ligadas (não depende da camada Concreto estar ativa).
+  const alturaTotalDestaque = altura + (tronco?.altura ?? 0) + (elemento.tipo === 'pilar_arranque' ? elemento.continuaAteM ?? 0 : 0);
+  const folgaDestaque = 0.03;
+
   return (
     <group position={[elemento.posicao.x, elemento.posicao.y, elemento.posicao.z]} onClick={handleClick}>
+      {selecionado && (
+        <mesh position={[0, alturaTotalDestaque / 2, 0]}>
+          <boxGeometry
+            args={[comprimento + folgaDestaque, alturaTotalDestaque + folgaDestaque, largura + folgaDestaque]}
+          />
+          <meshBasicMaterial visible={false} />
+          <Edges color="#ffd23f" scale={1} />
+        </mesh>
+      )}
       {camadas.has('concreto') && (
         <group>
           <ConcretoBox comprimento={comprimento} altura={altura} largura={largura} cor={corConcreto(elemento)} />
@@ -41,13 +56,6 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
               y0={altura}
               cor={corConcreto(elemento)}
             />
-          )}
-          {selecionado && (
-            <mesh position={[0, altura / 2, 0]}>
-              <boxGeometry args={[comprimento, altura, largura]} />
-              <meshBasicMaterial visible={false} />
-              <Edges color="#ffcc00" scale={1.002} />
-            </mesh>
           )}
         </group>
       )}

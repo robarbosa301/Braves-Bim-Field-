@@ -455,3 +455,72 @@ button:disabled {
   padding: 20px 10px;
   text-align: center;
 }
+
+.painel-resumo {
+  padding: 4px 2px;
+}
+
+.painel-resumo h3 {
+  margin: 4px 0 2px;
+  color: #e7eaee;
+  font-size: 1rem;
+}
+
+.resumo-legenda {
+  color: #8a919c;
+  font-size: 0.78rem;
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
+
+.painel-resumo table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.painel-resumo th {
+  text-align: right;
+  color: #8a919c;
+  font-weight: 500;
+  line-height: 1.3;
+  padding: 4px 3px;
+  border-bottom: 1px solid #2b2f36;
+}
+
+.painel-resumo th:first-child,
+.painel-resumo td:first-child {
+  text-align: left;
+  width: 24%;
+}
+
+.painel-resumo td {
+  text-align: right;
+  color: #cbd2db;
+  padding: 6px 3px;
+  border-bottom: 1px solid #24272d;
+  overflow-wrap: break-word;
+}
+
+.painel-resumo .col-titulo {
+  color: #e7eaee;
+}
+
+.painel-resumo .col-qtd {
+  color: #8a919c;
+  font-size: 0.72rem;
+}
+
+.painel-resumo .linha-destaque td {
+  color: #7fa6f5;
+  font-weight: 600;
+  border-top: 1px solid #3a3f47;
+  border-bottom: none;
+}
+
+.resumo-nota {
+  color: #8a919c;
+  font-size: 0.78rem;
+  margin-top: 10px;
+}

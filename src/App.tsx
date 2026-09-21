@@ -3,6 +3,7 @@ import { useProjectStore } from './store/useProjectStore';
 import { Viewer } from './components/Viewer3D/Viewer';
 import { ElementList } from './components/Sidebar/ElementList';
 import { ElementInspector } from './components/Sidebar/ElementInspector';
+import { PainelResumo } from './components/Sidebar/PainelResumo';
 import { LayerToggle } from './components/LayerToggle';
 import type { CamadaVisivel } from './types';
 
@@ -62,11 +63,7 @@ export default function App() {
         </main>
 
         <aside className="sidebar-right">
-          {elementoSelecionado ? (
-            <ElementInspector elemento={elementoSelecionado} />
-          ) : (
-            <div className="placeholder">Selecione um elemento na lista ou clique nele no visualizador 3D.</div>
-          )}
+          {elementoSelecionado ? <ElementInspector elemento={elementoSelecionado} /> : <PainelResumo elementos={elementos} />}
         </aside>
       </div>
     </div>

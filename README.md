@@ -22,7 +22,7 @@ Abre em `http://localhost:5173`. Funciona em qualquer navegador moderno, incluin
    - **Fôrma**: taipais de madeira nas faces laterais.
    - **Concreto**: o volume de concreto, colorido em cinza (previsto) ou verde (concretado).
    - **Armadura**: barras longitudinais/malha e estribos, representados na quantidade calculada.
-   - Clicar em um elemento no viewer (ou na lista) seleciona-o e abre o painel de detalhes.
+   - Clicar em um elemento no viewer (ou na lista) seleciona-o, abre o painel de detalhes, destaca a peça inteira com um contorno amarelo (independente de quais camadas estão ligadas) e gira a câmera pra centralizar nela — importante quando o elemento selecionado está fora do enquadramento atual.
 3. **Quantitativos** (aba "Quantitativos" do painel direito), recalculados ao vivo a partir da geometria:
    - **Fôrma**: dimensões de cada face e área total (m²).
    - **Concreto**: volume (m³), sacos de cimento, m³/kg de areia e brita, litros de água — a partir do traço informado.
@@ -39,6 +39,7 @@ Abre em `http://localhost:5173`. Funciona em qualquer navegador moderno, incluin
    Cada nível mostra por padrão só uma etiqueta compacta com a identificação da peça (ex. "S6 · Fôrma — bloco da base") — clicar na peça ou na etiqueta abre um card com os números completos (dimensões, volume, sacos de cimento, m³ de areia/brita, quantidade/diâmetro/comprimento unitário e **total**/peso das barras), afastado do modelo e ligado por uma linha de chamada tracejada, pra não atrapalhar a visualização do elemento em si. **Cotas 3D** (linhas de medida com as pontas marcadas, estilo desenho técnico) ficam sempre visíveis sobre o próprio modelo, mostrando comprimento/largura/altura/espessura de cada bloco e diâmetro/comprimento de cada grupo de armadura. Estribos (de pilar e de viga) são desenhados como o laço fechado real — a geometria que vai pro canteiro —, não uma barra reta. A lista de grupos de armadura vem de `q.armadura.grupos` (o mesmo dado usado na aba Quantitativos), então funciona automaticamente pra qualquer quantidade de grupos, tanto em elementos importados do IFC quanto criados manualmente. Grupos de armadura ficam com um espaçamento um pouco maior entre si que fôrma/concreto, pra facilitar distinguir camadas parecidas (como as duas direções da malha da sapata). A câmera se ajusta sozinha. Bom pra conferir de perto qualquer peça antes/depois de executar.
 8. **Ancoragem do pilar na sapata**: a armadura longitudinal do pilar de arranque desce o comprimento de ancoragem dentro do volume da sapata e termina num gancho em L — é essa ancoragem que amarra o pilar à malha da sapata (visível na vista isolada/explodida, camada Armadura).
 8. **Sapata em tronco de pirâmide**: quando o sólido do IFC tem um "degrau" (footprint mais estreito no topo — o dado/pedestal onde nasce o pilar), o app detecta e desenha o formato real (bloco da base + tronco de pirâmide), em vez de um bloco único — volume e área de fôrma calculados com a geometria certa (o tronco usa a fórmula de volume de tronco de pirâmide e a área real dos 4 trapézios laterais, não uma aproximação).
+9. **Resumo por etapa** (painel direito, quando nenhum elemento está selecionado): totais de material da etapa — hoje só "Fundação", já que é a única etapa que o app cobre — tanto o total geral quanto quebrado por tipo de elemento (quanto do concreto/fôrma/aço/cimento é de sapata, quanto é de pilar, quanto é de viga). Soma `calcularQuantitativo` (`src/lib/resumo.ts`) de cada elemento do projeto, então atualiza sozinho ao editar/importar/adicionar elementos.
 
 ## Importação de IFC — como funciona e limitações
 
@@ -77,6 +78,7 @@ src/
     steel.ts                 cálculo de armadura (peso, comprimento, volume)
     quantities.ts             agrega fôrma+concreto+armadura por elemento
     factories.ts              criação de elementos com valores padrão
+    resumo.ts                  totais de material por etapa e por tipo de elemento
     ifc/
       stepParser.ts            parser genérico de STEP/IFC (índice de entidades + tokenizer)
       placement.ts             resolve IfcLocalPlacement (rotação+translação) até o mundo
@@ -92,6 +94,7 @@ src/
       TroncoMesh.tsx            malhas de concreto/fôrma do tronco de pirâmide (sapata)
       frustumGeometry.ts        geometria 3D (BufferGeometry) do tronco de pirâmide
     Sidebar/                  lista de elementos, formulários, quantitativos, execução, importação de IFC
+      PainelResumo.tsx          resumo de material por etapa/tipo, mostrado quando nada está selecionado
     LayerToggle.tsx            controle de camadas visíveis
 ```
 
