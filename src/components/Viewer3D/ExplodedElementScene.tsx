@@ -90,7 +90,14 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   for (const grupo of q.armadura.grupos) {
     niveis.push({
       altura: slotAltura,
-      conteudo: <GrupoArmaduraVisual grupo={grupo} larguraDisponivel={larguraDisponivel} cor={corArmadura(elemento)} />,
+      conteudo: (
+        <GrupoArmaduraVisual
+          grupo={grupo}
+          comprimentoDisponivel={geometria.comprimento}
+          larguraDisponivel={geometria.largura}
+          cor={corArmadura(elemento)}
+        />
+      ),
       rotulo: (
         <Rotulo
           posicao={[xRotulo, 0, 0]}
