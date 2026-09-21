@@ -1,4 +1,5 @@
-import type { GrupoArmaduraResultado } from '../../types';
+import { Line } from '@react-three/drei';
+import type { GrupoArmaduraResultado, TipoElemento } from '../../types';
 
 function posicoesEquidistantes(qtd: number, vao: number): number[] {
   if (qtd <= 1) return [0];
@@ -14,7 +15,20 @@ interface Props {
   grupo: GrupoArmaduraResultado;
   comprimentoDisponivel: number; // extensão em X (m)
   larguraDisponivel: number; // extensão em Z (m)
+  /** Altura real do elemento (m) — só usada pro laço do estribo de viga (largura × altura). */
+  alturaElemento?: number;
+  tipoElemento?: TipoElemento;
   cor: string;
+}
+
+function retanguloEstribo(w: number, h: number): [number, number, number][] {
+  return [
+    [-w / 2, 0, -h / 2],
+    [w / 2, 0, -h / 2],
+    [w / 2, 0, h / 2],
+    [-w / 2, 0, h / 2],
+    [-w / 2, 0, -h / 2],
+  ];
 }
 
 /**
@@ -24,15 +38,41 @@ interface Props {
  * (`separarPorDirecao`, em rebarExtract.ts), então cada grupo desta função é sempre um feixe de
  * barras paralelas correndo numa só direção: "direção X — comprimento" corre ao longo de X,
  * espaçada em Z; "direção Z — largura" corre ao longo de Z, espaçada em X. Os demais grupos
- * (longitudinais, estribos, superior/inferior de viga) já eram unidirecionais e usam o mesmo
- * feixe ao longo de X.
+ * (longitudinais, superior/inferior de viga) já eram unidirecionais e usam o mesmo feixe ao longo
+ * de X. Estribo é desenhado como o laço fechado real (não uma barra reta) — é a geometria que vai
+ * pro canteiro, não uma barra solta.
  */
-export function GrupoArmaduraVisual({ grupo, comprimentoDisponivel, larguraDisponivel, cor }: Props) {
+export function GrupoArmaduraVisual({ grupo, comprimentoDisponivel, larguraDisponivel, alturaElemento, tipoElemento, cor }: Props) {
   const raio = grupo.diametroMm / 2000;
   const comprimentoBarra = Math.max(grupo.comprimentoUnitarioM, 0.05);
   const desc = grupo.descricao.toLowerCase();
   const correEmZ = desc.includes('direção z');
   const n = Math.max(1, Math.min(grupo.quantidade, MAX_BARRAS_VISUAL));
+
+  if (desc.includes('estribo')) {
+    // laço do estribo, na seção real que ele abraça — pilar: a própria seção (comprimento ×
+    // largura, plano XZ, igual à vista geral); viga: largura × altura (plano YZ, já que o
+    // comprimento da viga é o vão, não faz parte do laço).
+    const ehViga = tipoElemento === 'viga_baldrame';
+    const [ladoX, ladoZ] = ehViga ? [alturaElemento ?? larguraDisponivel, larguraDisponivel] : [comprimentoDisponivel, larguraDisponivel];
+    const laco = retanguloEstribo(Math.max(ladoX - 2 * raio, 0.05), Math.max(ladoZ - 2 * raio, 0.05));
+    // Estribo real é bem menor que o vão do elemento — se espalhar os laços dentro do próprio
+    // comprimentoDisponivel eles ficam maiores que o espaço entre eles e se sobrepõem, virando um
+    // borrão. Espaça pelo próprio tamanho do laço (+ uma folga fixa) em vez do vão do elemento.
+    const nEstribos = Math.max(1, Math.min(grupo.quantidade, 6));
+    const passo = ladoX + 0.06;
+    const vaoEstribos = (nEstribos - 1) * passo;
+    const xs = posicoesEquidistantes(nEstribos, vaoEstribos);
+    return (
+      <group>
+        {xs.map((x, i) => (
+          <group key={i} position={[x, 0, 0]} rotation={ehViga ? [0, 0, Math.PI / 2] : [0, 0, 0]}>
+            <Line points={laco} color={cor} lineWidth={2} />
+          </group>
+        ))}
+      </group>
+    );
+  }
 
   if (correEmZ) {
     const xs = posicoesEquidistantes(n, comprimentoDisponivel * 0.85);

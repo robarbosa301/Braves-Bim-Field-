@@ -408,7 +408,8 @@ button:disabled {
   line-height: 1.5;
   color: #e7eaee;
   white-space: nowrap;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   transform: translateY(-8px);
 }
 
@@ -417,6 +418,23 @@ button:disabled {
   margin-bottom: 2px;
   color: #7fa6f5;
   font-size: 12.5px;
+}
+
+.rotulo-compacto-3d {
+  background: rgba(20, 22, 26, 0.85);
+  border: 1px solid #3a3f47;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #cbd2db;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.rotulo-compacto-3d:hover {
+  border-color: #7fa6f5;
+  color: #ffffff;
 }
 
 .cota-3d {

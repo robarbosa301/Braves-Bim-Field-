@@ -1,32 +1,43 @@
-import type { ReactNode } from 'react';
-import { Bounds, Html } from '@react-three/drei';
+import { useState, type ReactNode } from 'react';
+import { Bounds, Html, Line } from '@react-three/drei';
 import type { BimElement } from '../../types';
 import { calcularQuantitativo } from '../../lib/quantities';
 import { calcularConcreto, calcularForma, calcularTroncoPiramide } from '../../lib/concrete';
 import { ConcretoBox } from './ConcretoBox';
-import { FormaBox } from './FormaBox';
+import { FormaBox, ESPESSURA_TABUA } from './FormaBox';
 import { TroncoConcreto, TroncoForma } from './TroncoMesh';
 import { GrupoArmaduraVisual } from './GrupoArmaduraVisual';
 import { CotaLinear, CotasCaixa } from './CotaLinear';
-import { ESPESSURA_TABUA } from './FormaBox';
 import { corArmadura, corConcreto, corForma } from './statusColor';
 
 function n(v: number, casas = 2) {
   return v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 }
 
+function RotuloCompacto({ posicao, texto, onClick }: { posicao: [number, number, number]; texto: string; onClick: () => void }) {
+  return (
+    <Html position={posicao} center distanceFactor={6} occlude={false}>
+      <div className="rotulo-compacto-3d" onClick={onClick}>
+        {texto}
+      </div>
+    </Html>
+  );
+}
+
 function Rotulo({
   posicao,
   titulo,
   linhas,
+  onClick,
 }: {
   posicao: [number, number, number];
   titulo: string;
   linhas: string[];
+  onClick?: () => void;
 }) {
   return (
     <Html position={posicao} center distanceFactor={6} occlude={false}>
-      <div className="rotulo-3d">
+      <div className="rotulo-3d" onClick={onClick}>
         <strong>{titulo}</strong>
         {linhas.map((l, i) => (
           <div key={i}>{l}</div>
@@ -36,21 +47,36 @@ function Rotulo({
   );
 }
 
+interface NivelDef {
+  altura: number;
+  gapExtra?: number;
+  /** Altura (Y) local, dentro do nível, onde a etiqueta/linha de chamada se ancora. */
+  anchoraY: number;
+  titulo: string;
+  linhas: string[];
+  /** Conteúdo 3D (malhas/cotas) — sem lidar com rótulo ou clique, isso a montagem final cuida. */
+  conteudo: ReactNode;
+}
+
 /**
  * Vista isolada de um único elemento, em explosão vertical: cada sub-componente real do
  * elemento (o bloco da base e o tronco de pirâmide da sapata; cada grupo de armadura —
  * malha inferior/superior, longitudinais/estribos, superior/inferior/estribos da viga) fica
- * no seu próprio nível, com um rótulo mostrando só os números daquele pedaço. A câmera se
- * ajusta sozinha (drei Bounds).
+ * no seu próprio nível. Cada nível mostra só uma etiqueta compacta (peça + identificação do
+ * elemento, ex. "S6 · Fôrma — bloco da base") por padrão, pra não poluir a visualização — clicar
+ * na peça ou na etiqueta abre o card com os números, afastado e ligado por uma linha de chamada.
+ * A câmera se ajusta sozinha (drei Bounds).
  */
 export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
+  const [ativo, setAtivo] = useState<number | null>(null);
   const q = calcularQuantitativo(elemento);
-  const { geometria } = elemento;
+  const { geometria, tag } = elemento;
   const tronco = elemento.tipo === 'sapata' ? elemento.tronco : undefined;
   const larguraDisponivel = Math.max(geometria.comprimento, geometria.largura, 0.3);
   const slotAltura = Math.max(geometria.altura, tronco?.altura ?? 0, 0.35);
   const gap = slotAltura * 0.55 + 0.25;
-  const xRotulo = larguraDisponivel / 2 + 0.4;
+  const xCompacto = larguraDisponivel / 2 + 0.2;
+  const xDetalhe = larguraDisponivel / 2 + 1.4;
 
   const formaBase = calcularForma(geometria.comprimento, geometria.largura, geometria.altura);
   const concretoBase = calcularConcreto(geometria.comprimento * geometria.largura * geometria.altura, elemento.traco);
@@ -60,8 +86,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   const concretoTronco = troncoCalc ? calcularConcreto(troncoCalc.volumeM3, elemento.traco) : undefined;
 
   // Monta a pilha de níveis, de baixo pra cima: fôrma(s) -> cada grupo de armadura -> concreto(s).
-  type Nivel = { altura: number; conteudo: ReactNode; rotulo: ReactNode; gapExtra?: number };
-  const niveis: Nivel[] = [];
+  const niveis: NivelDef[] = [];
 
   niveis.push({
     altura: geometria.altura,
@@ -71,13 +96,9 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
         <CotasCaixa comprimento={geometria.comprimento} largura={geometria.largura} altura={geometria.altura} espessuraTabua={ESPESSURA_TABUA} />
       </>
     ),
-    rotulo: (
-      <Rotulo
-        posicao={[xRotulo, geometria.altura / 2, 0]}
-        titulo={tronco ? 'Fôrma — bloco da base' : 'Fôrma de madeira'}
-        linhas={[`${n(formaBase.areaTotalM2)} m² de área`, `${n(geometria.comprimento)} × ${n(geometria.largura)} × ${n(geometria.altura)} m`]}
-      />
-    ),
+    anchoraY: geometria.altura / 2,
+    titulo: tronco ? 'Fôrma — bloco da base' : 'Fôrma de madeira',
+    linhas: [`${n(formaBase.areaTotalM2)} m² de área`, `${n(geometria.comprimento)} × ${n(geometria.largura)} × ${n(geometria.altura)} m`],
   });
 
   if (tronco && troncoCalc) {
@@ -89,13 +110,9 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
           <CotasCaixa comprimento={tronco.comprimento} largura={tronco.largura} altura={tronco.altura} espessuraTabua={ESPESSURA_TABUA} />
         </>
       ),
-      rotulo: (
-        <Rotulo
-          posicao={[xRotulo, tronco.altura / 2, 0]}
-          titulo="Fôrma — tronco de pirâmide"
-          linhas={[`${n(troncoCalc.areaTotalM2)} m² de área`, `topo ${n(tronco.comprimento)} × ${n(tronco.largura)} m, altura ${n(tronco.altura)} m`]}
-        />
-      ),
+      anchoraY: tronco.altura / 2,
+      titulo: 'Fôrma — tronco de pirâmide',
+      linhas: [`${n(troncoCalc.areaTotalM2)} m² de área`, `topo ${n(tronco.comprimento)} × ${n(tronco.largura)} m, altura ${n(tronco.altura)} m`],
     });
   }
 
@@ -112,6 +129,8 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
             grupo={grupo}
             comprimentoDisponivel={geometria.comprimento}
             larguraDisponivel={geometria.largura}
+            alturaElemento={geometria.altura}
+            tipoElemento={elemento.tipo}
             cor={corArmadura(elemento)}
           />
           <CotaLinear
@@ -126,17 +145,13 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
           />
         </>
       ),
-      rotulo: (
-        <Rotulo
-          posicao={[xRotulo, 0, 0]}
-          titulo={grupo.descricao}
-          linhas={[
-            `${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`,
-            `${n(grupo.comprimentoUnitarioM)} m linear/barra`,
-            `${n(grupo.comprimentoTotalM)} m linear total · ${n(grupo.pesoKg, 1)} kg`,
-          ]}
-        />
-      ),
+      anchoraY: 0,
+      titulo: grupo.descricao,
+      linhas: [
+        `${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`,
+        `${n(grupo.comprimentoUnitarioM)} m linear/barra`,
+        `${n(grupo.comprimentoTotalM)} m linear total · ${n(grupo.pesoKg, 1)} kg`,
+      ],
     });
   }
 
@@ -148,17 +163,13 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
         <CotasCaixa comprimento={geometria.comprimento} largura={geometria.largura} altura={geometria.altura} />
       </>
     ),
-    rotulo: (
-      <Rotulo
-        posicao={[xRotulo, geometria.altura / 2, 0]}
-        titulo={tronco ? 'Concreto — bloco da base' : 'Concreto'}
-        linhas={[
-          `${n(geometria.comprimento * geometria.largura * geometria.altura, 3)} m³`,
-          `${n(concretoBase.cimentoSacos, 1)} sacos cimento`,
-          `${n(concretoBase.areiaM3, 2)} m³ areia · ${n(concretoBase.britaM3, 2)} m³ brita`,
-        ]}
-      />
-    ),
+    anchoraY: geometria.altura / 2,
+    titulo: tronco ? 'Concreto — bloco da base' : 'Concreto',
+    linhas: [
+      `${n(geometria.comprimento * geometria.largura * geometria.altura, 3)} m³`,
+      `${n(concretoBase.cimentoSacos, 1)} sacos cimento`,
+      `${n(concretoBase.areiaM3, 2)} m³ areia · ${n(concretoBase.britaM3, 2)} m³ brita`,
+    ],
   });
 
   if (tronco && troncoCalc && concretoTronco) {
@@ -170,17 +181,13 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
           <CotasCaixa comprimento={tronco.comprimento} largura={tronco.largura} altura={tronco.altura} />
         </>
       ),
-      rotulo: (
-        <Rotulo
-          posicao={[xRotulo, tronco.altura / 2, 0]}
-          titulo="Concreto — tronco de pirâmide"
-          linhas={[
-            `${n(troncoCalc.volumeM3, 3)} m³`,
-            `${n(concretoTronco.cimentoSacos, 1)} sacos cimento`,
-            `${n(concretoTronco.areiaM3, 2)} m³ areia · ${n(concretoTronco.britaM3, 2)} m³ brita`,
-          ]}
-        />
-      ),
+      anchoraY: tronco.altura / 2,
+      titulo: 'Concreto — tronco de pirâmide',
+      linhas: [
+        `${n(troncoCalc.volumeM3, 3)} m³`,
+        `${n(concretoTronco.cimentoSacos, 1)} sacos cimento`,
+        `${n(concretoTronco.areiaM3, 2)} m³ areia · ${n(concretoTronco.britaM3, 2)} m³ brita`,
+      ],
     });
   }
 
@@ -194,12 +201,33 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   return (
     <Bounds fit clip observe margin={1.25} key={elemento.id}>
       <group>
-        {posicionados.map((nivel, i) => (
-          <group key={i} position={[0, nivel.y, 0]}>
-            {nivel.conteudo}
-            {nivel.rotulo}
-          </group>
-        ))}
+        {posicionados.map((nivel, i) => {
+          const selecionado = ativo === i;
+          const anchor: [number, number, number] = [0, nivel.anchoraY, 0];
+          const compacto: [number, number, number] = [xCompacto, nivel.anchoraY, 0];
+          const detalhe: [number, number, number] = [xDetalhe, nivel.anchoraY, 0];
+          const titulo = `${tag} · ${nivel.titulo}`;
+          const alternar = () => setAtivo(selecionado ? null : i);
+          return (
+            <group key={i} position={[0, nivel.y, 0]}>
+              <group
+                onClick={(e) => {
+                  e.stopPropagation();
+                  alternar();
+                }}
+              >
+                {nivel.conteudo}
+              </group>
+              <RotuloCompacto posicao={compacto} texto={titulo} onClick={alternar} />
+              {selecionado && (
+                <>
+                  <Line points={[anchor, detalhe]} color="#7fa6f5" lineWidth={1} dashed dashSize={0.04} gapSize={0.04} />
+                  <Rotulo posicao={detalhe} titulo={titulo} linhas={nivel.linhas} onClick={alternar} />
+                </>
+              )}
+            </group>
+          );
+        })}
       </group>
     </Bounds>
   );
