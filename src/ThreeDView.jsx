@@ -612,19 +612,36 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             maxY = Math.max(maxY, p.y);
           });
         });
-        const loop = roof.eaveLoop || [];
-        if (loop.length) {
+        // A calha only ever runs along an água's own LOW edge (where its
+        // plane actually meets the eave height — a rake/gable end climbs
+        // away from there and never drains, so it gets rufo flashing
+        // instead, not a gutter), and only where the person actually
+        // launched one for that água (agua.calha, the same field the
+        // Coberturas tab's own quantitativo already totals) — "posicionado
+        // para isso", not a decoration drawn along the whole perimeter
+        // regardless of whether a calha was ever specified there. Finding
+        // that low edge from the plane's own vertex heights (instead of
+        // hard-coding which of the 4 eaveLoop sides belongs to which água
+        // per shape/ridge-axis) works the same way for every shape —
+        // 1 água, 2 águas, 4 águas, even the small-footprint pyramid case.
+        if ((roof.planes || []).length) {
           const gutterMat = new THREE.MeshStandardMaterial({ color: 0x707070, roughness: 0.4, metalness: 0.6 });
-          for (let i = 0; i < loop.length; i++) {
-            const a = loop[i], b = loop[(i + 1) % loop.length];
-            const len = Math.hypot(b.x - a.x, b.z - a.z);
-            if (len < 0.01) continue;
-            const angle = Math.atan2(b.z - a.z, b.x - a.x);
-            const gMesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.08), gutterMat);
-            gMesh.position.set((a.x + b.x) / 2, roof.baseElevation - 0.04, (a.z + b.z) / 2);
-            gMesh.rotation.y = -angle;
-            scene.add(gMesh);
-          }
+          roof.planes.forEach((plane, aguaIndex) => {
+            const agua = (roof.aguas || [])[aguaIndex];
+            const calhaM = toNum(agua?.calha, 0);
+            if (calhaM <= 0) return;
+            for (let i = 0; i < plane.length; i++) {
+              const a = plane[i], b = plane[(i + 1) % plane.length];
+              if (Math.abs(a.y - roof.baseElevation) > 0.02 || Math.abs(b.y - roof.baseElevation) > 0.02) continue;
+              const len = Math.hypot(b.x - a.x, b.z - a.z);
+              if (len < 0.01) continue;
+              const angle = Math.atan2(b.z - a.z, b.x - a.x);
+              const gMesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.08), gutterMat);
+              gMesh.position.set((a.x + b.x) / 2, roof.baseElevation - 0.04, (a.z + b.z) / 2);
+              gMesh.rotation.y = -angle;
+              scene.add(gMesh);
+            }
+          });
         }
       });
 

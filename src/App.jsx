@@ -449,7 +449,14 @@ const ROOF_SHAPE_AGUA_COUNT = { "1agua": 1, "2aguas": 2, "4aguas": 4 };
 // a roof gets drawn, instead of only in whichever call site remembered to
 // apply them.
 function roofPlaneSettings(roof) {
-  return { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM: roof.hidden ? 0 : toNum(roof.overhangM, 0.4), ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge };
+  // "Escondido" (platibanda) and the ordinary beiral are the SAME knob,
+  // computeRoofPlanes' own signed overhangM (negative recesses the roof
+  // inward from the wall's outer face, positive projects it past — see
+  // there) — recuoM is just that same amount stored as a plain positive
+  // "how far in" figure so the field reads naturally instead of asking
+  // for a negative number.
+  const overhangM = roof.hidden ? -toNum(roof.recuoM, 0.1) : toNum(roof.overhangM, 0.4);
+  return { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM, ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge };
 }
 function roofBaseElevation(roof, footprint) {
   return footprint.baseElevation + toNum(roof.elevationOffsetM, 0);
@@ -2213,7 +2220,7 @@ export default function PranchetaBIM() {
                         if (!footprint) return null;
                         const baseElevation = roofBaseElevation(roof, footprint);
                         const geo = computeRoofPlanes(roofPlaneSettings(roof), footprint, baseElevation);
-                        return { id: roof.id, name: roof.name, tileType: roof.tileType || TILE_TYPES[0], pitchDeg: toNum(roof.pitchDeg, 30), baseElevation, ...geo };
+                        return { id: roof.id, name: roof.name, tileType: roof.tileType || TILE_TYPES[0], pitchDeg: toNum(roof.pitchDeg, 30), baseElevation, aguas: roof.aguas, ...geo };
                       }).filter(Boolean)}
                       openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
                   </Suspense>
@@ -2413,9 +2420,16 @@ export default function PranchetaBIM() {
                         <input type="text" inputMode="decimal" value={roof.pitchDeg ?? "30"} onChange={e => setRoofField(roof.id, { pitchDeg: e.target.value })}
                           className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
                         <span style={{ color: C.mute }}>°</span>
-                        {!roof.hidden && (
+                        {roof.hidden ? (
                           <>
-                            <span style={{ color: C.mute }}>Beiral:</span>
+                            <span style={{ color: C.mute }}>Recuo (para dentro):</span>
+                            <input type="text" inputMode="decimal" value={roof.recuoM ?? "0.1"} onChange={e => setRoofField(roof.id, { recuoM: e.target.value })}
+                              className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                            <span style={{ color: C.mute }}>m</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ color: C.mute }}>Beiral (para fora):</span>
                             <input type="text" inputMode="decimal" value={roof.overhangM ?? "0.4"} onChange={e => setRoofField(roof.id, { overhangM: e.target.value })}
                               className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
                             <span style={{ color: C.mute }}>m</span>
@@ -2423,12 +2437,13 @@ export default function PranchetaBIM() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap mb-2 text-[11px]">
-                        {/* "Escondido" (platibanda): the roof plane stops
-                            right at the wall face instead of projecting a
-                            beiral past it — overhangM is kept in state (so
-                            toggling back doesn't lose the value typed
-                            before), just forced to 0 in the geometry
-                            (roofPlaneSettings) while this is on. */}
+                        {/* "Escondido" (platibanda): the roof edge sits
+                            recessed inward from the wall's outer face (by
+                            "Recuo" above) instead of projecting a beiral
+                            past it — both overhangM and recuoM are kept in
+                            state (so switching back and forth never loses
+                            either value typed before), roofPlaneSettings
+                            picks whichever one applies. */}
                         <button onClick={() => setRoofField(roof.id, { hidden: !roof.hidden })} className="px-2 py-1 rounded text-[10px]"
                           style={{ ...heading, fontWeight: 600, background: roof.hidden ? C.goldTint : C.panelAlt, color: roof.hidden ? C.gold : C.mute, border: `1px solid ${roof.hidden ? C.gold : C.line}` }}>
                           {roof.hidden ? "✓ " : ""}Telhado escondido (platibanda)
