@@ -380,6 +380,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
           });
           if (cursor < len - 0.02) segs.push({ start: cursor, end: len, yBottom: 0, yTop: h });
           if (segs.length === 0) segs.push({ start: 0, end: len, yBottom: 0, yTop: h });
+          // Carried on the shared wallInfo so a tap's own highlight (see
+          // trySelect below) can be built from these same solid pieces —
+          // door/window holes excluded — instead of one plain box spanning
+          // the wall's whole rectangle, which used to paint the "selected"
+          // tint straight across a door/window's own opening too, reading
+          // as if tapping the wall also picked the door.
+          wallInfo.segs = segs;
 
           // Walls flagged for demolition or new construction (a reforma's
           // scope) render as a translucent red/green block instead of their
@@ -775,8 +782,13 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
       function clearHighlight() {
         if (highlightFill) {
           scene.remove(highlightFill);
-          highlightFill.geometry.dispose();
-          highlightFill.material.dispose();
+          // A wall's own highlight is a Group of per-segment boxes (see
+          // below) so traverse it; every other kind is still the single
+          // mesh it always was, and traverse() visits that mesh itself too.
+          highlightFill.traverse(obj => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+          });
           highlightFill = null;
         }
         if (dimensionGroup) {
@@ -846,12 +858,22 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
           // several segment meshes that all share this same userData, so
           // the highlight has to be rebuilt from the wall's own geometry
           // rather than reused from whichever segment the ray landed on).
-          highlightFill = new THREE.Mesh(
-            new THREE.BoxGeometry(info.lengthM + 0.02, info.heightM + 0.02, info.thicknessM + 0.02),
-            fillMat()
-          );
-          highlightFill.position.set(info.centerX, info.centerY, info.centerZ);
-          highlightFill.rotation.y = -info.angle;
+          // Built from the SAME solid segments (info.segs) the wall's own
+          // mesh uses — door/window holes already cut out of them — not
+          // one plain box over the wall's whole rectangle, which used to
+          // paint the "selected" tint straight across a door/window's own
+          // opening too, reading as if tapping the wall also picked it.
+          const ux = Math.cos(info.angle), uz = Math.sin(info.angle);
+          highlightFill = new THREE.Group();
+          (info.segs || [{ start: 0, end: info.lengthM, yBottom: 0, yTop: info.heightM }]).forEach(seg => {
+            const segLen = seg.end - seg.start, segH = seg.yTop - seg.yBottom;
+            if (segLen <= 0.02 || segH <= 0.02) return;
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(segLen + 0.02, segH + 0.02, info.thicknessM + 0.02), fillMat());
+            const cx = info.x1 + ux * (seg.start + segLen / 2), cz = info.z1 + uz * (seg.start + segLen / 2);
+            mesh.position.set(cx, info.elev + seg.yBottom + segH / 2, cz);
+            mesh.rotation.y = -info.angle;
+            highlightFill.add(mesh);
+          });
           scene.add(highlightFill);
           dimensionGroup.add(buildWallDimensionGroup(info));
         } else if (info.kind === "door" || info.kind === "window") {

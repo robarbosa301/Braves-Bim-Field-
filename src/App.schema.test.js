@@ -57,7 +57,10 @@ describe("wallSpanForRoom", () => {
       points: [{ x: 3, y: 3 }, { x: 157, y: 3 }, { x: 157, y: 297 }, { x: 3, y: 297 }],
     }];
     const span = wallSpanForRoom(level, wall, "Sala");
-    expect(span.startPx).toBeCloseTo(3, 0);
+    // x=3 sits right at this wall's own start (0) — a plain corner, not a
+    // T-junction — so it snaps flush to 0 instead of stopping the usual
+    // half-wall-thickness short of it.
+    expect(span.startPx).toBeCloseTo(0, 0);
     expect(span.endPx).toBeCloseTo(157, 0);
     expect(span.endPx).toBeLessThan(400); // never the wall's own full length
   });
@@ -93,7 +96,8 @@ describe("wallSpanForRoom", () => {
       }],
     };
     const span = wallSpanForRoom(lShapedLevel, wideWall, "Sala");
-    expect(span.startPx).toBeCloseTo(3, 0);
+    // Snaps flush to 0 — same plain-corner reasoning as above.
+    expect(span.startPx).toBeCloseTo(0, 0);
     expect(span.endPx).toBeCloseTo(200, 0);
     expect(span.endPx).toBeLessThan(300); // never stretched out to the stray finger vertex at 350
   });
@@ -211,17 +215,25 @@ describe("levelToMetersForRoom", () => {
       { type: "room", roomId: "r-cozinha", name: "Cozinha", points: [{ x: 203, y: 3 }, { x: 397, y: 3 }, { x: 397, y: 297 }, { x: 203, y: 297 }] },
     ],
   };
-  it("clips the shared T-junction wall to just this room's own span (not its full corner-to-corner run)", () => {
+  it("clips the shared T-junction wall to just this room's own span, but snaps back out to its TRUE corner where it meets another wall of the same room head-on", () => {
     const sala = levelToMetersForRoom(level, { id: "r-sala", name: "Sala" });
     const topInSala = sala.walls.find(w => w.id === "top");
-    expect(topInSala.x1).toBeCloseTo(0.075, 2);
+    // The left end is a plain corner (wall "top" meets wall "left" — nothing
+    // else claims the far side), so it snaps flush to the wall's own true
+    // start instead of stopping half a wall-thickness short of it.
+    expect(topInSala.x1).toBeCloseTo(0, 2);
+    // The right end is the real T-junction (the partition splits this run
+    // between Sala and Cozinha), so it keeps the inset — never the wall's
+    // own full 10m length.
     expect(topInSala.x2).toBeCloseTo(4.925, 2);
-    expect(topInSala.x2).toBeLessThan(10); // never the wall's own full 10m length
+    expect(topInSala.x2).toBeLessThan(10);
 
     const cozinha = levelToMetersForRoom(level, { id: "r-cozinha", name: "Cozinha" });
     const topInCozinha = cozinha.walls.find(w => w.id === "top");
     expect(topInCozinha.x1).toBeCloseTo(5.075, 2);
-    expect(topInCozinha.x2).toBeCloseTo(9.925, 2);
+    // The right end here IS a plain corner (wall "top" meets wall "right"),
+    // so it snaps flush to the wall's own true end.
+    expect(topInCozinha.x2).toBeCloseTo(10, 2);
   });
   it("only includes a door/window that actually falls within this room's own clipped span", () => {
     const sala = levelToMetersForRoom(level, { id: "r-sala", name: "Sala" });

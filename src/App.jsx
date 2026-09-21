@@ -309,7 +309,21 @@ export function wallSpanForRoom(level, wall, roomName) {
     found = true;
   }
   if (!found) return null;
-  return { startPx: Math.max(0, Math.min(len, minAlong)), endPx: Math.min(len, Math.max(0, maxAlong)) };
+  let startPx = Math.max(0, Math.min(len, minAlong)), endPx = Math.min(len, Math.max(0, maxAlong));
+  // A room's own polygon is traced along walls' INNER faces, so its corner
+  // point sits inset from this wall's TRUE end by roughly half a wall's
+  // thickness — at a plain corner where this wall meets another wall of
+  // the SAME room head-on (nothing continuing past it), that leaves a
+  // small gap this span would otherwise stop short of, which read as a
+  // seam/notch between two walls that actually meet flush, or as if one
+  // long wall had been split in two. Snapping back out to the exact
+  // corner when the gap is that small (an actual T-junction — this room
+  // claiming only part of a longer wall that keeps going into a
+  // different one — leaves a far bigger gap, and stays untouched here).
+  const snapTol = halfThickPx * 3;
+  if (startPx <= snapTol) startPx = 0;
+  if (endPx >= len - snapTol) endPx = len;
+  return { startPx, endPx };
 }
 export function wallsForRoom(level, roomName) {
   return (level.sketchElements || [])
