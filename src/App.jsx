@@ -1,0 +1,2568 @@
+import React, { useState, useRef, useEffect, Suspense } from "react";
+import {
+  MapPin, LayoutGrid, Camera, RefreshCw, Wifi, WifiOff, Plus, Trash2,
+  CheckCircle2, BrickWall, Building2,
+  ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
+  Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
+  Triangle, TriangleAlert, Rotate3d, Box, Home,
+  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut, Undo2, Redo2, Ruler, MousePointer2
+} from "lucide-react";
+
+import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
+import { C, mono, heading, conditionColor, PHASE_VIEWS } from "./theme.js";
+import { toNum, uid, composeAddress } from "./utils.js";
+export { composeAddress };
+import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
+import JoinScreen from "./JoinScreen.jsx";
+import VectorSketch from "./VectorSketch.jsx";
+import ElevationView from "./ElevationView.jsx";
+import TablesTab from "./TablesTab.jsx";
+import SyncTab from "./SyncTab.jsx";
+import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, TILE_TYPES, wallThicknessM } from "./constants.js";
+import { GRID, pointInPolygon, computeRoofPlanes, polygonAreaXZ, polygonCentroid } from "./geometry.js";
+import {
+  Pill, StatRow,
+  WallRow, DoorRow, WindowRow, FloorRow, TypeSelect,
+} from "./ElementRows.jsx";
+
+// Lazy-loaded: three.js (ThreeDView's only real dependency) is one of the
+// largest single chunks in the bundle and is only ever needed once someone
+// opens the 3D tab — no reason to ship it in the initial page load.
+const ThreeDView = React.lazy(() => import("./ThreeDView.jsx"));
+
+// C (brand palette) now lives in ./theme.js, shared with ThreeDView.jsx.
+
+function useLoadFonts() {
+  useEffect(() => {
+    if (document.getElementById("braves-font-link")) return;
+    try {
+      const link = document.createElement("link");
+      link.id = "braves-font-link";
+      link.rel = "stylesheet";
+      link.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap";
+      document.head.appendChild(link);
+    } catch (e) { /* segue com as fontes do sistema */ }
+  }, []);
+  useEffect(() => {
+    if (document.getElementById("braves-font-inherit-style")) return;
+    try {
+      const style = document.createElement("style");
+      style.id = "braves-font-inherit-style";
+      style.textContent = ".braves-app-root button, .braves-app-root input, .braves-app-root select, .braves-app-root textarea { font-family: inherit; }";
+      document.head.appendChild(style);
+    } catch (e) { /* segue com as fontes do sistema */ }
+  }, []);
+}
+
+// `100dvh` alone is unreliable right after load on some Android/iOS browsers
+// (it can report a taller height than what's actually visible once the
+// address bar settles), leaving a blank gap below the app instead of the
+// bottom nav sitting flush with the real screen edge. Track the real
+// visible height via visualViewport (falling back to innerHeight) and
+// expose it as a CSS var so the root container always matches it exactly.
+//
+// position:fixed;inset:0 was tried in place of this (letting the browser
+// track the visible viewport natively, no JS) but made the real-device gap
+// worse, not better, so it's reverted back to this JS-measured approach.
+function useRealViewportHeight() {
+  useEffect(() => {
+    // window.innerHeight (the LAYOUT viewport) deliberately does NOT
+    // shrink when the on-screen keyboard opens on iOS/Android — the
+    // keyboard overlays on top instead. visualViewport.height DOES shrink
+    // for that, which sounds more "accurate" but backfires badly here: it
+    // made the whole app root resize to fit above the keyboard on every
+    // dimension edit, and that resize wasn't landing cleanly, leaving a
+    // large blank gap between the app and the keyboard. Sticking to
+    // innerHeight keeps the app's layout stable while typing; the keyboard
+    // just covers whatever's underneath, same as any ordinary page.
+    function update() {
+      document.documentElement.style.setProperty("--app-vh", `${window.innerHeight}px`);
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    // Still reads window.innerHeight above, never visualViewport.height —
+    // this only adds visualViewport's own resize event as an extra trigger
+    // to re-check it, since mobile Safari settling its address bar after
+    // load can change innerHeight without reliably firing a plain window
+    // "resize" (especially standalone/PWA), which left --app-vh stuck at a
+    // stale, too-short value — a band of the body's bare background
+    // exposed below the bottom nav instead of it sitting flush with the
+    // real screen edge.
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", update);
+    };
+  }, []);
+}
+
+function defaultLevels() {
+  return [
+    { id: uid(), name: "Térreo", elevation: "0.00", wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] },
+    { id: uid(), name: "1º Pavimento", elevation: "3.10", wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] },
+    { id: uid(), name: "Cobertura", elevation: "6.20", wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] },
+  ];
+}
+
+function buildLevelsFromCount(count) {
+  const n = Math.max(1, Math.min(20, parseInt(count) || 1));
+  const lv = [];
+  for (let i = 0; i < n; i++) {
+    lv.push({ id: uid(), name: i === 0 ? "Térreo" : `${i}º Pavimento`, elevation: (i * 3).toFixed(2), wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] });
+  }
+  return lv;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Rasterizes a live Croqui <svg> for the PDF export below — jsPDF can only
+// embed raster images (PNG/JPEG), not SVG markup directly. Drawing an
+// <img> of the serialized SVG onto a plain <canvas> is the standard way to
+// get from one to the other in a browser without a server round-trip; the
+// white fillRect first matters because the SVG's own background only
+// covers its own viewBox; the canvas outside a non-1:1 aspect ratio
+// wouldn't otherwise be initialized to anything but transparent black.
+function svgToPngDataUrl(svgEl, scale = 2) {
+  return new Promise(resolve => {
+    try {
+      const rect = svgEl.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width)), height = Math.max(1, Math.round(rect.height));
+      const clone = svgEl.cloneNode(true);
+      clone.setAttribute("width", width);
+      clone.setAttribute("height", height);
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const svgString = new XMLSerializer().serializeToString(clone);
+      const svg64 = btoa(unescape(encodeURIComponent(svgString)));
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = width * scale; canvas.height = height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve({ dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height });
+      };
+      img.onerror = () => resolve(null);
+      img.src = "data:image/svg+xml;base64," + svg64;
+    } catch (e) { resolve(null); }
+  });
+}
+// Downscales an uploaded company-logo image before it's stored in
+// buildingInfo — it rides along on every cloud sync of the project from
+// then on, so keeping it small (a logo only ever prints a few cm wide on
+// the PDF's carimbo) matters a lot more than for a one-off screenshot.
+function resizeLogoFile(file, maxW = 360) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = Math.min(1, maxW / img.width);
+        const w = Math.max(1, Math.round(img.width * ratio)), h = Math.max(1, Math.round(img.height * ratio));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve({ dataUrl: canvas.toDataURL("image/png"), w, h });
+      };
+      img.onerror = () => reject(new Error("logo inválida"));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("falha ao ler arquivo"));
+    reader.readAsDataURL(file);
+  });
+}
+// Geocodes the project's address (free, keyless — Nominatim/OpenStreetMap)
+// and, if the user has pasted a Geoapify key, fetches a small static map
+// centered on it for the PDF's "planta de situação". Fails silently (a
+// missing/invalid key or address, a network hiccup) — this is a nice-to-have
+// on the PDF, never worth blocking the export the user actually asked for.
+const SITE_MAP_W = 520, SITE_MAP_H = 360;
+async function geocodeNominatim(query) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data && data[0]) || null;
+  } catch (e) { return null; }
+}
+async function fetchSiteMapDataUrl(b, apiKey) {
+  if (!b || !apiKey || (!b.city && !b.street)) return null;
+  try {
+    // Real Brazilian addresses (small bairro/município) often aren't indexed
+    // precisely in Nominatim, and the em-dash composeAddress uses for display
+    // isn't a separator its parser expects — so try the full address first,
+    // then progressively coarser queries (dropping street/bairro, appending
+    // "Brasil" for disambiguation from same-named places abroad) rather than
+    // giving up after one miss. A city-level pin still beats no map at all.
+    const full = [b.street, b.number].filter(Boolean).join(", ");
+    const bairro = [b.neighborhood, b.city, b.state, "Brasil"].filter(Boolean).join(", ");
+    const cityOnly = [b.city, b.state, "Brasil"].filter(Boolean).join(", ");
+    const candidates = [
+      [full, b.neighborhood, b.city, b.state, "Brasil"].filter(Boolean).join(", "),
+      bairro,
+      cityOnly,
+    ].filter(Boolean);
+    let hit = null;
+    for (const q of candidates) {
+      hit = await geocodeNominatim(q);
+      if (hit) break;
+    }
+    if (!hit) return null;
+    const { lat, lon } = hit;
+    const mapUrl = `https://maps.geoapify.com/v1/staticmap?style=osm-carto&width=${SITE_MAP_W}&height=${SITE_MAP_H}&center=lonlat:${lon},${lat}&zoom=17&marker=lonlat:${lon},${lat};color:%23c1543f;size:large&apiKey=${encodeURIComponent(apiKey)}`;
+    const imgRes = await fetch(mapUrl);
+    if (!imgRes.ok) return null;
+    const blob = await imgRes.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("falha ao ler mapa"));
+      reader.readAsDataURL(blob);
+    });
+    return { dataUrl, width: SITE_MAP_W, height: SITE_MAP_H };
+  } catch (e) { return null; }
+}
+async function upsertProjectIndex(code, meta) {
+  const list = (await idbGet("projects-index")) || [];
+  const next = [{ code, ...meta, updatedAt: Date.now() }, ...list.filter(p => p.code !== code)];
+  await idbSet("projects-index", next.slice(0, 100));
+  syncProjectMeta(code, meta);
+}
+async function removeFromProjectIndex(code) {
+  const list = (await idbGet("projects-index")) || [];
+  await idbSet("projects-index", list.filter(p => p.code !== code));
+}
+
+function wallRoomAdjacency(level, wall) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const mid = { x: (wall.x1 + wall.x2) / 2, y: (wall.y1 + wall.y2) / 2 };
+  const polys = (level.sketchElements || []).filter(e => e.type === "room");
+  const roomAt = (p) => {
+    const poly = polys.find(r => pointInPolygon(p, r.points));
+    if (!poly) return "Externo";
+    const name = poly.name || "Ambiente sem nome";
+    // A point-in-polygon hit at this ±12px offset alone isn't enough — this
+    // wall must also have a real, overlap-validated edge actually running
+    // alongside that room (wallSpanForRoom), or a short/stray wall whose
+    // offset test point merely happens to land inside some OTHER room's
+    // polygon (without truly bordering it) gets wrongly claimed by that
+    // room instead of staying "Externo" — this is what let a wall that
+    // doesn't belong to a room show up floating in its isolated 3D view
+    // and in Elevação.
+    return wallSpanForRoom(level, wall, name) ? name : "Externo";
+  };
+  return {
+    faceA: roomAt({ x: mid.x + nx * 12, y: mid.y + ny * 12 }),
+    faceB: roomAt({ x: mid.x - nx * 12, y: mid.y - ny * 12 }),
+  };
+}
+// A wall's own x1/y1..x2/y2 span its full corner-to-corner run — but an
+// Elevação is a view of what's actually inside ONE room, and a partition
+// meeting this wall further along the same run splits off a portion that
+// belongs to a different room entirely. Clips to just the sub-span whose
+// FACE actually borders this room, found from the room polygon's own
+// vertices (it's traced along that face, offset from the wall's centerline
+// by roughly half its thickness) instead of the wall's full length.
+export function wallSpanForRoom(level, wall, roomName) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const room = (level.sketchElements || []).find(e => e.type === "room" && e.name === roomName);
+  if (!room) return null;
+  const scale = toNum(level.sketchScale, 0.5);
+  const halfThickPx = (wallThicknessM(wall) / 2 / scale) * GRID;
+  const tolerance = halfThickPx + GRID * 0.6;
+  // Walk the room polygon's own EDGES (not just its individual vertices) —
+  // a room with a jog, a notch, or extra flood-traced points elsewhere on
+  // its outline can have a lone vertex that happens to land within
+  // tolerance of this wall's infinite line by coincidence, even though
+  // it's nowhere near the actual boundary edge that runs along this wall.
+  // Requiring BOTH endpoints of an edge to sit within tolerance (a real
+  // edge that actually runs alongside the wall) is what the old
+  // per-vertex check was really trying to approximate, and doesn't pick
+  // up that kind of unrelated far-away point.
+  const pts = room.points;
+  let minAlong = Infinity, maxAlong = -Infinity, found = false;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const relAx = a.x - wall.x1, relAy = a.y - wall.y1;
+    const relBx = b.x - wall.x1, relBy = b.y - wall.y1;
+    const perpA = relAx * nx + relAy * ny, perpB = relBx * nx + relBy * ny;
+    if (Math.abs(perpA) > tolerance || Math.abs(perpB) > tolerance) continue;
+    const posA = relAx * ux + relAy * uy, posB = relBx * ux + relBy * uy;
+    // The edge must actually fall somewhere along THIS wall's own physical
+    // [0, len] span, not just lie near its infinite extended centerline —
+    // otherwise a short, completely disconnected wall elsewhere on the
+    // sheet that merely happens to be collinear/parallel within tolerance
+    // (no shared corner, nowhere near this room) gets wrongly counted as
+    // one of its bounding walls, which is exactly what let a stray wall
+    // show up floating in the isolated 3D Ambiente view and in Elevação.
+    if (Math.max(posA, posB) < 0 || Math.min(posA, posB) > len) continue;
+    minAlong = Math.min(minAlong, posA, posB);
+    maxAlong = Math.max(maxAlong, posA, posB);
+    found = true;
+  }
+  if (!found) return null;
+  let startPx = Math.max(0, Math.min(len, minAlong)), endPx = Math.min(len, Math.max(0, maxAlong));
+  // A room's own polygon is traced along walls' INNER faces, so its corner
+  // point sits inset from this wall's TRUE end by roughly half a wall's
+  // thickness — at a plain corner where this wall meets another wall of
+  // the SAME room head-on (nothing continuing past it), that leaves a
+  // small gap this span would otherwise stop short of, which read as a
+  // seam/notch between two walls that actually meet flush, or as if one
+  // long wall had been split in two. Snapping back out to the exact
+  // corner when the gap is that small (an actual T-junction — this room
+  // claiming only part of a longer wall that keeps going into a
+  // different one — leaves a far bigger gap, and stays untouched here).
+  const snapTol = halfThickPx * 3;
+  if (startPx <= snapTol) startPx = 0;
+  if (endPx >= len - snapTol) endPx = len;
+  return { startPx, endPx };
+}
+export function wallsForRoom(level, roomName) {
+  return (level.sketchElements || [])
+    .filter(e => e.type === "wall")
+    .filter(w => wallSpanForRoom(level, w, roomName) !== null);
+}
+// A wall is part of the building's true exterior perimeter when at least
+// one stretch of its own length has open air (no room) on the far side —
+// i.e. at most one room claims that stretch via wallSpanForRoom. A wall
+// sandwiched between two DIFFERENT rooms along the same stretch (their
+// spans overlapping, not just adjacent) is a pure interior partition and
+// never counts, even though it may border a room on each face. A wall
+// that runs past a T-junction serving two rooms end-to-end (each covering
+// its own non-overlapping half) still reads as exterior on its far side
+// the whole way, which is exactly the case that used to get missed.
+export function isWallExterior(level, wall) {
+  const rooms = (level.sketchElements || []).filter(e => e.type === "room");
+  if (!rooms.length) return true;
+  const spans = rooms.map(r => wallSpanForRoom(level, wall, r.name)).filter(Boolean);
+  if (spans.length <= 1) return true;
+  // Only the stretch actually claimed by at least one room is meaningful —
+  // room polygons are inset from the wall's own corners, so both ends of
+  // the wall always read as "claimed by nobody" even on a genuine interior
+  // partition; that corner sliver must not be mistaken for open air.
+  const overallStart = Math.min(...spans.map(s => s.startPx));
+  const overallEnd = Math.max(...spans.map(s => s.endPx));
+  const points = Array.from(new Set([overallStart, overallEnd, ...spans.flatMap(s => [s.startPx, s.endPx])])).sort((a, b) => a - b);
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    if (b - a < 1) continue;
+    const mid = (a + b) / 2;
+    const coverCount = spans.filter(s => mid >= s.startPx && mid <= s.endPx).length;
+    if (coverCount <= 1) return true;
+  }
+  return false;
+}
+// Same physical wall (matched in real-world meters, so it still lines up
+// across pavimentos that use a different sketchScale) traced across every
+// level of the building, sorted bottom-to-top by elevation — lets the
+// "Externo" elevation stack every story's exterior face into one full-height
+// view of the building instead of just whichever level the Croqui has open.
+function wallFootprintM(level, w) {
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  return { x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2) };
+}
+function sameWallFootprint(a, b, tolM = 0.08) {
+  return (Math.hypot(a.x1 - b.x1, a.y1 - b.y1) < tolM && Math.hypot(a.x2 - b.x2, a.y2 - b.y2) < tolM) ||
+    (Math.hypot(a.x1 - b.x2, a.y1 - b.y2) < tolM && Math.hypot(a.x2 - b.x1, a.y2 - b.y1) < tolM);
+}
+export function buildingElevationStack(levels, level, wall) {
+  const fp = wallFootprintM(level, wall);
+  const matches = [];
+  (levels || []).forEach(lvl => {
+    const w = (lvl.sketchElements || []).find(e => e.type === "wall" && sameWallFootprint(wallFootprintM(lvl, e), fp));
+    if (w) matches.push({ level: lvl, wall: w });
+  });
+  if (!matches.length) matches.push({ level, wall });
+  matches.sort((a, b) => toNum(a.level.elevation, 0) - toNum(b.level.elevation, 0));
+  return matches;
+}
+export function wallToM(w, toM) {
+  return {
+    id: w.id, tag: w.tag || "", x1: toM(w.x1), y1: toM(w.y1), x2: toM(w.x2), y2: toM(w.y2), height: toNum(w.height, 2.8),
+    wallType: w.wallType || WALL_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir, construir: !!w.construir,
+    finishA: w.finishA || w.finish || "A definir", paintColorA: w.paintColorA || w.paintColor || "#E8E4DA",
+    finishB: w.finishB || w.finish || "A definir", paintColorB: w.paintColorB || w.paintColor || "#E8E4DA",
+  };
+}
+export function doorToM(d, toM) {
+  return {
+    id: d.id, tag: d.tag || "", wallId: d.wallId, x: toM(d.x), y: toM(d.y), width: toNum(d.width, 0.8), height: toNum(d.height, 2.1),
+    panels: Math.max(1, Math.round(toNum(d.panels, 1))), doorType: d.doorType || DOOR_TYPES[0], condition: d.condition || "A confirmar", demolir: !!d.demolir, construir: !!d.construir,
+  };
+}
+export function windowToM(w, toM) {
+  return {
+    id: w.id, tag: w.tag || "", wallId: w.wallId, x: toM(w.x), y: toM(w.y), width: toNum(w.width, 1.2), height: toNum(w.height, 1.2), peitoril: toNum(w.peitoril, 1.0),
+    panels: Math.max(1, Math.round(toNum(w.panels, 2))), windowType: w.windowType || WINDOW_TYPES[0], condition: w.condition || "A confirmar", demolir: !!w.demolir, construir: !!w.construir,
+  };
+}
+function stairToM(s2, toM) { return { id: s2.id, tag: s2.tag || "", x1: toM(s2.x1), y1: toM(s2.y1), x2: toM(s2.x2), y2: toM(s2.y2), width: toNum(s2.width, 1.0), toLevelId: s2.toLevelId || "", hasLanding: !!s2.hasLanding, landingPos: toNum(s2.landingPos, 0.5), landingHeight: s2.landingHeight }; }
+function luminariaToM(l, toM) { return { id: l.id, tag: l.tag || "", x: toM(l.x), y: toM(l.y) }; }
+function roomToM(r, toM) { return { id: r.id, roomId: r.roomId || null, points: r.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: r.area, ceilingFinish: r.ceilingFinish, floorFinish: r.floorFinish, floorColor: r.floorColor, name: r.name }; }
+// "Piso" zones (independent of room boundaries — see the Croqui's own Piso
+// tool) — same shape as a room polygon, just with a floor family instead
+// of a name/ceiling.
+function floorZoneToM(f, toM) { return { id: f.id, points: f.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: f.area, floorType: f.floorType, floorColor: f.floorColor }; }
+
+// A roof has no drawn shape of its own (see addRoof/computeRoofPlanes) —
+// its geometry is auto-generated from whichever level it's assigned to's
+// own exterior walls, same conversion levelToMeters already uses.
+function roofFootprintFromLevel(level) {
+  if (!level) return null;
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  const walls = (level.sketchElements || []).filter(e => e.type === "wall");
+  if (!walls.length) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxH = 0, maxHalfThick = 0;
+  walls.forEach(w => {
+    minX = Math.min(minX, toM(w.x1), toM(w.x2)); maxX = Math.max(maxX, toM(w.x1), toM(w.x2));
+    minY = Math.min(minY, toM(w.y1), toM(w.y2)); maxY = Math.max(maxY, toM(w.y1), toM(w.y2));
+    maxH = Math.max(maxH, toNum(w.height, 2.8));
+    maxHalfThick = Math.max(maxHalfThick, wallThicknessM(w) / 2);
+  });
+  // The box above is built from wall CENTERLINES — a roof with 0 overhang
+  // (telhado escondido) would otherwise land its edge inside the wall's own
+  // thickness instead of at its outer face, visibly cutting through solid
+  // wall geometry in 3D. Growing the box by the thickest perimeter wall's
+  // half-thickness first means overhangM=0 always lands flush with the
+  // wall's outer face — never past it, never inside it — and a positive
+  // overhang still projects further out from there, same as before.
+  return {
+    minX: minX - maxHalfThick, maxX: maxX + maxHalfThick,
+    minY: minY - maxHalfThick, maxY: maxY + maxHalfThick,
+    baseElevation: toNum(level.elevation, 0) + maxH,
+  };
+}
+const ROOF_SHAPE_AGUA_COUNT = { "1agua": 1, "2aguas": 2, "4aguas": 4 };
+// Shared by every computeRoofPlanes call site (2D overlay, 3D "casa toda",
+// recalcRoofGeometry) so "escondido" (platibanda — no overhang past the
+// wall face) and the manual level adjustment behave identically everywhere
+// a roof gets drawn, instead of only in whichever call site remembered to
+// apply them.
+function roofPlaneSettings(roof) {
+  // "Escondido" (platibanda) and the ordinary beiral are the SAME knob,
+  // computeRoofPlanes' own signed overhangM (negative recesses the roof
+  // inward from the wall's outer face, positive projects it past — see
+  // there) — recuoM is just that same amount stored as a plain positive
+  // "how far in" figure so the field reads naturally instead of asking
+  // for a negative number.
+  const overhangM = roof.hidden ? -toNum(roof.recuoM, 0.1) : toNum(roof.overhangM, 0.4);
+  return { shape: roof.shape, pitchDeg: toNum(roof.pitchDeg, 30), overhangM, ridgeAxis: roof.ridgeAxis, highEdge: roof.highEdge };
+}
+function roofBaseElevation(roof, footprint) {
+  return footprint.baseElevation + toNum(roof.elevationOffsetM, 0);
+}
+
+export function levelToMeters(level) {
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  const els = level.sketchElements || [];
+  return {
+    elevation: toNum(level.elevation, 0),
+    walls: els.filter(e => e.type === "wall").map(w => wallToM(w, toM)),
+    doors: els.filter(e => e.type === "door").map(d => doorToM(d, toM)),
+    windows: els.filter(e => e.type === "window").map(w => windowToM(w, toM)),
+    stairs: els.filter(e => e.type === "stair").map(s2 => stairToM(s2, toM)),
+    luminarias: els.filter(e => e.type === "luminaria").map(l => luminariaToM(l, toM)),
+    rooms: els.filter(e => e.type === "room").map(r => roomToM(r, toM)),
+    floorZones: els.filter(e => e.type === "floor").map(f => floorZoneToM(f, toM)),
+    // Same dimension/tag colors the Croqui's "Cores e tamanhos de texto"
+    // panel already applies to the 2D plan and the Elevação — carried
+    // through here so the 3D view's own on-element dimensions (drawn when
+    // a wall/door/window is tapped) read as the same drawing, not a
+    // separately-colored one.
+    dimColor: level.dimColor || "#4A4A46",
+    doorDimColor: level.doorDimColor || "#4A4A46",
+    windowDimColor: level.windowDimColor || "#4A4A46",
+    nextElevation: null,
+  };
+}
+export function levelToMetersForRoom(level, room) {
+  const poly = (level.sketchElements || []).find(e => e.type === "room" && e.roomId === room.id);
+  if (!poly) return null;
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  const els = level.sketchElements || [];
+  // A room's own polygon is traced along its walls' INNER faces (the
+  // enclosed floor area), not through their centerlines — so a bounding
+  // wall's own midpoint sits just outside that polygon, on its edge or
+  // past it, and "is this wall's midpoint inside the room polygon"
+  // (the old check) came back false for every wall actually bounding the
+  // room, which is exactly why this view always came up empty. A wall
+  // belongs to this room the same way the Ambientes tab and the Croqui's
+  // own wall legend already decide it: which room sits on either face.
+  // A wall shared with a T-junction/partition doesn't just belong to this
+  // room or not — its own run can run right past a partition into a
+  // completely different room. Standing inside THIS room, only the
+  // sub-span whose face actually borders it is visible, so its two
+  // endpoints get pulled in to that span (same span Elevação already
+  // clips to) before anything downstream sees them — otherwise the whole
+  // wall's full corner-to-corner run reaches into the neighboring room,
+  // and any door/window sitting on that far portion would wrongly tag
+  // along as if it opened into this room too.
+  const roomWallSpans = els.filter(e => e.type === "wall")
+    .map(w => ({ w, span: wallSpanForRoom(level, w, poly.name) }))
+    .filter(x => x.span !== null);
+  // Clipped down to just the sub-span whose face actually borders THIS
+  // room — a wall wallSpanForRoom only barely counts as bordering the
+  // room (a corner brushing past it, a T-junction whose own run mostly
+  // belongs to a different room entirely) would otherwise render its
+  // WHOLE, unrelated length here, reading as a stray, disconnected wall
+  // floating in an isolated single-room view that's supposed to show only
+  // this one room. A wall that borders the room along its ENTIRE own
+  // length (span 0..len, the ordinary case) clips to exactly itself, so
+  // this only ever shortens the T-junction/partial-overlap case, never a
+  // simple wall's own true dimensions.
+  const clippedWalls = roomWallSpans.map(({ w, span }) => {
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    return {
+      ...w,
+      x1: w.x1 + ux * span.startPx, y1: w.y1 + uy * span.startPx,
+      x2: w.x1 + ux * span.endPx, y2: w.y1 + uy * span.endPx,
+      _origin: w, _span: span,
+    };
+  });
+  const roomWallIds = new Set(clippedWalls.map(w => w.id));
+  const spanByWallId = new Map(clippedWalls.map(cw => [cw.id, cw]));
+  const openingInSpan = (o) => {
+    const cw = spanByWallId.get(o.wallId);
+    if (!cw) return false;
+    const w = cw._origin, span = cw._span;
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const pos = (o.x - w.x1) * ux + (o.y - w.y1) * uy;
+    return pos >= span.startPx - 1 && pos <= span.endPx + 1;
+  };
+  const inPoly = (x, y) => pointInPolygon({ x, y }, poly.points);
+  return {
+    elevation: toNum(level.elevation, 0),
+    walls: clippedWalls.map(w => wallToM(w, toM)),
+    doors: els.filter(e => e.type === "door" && roomWallIds.has(e.wallId) && openingInSpan(e)).map(d => doorToM(d, toM)),
+    windows: els.filter(e => e.type === "window" && roomWallIds.has(e.wallId) && openingInSpan(e)).map(w => windowToM(w, toM)),
+    stairs: els.filter(e => e.type === "stair" && inPoly((e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2)).map(s2 => stairToM(s2, toM)),
+    luminarias: els.filter(e => e.type === "luminaria" && inPoly(e.x, e.y)).map(l => luminariaToM(l, toM)),
+    rooms: [roomToM(poly, toM)],
+    floorZones: els.filter(e => e.type === "floor" && inPoly(polygonCentroid(e.points).x, polygonCentroid(e.points).y)).map(f => floorZoneToM(f, toM)),
+    dimColor: level.dimColor || "#4A4A46",
+    doorDimColor: level.doorDimColor || "#4A4A46",
+    windowDimColor: level.windowDimColor || "#4A4A46",
+  };
+}
+
+// schema_version 1: all geometry in meters (plan X/Y + level elevation), ready
+// for the Revit add-in to consume directly (via exported file or straight
+// from Firestore) — no grid/pixel math needed downstream. Pure function so it
+// can run both from the export button and from persist() before a cloud sync.
+export function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roofs }) {
+  return {
+    schema_version: 1,
+    projeto: { empresa: "BRAVES", codigo: code, nome: buildingInfo?.name || "", data: new Date().toISOString(), unidade: "metros" },
+    niveis: (levels || []).map(l => {
+      const m = levelToMeters(l);
+      return {
+        id: l.id, nome: l.name, cota_m: m.elevation, pe_direito_padrao_m: toNum(l.wallHeightDefault, 2.8),
+        paredes: m.walls.map(w => ({
+          id: w.id, tag: w.tag, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, altura_m: w.height,
+          tipo: w.wallType, condicao: w.condition, demolir: w.demolir, construir: w.construir,
+          acabamento_face_a: w.finishA, cor_face_a: w.paintColorA,
+          acabamento_face_b: w.finishB, cor_face_b: w.paintColorB,
+        })),
+        portas: m.doors.map(d => ({
+          id: d.id, tag: d.tag, parede_id: d.wallId, x: d.x, y: d.y,
+          largura_m: d.width, altura_m: d.height, folhas: d.panels, tipo: d.doorType, condicao: d.condition, demolir: d.demolir, construir: d.construir,
+        })),
+        janelas: m.windows.map(w => ({
+          id: w.id, tag: w.tag, parede_id: w.wallId, x: w.x, y: w.y,
+          largura_m: w.width, altura_m: w.height, peitoril_m: w.peitoril, folhas: w.panels, tipo: w.windowType, condicao: w.condition, demolir: w.demolir, construir: w.construir,
+        })),
+        escadas: m.stairs.map(s => ({
+          id: s.id, tag: s.tag, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, largura_m: s.width,
+          nivel_destino_id: s.toLevelId, tem_patamar: s.hasLanding, posicao_patamar: s.landingPos, altura_patamar_m: s.landingHeight,
+        })),
+        luminarias: m.luminarias.map(lm => ({ id: lm.id, tag: lm.tag, x: lm.x, y: lm.y })),
+        ambientes_croqui: m.rooms.map(r => ({
+          id: r.id, ambiente_id: r.roomId, nome: r.name, area_m2: r.area,
+          pontos: r.points, acabamento_piso: r.floorFinish, cor_piso: r.floorColor, acabamento_forro: r.ceilingFinish,
+        })),
+      };
+    }),
+    coberturas: roofs || [],
+    ambientes: (rooms || []).map(r => ({ id: r.id, nome: r.name, nivel: r.level, area_m2: r.area, uso: r.use, condicao: r.condition, observacoes: r.notes, geo: r.geo, fotos: r.photos, pisos: r.floors })),
+  };
+}
+
+// ---- brand mark -------------------------------------------------------------
+function BrandMark({ size = 30 }) {
+  return <img src={SYMBOL_LOGO} alt="BRAVES" style={{ height: size, width: "auto" }} />;
+}
+
+// ---- main app --------------------------------------------------------------
+export default function PranchetaBIM() {
+  useLoadFonts();
+  useRealViewportHeight();
+  const [session, setSession] = useState(null);
+  const [tab, setTab] = useState("ambientes");
+  const [modeloSub, setModeloSub] = useState("elementos");
+  // Elementos tab: which single element-type list is shown per level, and
+  // which levels are collapsed — ids toggled into this set hide that
+  // level's list instead of leaving everything always expanded.
+  const [elementTypeFilter, setElementTypeFilter] = useState("wall");
+  // Finds an element by its own tag (P1, J5…) across every level at once —
+  // a project with many levels and dozens of paredes/portas/janelas is
+  // otherwise a long scroll through one collapsed section at a time.
+  const [elementSearch, setElementSearch] = useState("");
+  const [collapsedLevels, setCollapsedLevels] = useState(() => new Set());
+  const [rooms, setRooms] = useState([]);
+  const [levels, setLevels] = useState([]);
+  const [buildingInfo, setBuildingInfo] = useState(null);
+  const [editingCode, setEditingCode] = useState(false);
+  const [codeDraft, setCodeDraft] = useState("");
+  const [ambientesLevelFilter, setAmbientesLevelFilter] = useState(null);
+  const [pressedRoomId, setPressedRoomId] = useState(null);
+  const [confirmDeleteRoomId, setConfirmDeleteRoomId] = useState(null);
+  const longPressTimer = useRef(null);
+  const justLongPressed = useRef(false);
+  const [roofs, setRoofs] = useState([]);
+  const [activeRoomId, setActiveRoomId] = useState(null);
+  const [croquiLevelId, setCroquiLevelId] = useState(null);
+  const [croquiViewMode, setCroquiViewMode] = useState("2d");
+  // Walls have no direct room link of their own — which ambiente a wall
+  // belongs to is worked out the same way as everywhere else (see
+  // wallRoomAdjacency / activeRoomWallFaces), so picking the ambiente first
+  // here mirrors how the user actually thinks of a wall: as part of a room,
+  // not a bare tag in a flat list.
+  const [elevationRoomName, setElevationRoomName] = useState(null);
+  // Elevação has no pan/zoom of its own (unlike the Croqui's canvas) — each
+  // wall's own sheet just renders at a fixed size, so a room with several
+  // walls means a lot of scrolling to see them all. A simple CSS scale on
+  // the stack of sheets (not a full SVG viewBox rework, which ElevationView
+  // doesn't have) lets more of them fit on screen at once, the same way
+  // zooming out in the Croqui shows more of the plan.
+  const [elevationZoom, setElevationZoom] = useState(1);
+  // CSS transform:scale is purely visual — it doesn't shrink how much
+  // space the element reserves in the page's own layout/scroll flow, so
+  // zooming out would otherwise just leave a growing gap of empty space
+  // below a smaller-looking drawing instead of actually fitting more
+  // sheets on screen. Measuring the stack's own natural (unscaled) height
+  // and explicitly sizing its wrapper down to height*zoom is what makes
+  // the scroll area itself shrink along with the zoom.
+  const elevationScaleRef = useRef(null);
+  const [elevationNaturalHeight, setElevationNaturalHeight] = useState(0);
+  useEffect(() => {
+    const el = elevationScaleRef.current;
+    if (!el) return;
+    const measure = () => setElevationNaturalHeight(el.scrollHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [croquiViewMode, elevationRoomName]);
+  const [phaseView2D, setPhaseView2D] = useState("tudo");
+  // "Vistas" sits behind one button, closed by default — same pattern as
+  // the Sincronização tab's DADOS DO IMÓVEL panel.
+  const [phaseMenuOpen2D, setPhaseMenuOpen2D] = useState(false);
+  const [view3dMode, setView3dMode] = useState("casa");
+  const [view3dOpen, setView3dOpen] = useState(false);
+  const [phaseView3D, setPhaseView3D] = useState("tudo");
+  // Each axis is its own independent clipping plane — any combination can
+  // be enabled at once (three.js's renderer.clippingPlanes already takes
+  // an array and intersects them all), instead of the old single "pick one
+  // axis from a dropdown" cut.
+  const [sectionCut, setSectionCut] = useState({
+    x: { enabled: false, position: 5 },
+    y: { enabled: false, position: 1.2 },
+    z: { enabled: false, position: 5 },
+  });
+  const [view3dRoomId, setView3dRoomId] = useState(null);
+  const [conn, setConn] = useState({ revit: false, cad: false });
+  const [syncing, setSyncing] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const [pdfOrientation, setPdfOrientation] = useState("retrato");
+  const [log, setLog] = useState([]);
+  const [peers, setPeers] = useState(1);
+  const [photoThumbs, setPhotoThumbs] = useState({});
+  const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [pending, setPending] = useState(0);
+  const lastUpdatedAt = useRef(0);
+  const fileInputRef = useRef(null);
+  const photoTargetRoom = useRef(null);
+  // Cloud writes to the project doc are plain overwrites (safeSet just does
+  // a Firestore setDoc, no compare-and-swap) — firing several at once (e.g.
+  // updateLevelSketch runs on every pointer-move of a drag) lets their
+  // network requests finish out of order, so an older, smaller snapshot can
+  // land AFTER a newer one and silently wipe out walls/rooms that were just
+  // drawn. Serializing them here — never more than one in flight, always
+  // sending only the freshest payload once the previous one settles —
+  // makes that data loss impossible regardless of network timing.
+  const cloudWrite = useRef({ inFlight: false, latest: null });
+
+  useEffect(() => {
+    function goOnline() { setOnline(true); flushPending(); }
+    function goOffline() { setOnline(false); }
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, [session]);
+
+  async function joinProject(code, role, buildingInfo, existingDeviceId) {
+    const deviceId = existingDeviceId || (await idbGet("device-id")) || (await safeGet("device-id", false)) || uid();
+    await idbSet("device-id", deviceId);
+    await idbSet("last-session", { code, role, deviceId });
+    await safeSet("device-id", deviceId, false);
+    await safeSet("last-session", JSON.stringify({ code, role, deviceId }), false);
+
+    const localRaw = await idbGet(`project:${code}`);
+    const cloudRaw = navigator.onLine ? await safeGet(`bim-project:${code}:data`, true) : null;
+    let chosen = null;
+    try { if (localRaw) chosen = localRaw; } catch (e) {}
+    try {
+      if (cloudRaw) {
+        const cloudParsed = JSON.parse(cloudRaw);
+        if (!chosen || (cloudParsed.updatedAt || 0) > (chosen.updatedAt || 0)) chosen = cloudParsed;
+      }
+    } catch (e) {}
+
+    if (chosen) {
+      setRooms(chosen.rooms || []); setLog(chosen.log || []);
+      setLevels(chosen.levels || defaultLevels()); setRoofs(chosen.roofs || []);
+      setBuildingInfo(chosen.buildingInfo || null);
+      lastUpdatedAt.current = chosen.updatedAt || 0;
+      await idbSet(`project:${code}`, chosen);
+      await upsertProjectIndex(code, { name: chosen.buildingInfo?.name || "Sem nome", address: composeAddress(chosen.buildingInfo), roomsCount: (chosen.rooms || []).length, levelsCount: (chosen.levels || []).length });
+      setCroquiLevelId((chosen.levels || [])[0]?.id || null);
+    } else {
+      const lv = buildLevelsFromCount(buildingInfo?.levelsCount || 1);
+      const initial = {
+        buildingInfo: buildingInfo || { name: "Levantamento", address: "", type: "Residencial", levelsCount: String(lv.length) },
+        rooms: [],
+        log: [{ id: uid(), t: new Date().toLocaleTimeString("pt-BR"), msg: `Levantamento "${buildingInfo?.name || "sem nome"}" criado neste ${role === "tablet" ? "tablet" : "celular"}.`, kind: "info" }],
+        levels: lv, roofs: [], updatedAt: Date.now(),
+      };
+      setRooms(initial.rooms); setLog(initial.log); setLevels(initial.levels); setRoofs(initial.roofs);
+      setBuildingInfo(initial.buildingInfo);
+      lastUpdatedAt.current = initial.updatedAt;
+      setCroquiLevelId(lv[0].id);
+      await idbSet(`project:${code}`, initial);
+      await safeSet(`bim-project:${code}:data`, JSON.stringify(initial), true);
+      await upsertProjectIndex(code, { name: initial.buildingInfo.name, address: composeAddress(initial.buildingInfo), roomsCount: 0, levelsCount: lv.length });
+    }
+    setSession({ code, role, deviceId });
+    // Croqui first, always — this "buildingInfo" is the function's own
+    // parameter (truthy only when CREATING a project, since JoinScreen
+    // passes null when opening an existing one), not the state that was
+    // actually just loaded a few lines up, so it used to send anyone
+    // reopening a saved project to Ambientes instead.
+    setTab("croqui");
+  }
+
+  async function flushPending() {
+    if (!session) return;
+    const local = await idbGet(`project:${session.code}`);
+    if (!local) return;
+    const ok = await safeSet(`bim-project:${session.code}:data`, JSON.stringify(local), true);
+    if (ok) { setPending(0); pushLog("Conexão restabelecida — alterações do dispositivo sincronizadas com o projeto.", "done"); }
+  }
+
+  async function renameProjectCode(newCodeRaw) {
+    const newCode = newCodeRaw.trim().toUpperCase();
+    if (!newCode || newCode === session.code) return;
+    const existing = await idbGet(`project:${newCode}`);
+    if (existing) { pushLog(`Já existe um levantamento salvo com o código "${newCode}". Escolha outro.`, "info"); return; }
+    const oldCode = session.code;
+    const current = await idbGet(`project:${oldCode}`);
+    if (!current) return;
+    await idbSet(`project:${newCode}`, current);
+    await safeSet(`bim-project:${newCode}:data`, JSON.stringify(current), true);
+    await idbSet("last-session", { code: newCode, role: session.role, deviceId: session.deviceId });
+    await safeSet("last-session", JSON.stringify({ code: newCode, role: session.role, deviceId: session.deviceId }), false);
+    await upsertProjectIndex(newCode, { name: buildingInfo?.name || "Sem nome", address: composeAddress(buildingInfo), roomsCount: rooms.length, levelsCount: levels.length });
+    await removeFromProjectIndex(oldCode);
+    await safeDelete(`bim-project:${oldCode}:data`, true);
+    setSession(s => ({ ...s, code: newCode }));
+    pushLog(`Código do projeto alterado de "${oldCode}" para "${newCode}".`, "info");
+  }
+
+  async function switchProject() {
+    await idbSet("last-session", null);
+    await safeSet("last-session", "", false);
+    setSession(null);
+    setRooms([]); setLevels([]); setRoofs([]); setLog([]); setBuildingInfo(null);
+    setActiveRoomId(null); setCroquiLevelId(null); setTab("ambientes");
+  }
+
+  useEffect(() => {
+    if (!session) return;
+    let stopped = false;
+    async function heartbeat() {
+      if (!navigator.onLine) return;
+      await safeSet(`bim-project:${session.code}:presence:${session.deviceId}`, JSON.stringify({ role: session.role, ts: Date.now() }), true);
+      const keys = await safeList(`bim-project:${session.code}:presence:`, true);
+      let count = 0;
+      for (const k of keys) { const v = await safeGet(k, true); if (v) { try { if (Date.now() - JSON.parse(v).ts < 20000) count++; } catch (e) {} } }
+      if (!stopped) setPeers(Math.max(count, 1));
+    }
+    async function poll() {
+      if (!navigator.onLine) return;
+      const raw = await safeGet(`bim-project:${session.code}:data`, true);
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        if ((parsed.updatedAt || 0) > lastUpdatedAt.current) {
+          lastUpdatedAt.current = parsed.updatedAt;
+          const nextRooms = parsed.rooms || [], nextLog = parsed.log || [];
+          const nextLevels = parsed.levels || [], nextRoofs = parsed.roofs || [];
+          roomsRef.current = nextRooms; logRef.current = nextLog;
+          levelsRef.current = nextLevels; roofsRef.current = nextRoofs;
+          setRooms(nextRooms); setLog(nextLog);
+          setLevels(nextLevels); setRoofs(nextRoofs);
+          if (parsed.buildingInfo) setBuildingInfo(parsed.buildingInfo);
+          idbSet(`project:${session.code}`, parsed);
+        }
+      } catch (e) { /* ignore */ }
+    }
+    heartbeat(); poll();
+    const hb = setInterval(heartbeat, 6000);
+    const pl = setInterval(poll, 4000);
+    return () => { stopped = true; clearInterval(hb); clearInterval(pl); };
+  }, [session]);
+
+  // rooms/levels/roofs/log each get their own updateX helper below, and
+  // several flows (deleting a room, naming a Croqui polygon) call two or
+  // three of them back-to-back in the same handler. Each helper's persist()
+  // call used to read the OTHER fields straight from this render's rooms/
+  // levels/roofs/log closures — still the pre-update values, since setState
+  // hasn't re-rendered yet. Two persist() calls firing that close together
+  // race (both async), and whichever's write lands last would silently
+  // resurrect whatever the other call just changed (a deleted room
+  // reappearing after leaving and returning to the tab, for one real case).
+  // These refs are updated synchronously inside each helper instead, so a
+  // chained call always sees the others' just-made change immediately.
+  const roomsRef = useRef(rooms);
+  const levelsRef = useRef(levels);
+  const roofsRef = useRef(roofs);
+  const logRef = useRef(log);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+  useEffect(() => { levelsRef.current = levels; }, [levels]);
+  useEffect(() => { roofsRef.current = roofs; }, [roofs]);
+  useEffect(() => { logRef.current = log; }, [log]);
+
+  async function runCloudWrite() {
+    const state = cloudWrite.current;
+    const payload = state.latest;
+    if (!payload) return;
+    state.inFlight = true;
+    state.latest = null;
+    // schema_json rides along in the same synced document so the Revit
+    // add-in can fetch a project by name/code straight from Firestore —
+    // same meters-based shape as the manual "Exportar JSON" button.
+    const cloudPayload = { ...payload, schema_json: JSON.stringify(buildLevantamentoSchema({ code: session.code, buildingInfo: payload.buildingInfo, rooms: payload.rooms, levels: payload.levels, roofs: payload.roofs })) };
+    const ok = await safeSet(`bim-project:${session.code}:data`, JSON.stringify(cloudPayload), true);
+    setPending(p => (ok ? 0 : p + 1));
+    state.inFlight = false;
+    // A newer payload queued up while this one was in flight — send it now.
+    // Never runs concurrently with the write above, so completion order on
+    // the wire always matches send order.
+    if (state.latest) runCloudWrite();
+  }
+  async function persist(next) {
+    const updatedAt = Date.now();
+    lastUpdatedAt.current = updatedAt;
+    const payload = { buildingInfo, ...next, updatedAt };
+    await idbSet(`project:${session.code}`, payload);
+    upsertProjectIndex(session.code, { name: payload.buildingInfo?.name || "Sem nome", address: composeAddress(payload.buildingInfo), roomsCount: (payload.rooms || []).length, levelsCount: (payload.levels || []).length });
+    if (navigator.onLine) {
+      cloudWrite.current.latest = payload;
+      if (!cloudWrite.current.inFlight) runCloudWrite();
+    } else {
+      setPending(p => p + 1);
+    }
+  }
+  function pushLog(msg, kind = "ok") {
+    setLog(l => {
+      const next = [{ id: uid(), t: new Date().toLocaleTimeString("pt-BR"), msg, kind }, ...l];
+      logRef.current = next;
+      persist({ rooms: roomsRef.current, log: next, levels: levelsRef.current, roofs: roofsRef.current });
+      return next;
+    });
+  }
+  function updateRooms(fn) {
+    setRooms(rs => {
+      const next = fn(rs);
+      roomsRef.current = next;
+      persist({ rooms: next, log: logRef.current, levels: levelsRef.current, roofs: roofsRef.current });
+      return next;
+    });
+  }
+  function updateLevels(fn) {
+    setLevels(ls => {
+      const next = fn(ls);
+      levelsRef.current = next;
+      persist({ rooms: roomsRef.current, log: logRef.current, levels: next, roofs: roofsRef.current });
+      return next;
+    });
+  }
+  function updateRoofs(fn) {
+    setRoofs(rs => {
+      const next = fn(rs);
+      roofsRef.current = next;
+      persist({ rooms: roomsRef.current, log: logRef.current, levels: levelsRef.current, roofs: next });
+      return next;
+    });
+  }
+  // Carimbo fields (projetista/empresa/logo) live on buildingInfo itself —
+  // it already rides the same cloud sync as everything else, so whichever
+  // device fills it in, the other one (and the PDF export, wherever it
+  // runs) sees it too, without a separate device-local settings store.
+  function updateBuildingInfo(patch) {
+    setBuildingInfo(bi => {
+      const next = { ...(bi || {}), ...patch };
+      persist({ rooms: roomsRef.current, log: logRef.current, levels: levelsRef.current, roofs: roofsRef.current, buildingInfo: next });
+      return next;
+    });
+  }
+  async function onLogoFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const { dataUrl, w, h } = await resizeLogoFile(file);
+      updateBuildingInfo({ logoDataUrl: dataUrl, logoW: w, logoH: h });
+    } catch (err) { pushLog("Não foi possível carregar a logo.", "info"); }
+  }
+
+  const activeRoom = rooms.find(r => r.id === activeRoomId) || null;
+  const croquiLevel = levels.find(l => l.id === croquiLevelId) || levels[0] || null;
+  // Whether this level has any wall/opening actually marked for demolition
+  // or new construction — the "Vistas" phase selector only makes sense
+  // (and only shows up) once a reforma project actually has phases to
+  // switch between; a plain new-build project never sees it.
+  const hasPhaseElements2D = (croquiLevel?.sketchElements || []).some(e => (e.type === "wall" || e.type === "door" || e.type === "window" || e.type === "stair") && (e.demolir || e.construir));
+  const activeRoomLevel = activeRoom ? levels.find(l => l.name === activeRoom.level) : null;
+  // The room's own polygon (traced in Croqui) carries the forro/piso finish
+  // chosen there; walls have no direct link to a room, so which face (and
+  // therefore which finish/condition) bounds this room is worked out the
+  // same way WallRow's "Face → ambiente" label already does.
+  const activeRoomPolygon = activeRoomLevel ? (activeRoomLevel.sketchElements || []).find(e => e.type === "room" && e.roomId === activeRoom.id) : null;
+  const activeRoomWallFaces = activeRoomLevel && activeRoom
+    ? (activeRoomLevel.sketchElements || []).filter(e => e.type === "wall").flatMap(w => {
+        const adj = wallRoomAdjacency(activeRoomLevel, w);
+        const faces = [];
+        if (adj.faceA === activeRoom.name) faces.push({ wall: w, finish: w.finishA, color: w.paintColorA });
+        if (adj.faceB === activeRoom.name) faces.push({ wall: w, finish: w.finishB, color: w.paintColorB });
+        return faces;
+      })
+    : [];
+  const activeRoomWallAreaTotal = activeRoomWallFaces.reduce((s, f) => s + toNum(f.wall.length, 0) * toNum(f.wall.height, 0), 0);
+
+  // Ambiente options for the Elevação picker — every room actually traced
+  // on this level, plus "Externo" (the building's own outer perimeter)
+  // whenever at least one wall has a genuinely exterior-facing stretch.
+  const elevationRoomOptions = croquiLevel
+    ? (() => {
+        const names = Array.from(new Set((croquiLevel.sketchElements || []).filter(e => e.type === "room").map(r => r.name || "Ambiente sem nome")));
+        const hasExterior = (croquiLevel.sketchElements || []).some(e => e.type === "wall" && isWallExterior(croquiLevel, e));
+        return hasExterior ? [...names, "Externo"] : names;
+      })()
+    : [];
+  // Roof outline (eave rectangle + ridge line) for whichever roofs target
+  // the level currently open in the Croqui — converted back from meters
+  // into this level's own drawing units so it overlays the plan at the
+  // same scale as everything else drawn there. The roof itself has no
+  // shape of its own in the sketch (see roofFootprintFromLevel), so this
+  // is the only place that projects it down onto the 2D sheet.
+  const croquiRoofOverlays = croquiLevel
+    ? roofs.filter(r => r.level === croquiLevel.name).map(roof => {
+        const footprint = roofFootprintFromLevel(croquiLevel);
+        if (!footprint) return null;
+        const { eaveLoop, ridge } = computeRoofPlanes(roofPlaneSettings(roof), footprint, roofBaseElevation(roof, footprint));
+        const s = toNum(croquiLevel.sketchScale, 0.5);
+        const toPx = (m) => (m / s) * GRID;
+        return {
+          id: roof.id, name: roof.name,
+          eaveLoopPx: eaveLoop.map(p => ({ x: toPx(p.x), y: toPx(p.z) })),
+          ridgePx: ridge ? ridge.map(p => ({ x: toPx(p.x), y: toPx(p.z) })) : null,
+        };
+      }).filter(Boolean)
+    : [];
+  const elevationRoomWalls = croquiLevel && elevationRoomName
+    ? elevationRoomName === "Externo"
+      ? (croquiLevel.sketchElements || []).filter(e => e.type === "wall" && isWallExterior(croquiLevel, e))
+      : wallsForRoom(croquiLevel, elevationRoomName)
+    : [];
+
+  function removeRoom(id) {
+    const room = rooms.find(r => r.id === id);
+    if (!room) return;
+    updateRooms(rs => rs.filter(r => r.id !== id));
+    // A room registered by drawing its outline in Croqui (rather than typed
+    // in manually here) has a polygon linked back to it via roomId — drop
+    // that too, or it'd linger on the sketch pointing at a room that no
+    // longer exists.
+    updateLevels(ls => ls.map(l => ({ ...l, sketchElements: (l.sketchElements || []).filter(e => !(e.type === "room" && e.roomId === id)) })));
+    setActiveRoomId(null);
+    pushLog(`Ambiente "${room.name}" removido.`, "info");
+  }
+  function addFloor(roomId) {
+    updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, floors: [...r.floors, { id: uid(), tag: `PS-${r.floors.length + 1}`, type: FLOOR_TYPES[0], area: r.area, espessura: "0.02", condition: "A confirmar" }] } : r));
+  }
+  function removeFloor(roomId, id) {
+    updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, floors: r.floors.filter(f => f.id !== id) } : r));
+  }
+  function patchFloor(roomId, id, patch) {
+    updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, floors: r.floors.map(f => f.id === id ? { ...f, ...patch } : f) } : r));
+  }
+
+  function updateLevelSketch(levelId, newElements, newScale) {
+    // A room in the "Ambientes" tab only exists because some polygon in the
+    // Croqui is linked to it via roomId — deleting that polygon there (one
+    // at a time, or via "Tudo"/undo wiping the whole level) used to leave
+    // the Ambientes entry behind as a ghost with no drawing backing it.
+    // Diffing the roomIds present before and after every sketch change
+    // catches every deletion path in one place instead of patching each
+    // one in VectorSketch individually.
+    const level = levels.find(l => l.id === levelId);
+    const oldRoomIds = new Set((level?.sketchElements || []).filter(e => e.type === "room" && e.roomId).map(e => e.roomId));
+    const newRoomIds = new Set(newElements.filter(e => e.type === "room" && e.roomId).map(e => e.roomId));
+    const removedRoomIds = [...oldRoomIds].filter(id => !newRoomIds.has(id));
+    if (removedRoomIds.length) updateRooms(rs => rs.filter(r => !removedRoomIds.includes(r.id)));
+
+    // A room polygon closed in the Croqui (manual points, auto-trace, or a
+    // wall split) used to only become a real Ambientes entry once the user
+    // typed a name in the popup and hit "Salvar" — dismissing that popup
+    // with "X" left the polygon drawn on screen but invisible to the header
+    // count, the Ambientes table and everywhere else that reads rooms[].
+    // Stamping a roomId + default name onto every unlinked room polygon the
+    // moment it's committed makes it count immediately; renaming later just
+    // relabels the same record instead of creating it for the first time.
+    const existingRoomIds = new Set(rooms.map(r => r.id));
+    let nextRoomNum = rooms.length + 1;
+    const roomsToAdd = [];
+    const patchedElements = newElements.map(e => {
+      if (e.type !== "room" || (e.roomId && existingRoomIds.has(e.roomId))) return e;
+      const roomId = e.roomId || uid();
+      const name = e.name || `Ambiente ${nextRoomNum++}`;
+      roomsToAdd.push({ id: roomId, name, level: level?.name || "", area: String(e.area ?? 0), height: String(level?.wallHeightDefault || "2.80"), use: "", condition: "A confirmar", notes: "", photos: 0, geo: null, floors: [] });
+      existingRoomIds.add(roomId);
+      return { ...e, roomId, name };
+    });
+    if (roomsToAdd.length) updateRooms(rs => [...rs, ...roomsToAdd]);
+
+    updateLevels(ls => ls.map(l => l.id === levelId ? { ...l, sketchElements: patchedElements, sketchScale: newScale ?? l.sketchScale } : l));
+  }
+  function updateLevelMeta(levelId, patch) {
+    updateLevels(ls => ls.map(l => l.id === levelId ? { ...l, ...patch } : l));
+  }
+  function nameRoomPolygon(levelId, elementId, trimmed) {
+    const level = levels.find(l => l.id === levelId);
+    if (!level) return;
+    const poly = (level.sketchElements || []).find(e => e.id === elementId);
+    if (!poly) return;
+    if (!trimmed) {
+      // Clearing the name unlinks the polygon from its room — with nothing
+      // left pointing at it, keep the Ambientes list from carrying it as an
+      // orphan entry too.
+      const oldRoomId = poly.roomId;
+      updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.map(e => e.id === elementId ? { ...e, name: undefined, roomId: null } : e) }));
+      if (oldRoomId) updateRooms(rs => rs.filter(r => r.id !== oldRoomId));
+      return;
+    }
+    const existing = rooms.find(r => r.level === level.name && r.name.toLowerCase() === trimmed.toLowerCase() && r.id !== poly.roomId);
+    let roomId = poly.roomId;
+    if (existing) {
+      roomId = existing.id;
+      updateRooms(rs => rs.map(r => r.id === existing.id ? { ...r, area: String(poly.area) } : r));
+    } else if (roomId) {
+      updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, name: trimmed, area: String(poly.area) } : r));
+    } else {
+      const newR = { id: uid(), name: trimmed, level: level.name, area: String(poly.area), height: String(level.wallHeightDefault || "2.80"), use: "", condition: "A confirmar", notes: "", photos: 0, geo: null, floors: [] };
+      roomId = newR.id;
+      updateRooms(rs => [...rs, newR]);
+    }
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.map(e => e.id === elementId ? { ...e, name: trimmed, roomId } : e) }));
+    pushLog(`Ambiente "${trimmed}" identificado no croqui (${level.name}).`, "info");
+  }
+  function updateLevelElement(levelId, elementId, patch) {
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.map(e => e.id === elementId ? { ...e, ...patch } : e) }));
+  }
+  // A dragged Elevação dimension's own offset — keyed by wall id (see
+  // ElevationView), merged into whichever style that key already had so
+  // dragging one dimension never clobbers another's.
+  function patchElevDimStyle(levelObj, key, patch) {
+    const existing = levelObj.elevDimStyles || {};
+    updateLevelMeta(levelObj.id, { elevDimStyles: { ...existing, [key]: { ...(existing[key] || {}), ...patch } } });
+  }
+  // Its own small Voltar/Avançar, separate from the Croqui canvas's own
+  // (that one only ever tracks sketchElements) — an Elevação edit touches
+  // level META (elevDimStyles) as much as it touches an opening element's
+  // own elevTagDx/Dy, so a single snapshot of the WHOLE level, taken once
+  // right as a drag starts (never on every frame — see onDragBegin), is
+  // simpler than trying to reconcile two separate undo stacks.
+  const [elevUndoStack, setElevUndoStack] = useState([]);
+  const [elevRedoStack, setElevRedoStack] = useState([]);
+  function pushElevHistory() {
+    setElevUndoStack(s => [...s.slice(-29), levelsRef.current]);
+    setElevRedoStack([]);
+  }
+  function elevUndo() {
+    if (!elevUndoStack.length) return;
+    const prev = elevUndoStack[elevUndoStack.length - 1];
+    setElevRedoStack(r => [...r, levelsRef.current]);
+    setElevUndoStack(s => s.slice(0, -1));
+    updateLevels(() => prev);
+  }
+  function elevRedo() {
+    if (!elevRedoStack.length) return;
+    const next = elevRedoStack[elevRedoStack.length - 1];
+    setElevUndoStack(s => [...s, levelsRef.current]);
+    setElevRedoStack(r => r.slice(0, -1));
+    updateLevels(() => next);
+  }
+  // "Apagar" for one wall's own Elevação — every dragged dimension offset
+  // on it (elevDimStyles keys prefixed with this wall's id) plus every one
+  // of its doors/windows' own dragged tag position, back to the
+  // auto-computed default layout. Scoped to just this wall (not the whole
+  // level) since a stacked "Ambiente" view shows several at once and
+  // clearing one shouldn't touch the others.
+  function clearElevAdjustments(levelObj, wallId) {
+    pushElevHistory();
+    const prefix = wallId + ":";
+    updateLevels(ls => ls.map(l => l.id !== levelObj.id ? l : {
+      ...l,
+      elevDimStyles: Object.fromEntries(Object.entries(l.elevDimStyles || {}).filter(([k]) => !k.startsWith(prefix))),
+      sketchElements: (l.sketchElements || []).map(e => (e.wallId === wallId && (e.type === "door" || e.type === "window")) ? { ...e, elevTagDx: undefined, elevTagDy: undefined } : e),
+    }));
+  }
+  function removeLevelElement(levelId, elementId) {
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : { ...l, sketchElements: l.sketchElements.filter(e => e.id !== elementId) }));
+  }
+  // Manual dimensions in the Elevação, same idea as the Croqui's own
+  // "Cota" tool but simpler (one wall's own 2D face, so a dimension is
+  // always either purely horizontal — along the wall's length — or purely
+  // vertical — up its height, never a diagonal between arbitrary points).
+  // elevTool switches the view between its usual drag/select mode and
+  // placing one of these; elevCotaPending holds the first of the two taps
+  // a new one needs, elevSelectedCota which one (if any) is picked for the
+  // Apagar button below to act on.
+  const [elevTool, setElevTool] = useState("selecionar");
+  const [elevCotaPending, setElevCotaPending] = useState(null);
+  const [elevSelectedCota, setElevSelectedCota] = useState(null);
+  // Switching which ambiente's Elevação is open swaps out every wall panel
+  // on screen — a pending first tap or a selected cota from the ambiente
+  // just left behind would otherwise silently point at a wall that isn't
+  // even rendered anymore.
+  useEffect(() => { setElevCotaPending(null); setElevSelectedCota(null); }, [elevationRoomName]);
+  function addElevCota(levelId, wallId, axis, aM, bM) {
+    pushElevHistory();
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : {
+      ...l, sketchElements: [...(l.sketchElements || []), { id: uid(), type: "elevCota", wallId, axis, aM, bM }],
+    }));
+  }
+  function removeElevCota(levelId, wallId, id) {
+    pushElevHistory();
+    updateLevels(ls => ls.map(l => l.id !== levelId ? l : {
+      ...l,
+      sketchElements: (l.sketchElements || []).filter(e => e.id !== id),
+      elevDimStyles: Object.fromEntries(Object.entries(l.elevDimStyles || {}).filter(([k]) => k !== wallId + ":" + id)),
+    }));
+  }
+  // The tool's first tap on a wall just remembers where; its second tap on
+  // that SAME wall completes the dimension, picking horizontal vs. vertical
+  // from whichever axis the two points actually differ along the most (a
+  // sill-height tap and a same-row tap two openings apart are both "mostly
+  // horizontal", same idea a straightedge held up to the drawing would
+  // read). Tapping a different wall (or the same spot twice) just restarts
+  // from that new point instead of erroring out.
+  function handleElevCotaTap(levelId, wallId, xM, yM) {
+    if (!elevCotaPending || elevCotaPending.levelId !== levelId || elevCotaPending.wallId !== wallId) {
+      setElevCotaPending({ levelId, wallId, xM, yM });
+      return;
+    }
+    const dxM = xM - elevCotaPending.xM, dyM = yM - elevCotaPending.yM;
+    if (Math.abs(dxM) < 0.03 && Math.abs(dyM) < 0.03) { setElevCotaPending(null); return; }
+    if (Math.abs(dxM) >= Math.abs(dyM)) {
+      addElevCota(levelId, wallId, "h", Math.min(elevCotaPending.xM, xM), Math.max(elevCotaPending.xM, xM));
+    } else {
+      addElevCota(levelId, wallId, "v", Math.min(elevCotaPending.yM, yM), Math.max(elevCotaPending.yM, yM));
+    }
+    setElevCotaPending(null);
+  }
+  function deleteSelectedElevCota() {
+    if (!elevSelectedCota) return;
+    removeElevCota(elevSelectedCota.levelId, elevSelectedCota.wallId, elevSelectedCota.id);
+    setElevSelectedCota(null);
+  }
+  // A wall's length isn't its own stored field — it's the distance between
+  // x1/y1 and x2/y2, with `length` just a cached label of that (same as
+  // VectorSketch's own setWallLengthDirect). Editing it from the Tabelas
+  // tab has to move x2/y2 the same way, keeping x1/y1 and the wall's
+  // existing direction fixed, or the number in the table would change
+  // while the wall drawn in the Croqui and the 3D view stayed exactly the
+  // size it was — the table's whole point is that editing here IS editing
+  // the model, not a second copy of it.
+  function resizeWallLength(levelId, wallId, newLenM) {
+    updateLevels(ls => ls.map(l => {
+      if (l.id !== levelId) return l;
+      const scale = toNum(l.sketchScale, 0.5);
+      return {
+        ...l, sketchElements: l.sketchElements.map(e => {
+          if (e.id !== wallId || e.type !== "wall") return e;
+          const dx = e.x2 - e.x1, dy = e.y2 - e.y1, len = Math.hypot(dx, dy) || 1;
+          const ux = dx / len, uy = dy / len;
+          const newLenPx = Math.max(4, (toNum(newLenM) / scale) * GRID);
+          const x2 = e.x1 + ux * newLenPx, y2 = e.y1 + uy * newLenPx;
+          return { ...e, x2, y2, length: +(((newLenPx) / GRID) * scale).toFixed(2) };
+        }),
+      };
+    }));
+  }
+
+  function markLocation(roomId) {
+    if (!navigator.geolocation) { pushLog("Dispositivo sem GPS disponível.", "info"); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const geo = { lat: pos.coords.latitude.toFixed(6), lon: pos.coords.longitude.toFixed(6) };
+        updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, geo } : r));
+        pushLog(`Localização registrada para "${rooms.find(r => r.id === roomId)?.name}" (${geo.lat}, ${geo.lon})`, "info");
+      },
+      () => pushLog("Não foi possível obter a localização (permissão negada ou sem sinal de GPS).", "info")
+    );
+  }
+  function openCamera(roomId) { photoTargetRoom.current = roomId; fileInputRef.current?.click(); }
+  function handlePhotoCaptured(e) {
+    const file = e.target.files?.[0];
+    const roomId = photoTargetRoom.current;
+    if (!file || !roomId) return;
+    const url = URL.createObjectURL(file);
+    setPhotoThumbs(pt => ({ ...pt, [roomId]: [...(pt[roomId] || []), url] }));
+    updateRooms(rs => rs.map(r => r.id === roomId ? { ...r, photos: r.photos + 1 } : r));
+    pushLog(`Foto anexada ao ambiente "${rooms.find(r => r.id === roomId)?.name}" via ${session.role === "phone" ? "celular" : "tablet"}.`, "info");
+    e.target.value = "";
+  }
+  function addLevel() {
+    updateLevels(ls => [...ls, { id: uid(), name: `Nível ${ls.length + 1}`, elevation: "0.00", wallHeightDefault: "2.80", sketchScale: 0.5, sketchElements: [] }]);
+  }
+  function addRoof() {
+    updateRoofs(rs => [...rs, {
+      id: uid(), name: `Cobertura ${rs.length + 1}`, level: levels[levels.length - 1]?.name || "",
+      shape: "2aguas", pitchDeg: "30", tileType: TILE_TYPES[0], overhangM: "0.4", ridgeAxis: "auto", highEdge: "maxY",
+      aguas: [{ id: uid(), inclinacao: "30", area: "" }, { id: uid(), inclinacao: "30", area: "" }],
+    }]);
+  }
+  function addAgua(roofId) { updateRoofs(rs => rs.map(r => r.id === roofId ? { ...r, aguas: [...r.aguas, { id: uid(), inclinacao: "30", area: "" }] } : r)); }
+  function removeAgua(roofId, aguaId) { updateRoofs(rs => rs.map(r => r.id === roofId ? { ...r, aguas: r.aguas.filter(a => a.id !== aguaId) } : r)); }
+  // Re-derives a roof's aguas array from its own settings (shape, pitch,
+  // overhang) and its level's current wall footprint — the count always
+  // matches the shape (1/2/4), and each area is filled in from the actual
+  // generated geometry instead of staying blank until someone measures it
+  // by hand. rufo/calha (still hand-entered — the auto footprint doesn't
+  // know where a valley or a parapet needs flashing) carry over by
+  // position when the água count didn't change; a shape change resets
+  // them, since "água 1" no longer means the same face once it does.
+  function recalcRoofGeometry(roofId) {
+    updateRoofs(rs => rs.map(r => {
+      if (r.id !== roofId) return r;
+      const level = levels.find(l => l.name === r.level);
+      const footprint = roofFootprintFromLevel(level);
+      if (!footprint) return r;
+      const { planes } = computeRoofPlanes(roofPlaneSettings(r), footprint, roofBaseElevation(r, footprint));
+      const aguas = planes.map((plane, i) => {
+        const prev = r.aguas[i];
+        const area = polygonAreaXZ(plane) / Math.cos((Math.max(0, Math.min(89, toNum(r.pitchDeg, 30))) * Math.PI) / 180);
+        return { id: prev?.id || uid(), inclinacao: r.pitchDeg, area: area.toFixed(1), rufo: prev?.rufo, calha: prev?.calha };
+      });
+      return { ...r, aguas };
+    }));
+  }
+  function setRoofField(roofId, patch) {
+    updateRoofs(rs => rs.map(r => r.id === roofId ? { ...r, ...patch } : r));
+  }
+
+  function runSync() {
+    setSyncing(true);
+    pushLog("Iniciando sincronização com Revit e exportação CAD…", "info");
+    let delay = 500;
+    setConn({ revit: false, cad: false });
+    levels.forEach(l => {
+      delay += 300;
+      setTimeout(() => { setConn(c => ({ ...c, revit: true })); pushLog(`Revit ← Level "${l.name}" (cota ${l.elevation} m)`, "revit"); }, delay);
+      (l.sketchElements || []).forEach(el => {
+        delay += 180;
+        let msg;
+        if (el.type === "wall") msg = `${el.tag} · Parede ${el.length} m × ${el.height} m → A-WALL`;
+        else if (el.type === "door") msg = `${el.tag} · Porta ${el.width}×${el.height} m → A-DOOR`;
+        else if (el.type === "window") msg = `${el.tag} · Janela ${el.width}×${el.height} m (peitoril ${el.peitoril} m) → A-GLAZ`;
+        else if (el.type === "room") msg = `Contorno "${el.name || "sem vínculo"}" · ${el.area} m² → A-AREA`;
+        if (msg) setTimeout(() => { pushLog(`CAD/Revit ← ${msg}`, "cad"); setConn(c => ({ ...c, cad: true })); }, 0);
+      });
+    });
+    rooms.forEach(r => {
+      delay += 300;
+      setTimeout(() => { pushLog(`Revit ← Room "${r.name}" (Nível: ${r.level}, Área: ${r.area || "—"} m²)`, "revit"); }, delay);
+      r.floors.forEach(f => { delay += 150; setTimeout(() => { pushLog(`CAD ← ${f.tag} · Piso ${f.type} · ${f.area} m² → A-FLOOR`, "cad"); }, delay); });
+    });
+    roofs.forEach(r => {
+      delay += 350;
+      setTimeout(() => { pushLog(`Revit ← Roof "${r.name}" — ${r.aguas.length} água(s): ${r.aguas.map(a => a.inclinacao + '°').join(", ")}`, "revit"); }, delay);
+    });
+    delay += 500;
+    setTimeout(() => { pushLog("Sincronização concluída — modelo Revit e desenho CAD atualizados.", "done"); setSyncing(false); }, delay);
+  }
+  function buildSchema() {
+    return buildLevantamentoSchema({ code: session?.code, buildingInfo, rooms, levels, roofs });
+  }
+  function download(filename, content, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+  function exportJSON() { download("levantamento_bim.json", JSON.stringify(buildSchema(), null, 2), "application/json"); pushLog("Arquivo levantamento_bim.json exportado.", "info"); }
+  function exportCSV() {
+    const rows = [["Nível/Ambiente", "Tag", "Categoria", "Tipo", "Dimensões", "Condição", "Demolir", "À construir"]];
+    levels.forEach(l => (l.sketchElements || []).forEach(el => {
+      if (el.type === "wall") rows.push([l.name, el.tag, "Parede", el.wallType, `${el.length}×${el.height} m`, el.condition, el.demolir ? "Sim" : "Não", el.construir ? "Sim" : "Não"]);
+      if (el.type === "door") rows.push([l.name, el.tag, "Porta", el.doorType, `${el.width}×${el.height} m`, el.condition, el.demolir ? "Sim" : "Não", el.construir ? "Sim" : "Não"]);
+      if (el.type === "window") rows.push([l.name, el.tag, "Janela", el.windowType, `${el.width}×${el.height} m (peit. ${el.peitoril})`, el.condition, el.demolir ? "Sim" : "Não", el.construir ? "Sim" : "Não"]);
+    }));
+    rooms.forEach(r => r.floors.forEach(f => rows.push([r.name, f.tag, "Piso", f.type, `${f.area} m²`, f.condition, "", ""])));
+    download("levantamento_elementos.csv", rows.map(r => r.join(";")).join("\n"), "text/csv");
+    pushLog("Arquivo levantamento_elementos.csv exportado.", "info");
+  }
+  // Drives the actual Croqui/3D UI through each level and the whole-
+  // building 3D view to grab real screenshots, instead of re-implementing
+  // their rendering a second time just for print — briefly visible tab
+  // switching is the cost of reusing the exact same view the user already
+  // trusts, rather than a second drawing routine that could drift out of
+  // sync with it. Always restores whichever tab/level/3D mode the user was
+  // actually on, success or failure.
+  async function exportPDF() {
+    if (pdfExporting) return;
+    setPdfExporting(true);
+    const prevTab = tab, prevModeloSub = modeloSub, prevView3dMode = view3dMode, prevCroquiLevelId = croquiLevelId, prevCroquiViewMode = croquiViewMode;
+    try {
+      const siteMap = await fetchSiteMapDataUrl(buildingInfo, buildingInfo?.siteMapApiKey);
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a4", orientation: pdfOrientation === "paisagem" ? "landscape" : "portrait" });
+      const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+      // frameMargin: inset of the outer sheet border, the way a printed
+      // "prancha" is framed. margin: inset of actual content from the page
+      // edge (bigger, so content never crowds the frame line). The carimbo
+      // sits flush in the frame's bottom-right corner on every sheet, so
+      // contentBottom carves out room for it — every sheet's drawable area
+      // stops above the carimbo strip, not just to its left, which keeps
+      // the layout simple and reliable across very different page types
+      // (a text page, a floor plan image, a 3D screenshot).
+      const frameMargin = 10, margin = 18;
+      const carimboW = 95, carimboH = 38;
+      const frameRight = pageW - frameMargin, frameBottom = pageH - frameMargin;
+      const carimboX = frameRight - carimboW, carimboY = frameBottom - carimboH;
+      const contentBottom = carimboY - 4;
+
+      // Content is generated first, page by page, without the frame/carimbo
+      // (so a page number and total can't be known yet mid-generation);
+      // sheetMeta records each page's title as it's created, and a final
+      // pass stamps the frame + carimbo (with the now-known "N/total") onto
+      // every page in one go.
+      const sheetMeta = [];
+      const beginSheet = title => { if (sheetMeta.length > 0) doc.addPage(); sheetMeta.push({ title }); };
+
+      const addImageSheet = (title, shot) => {
+        beginSheet(title);
+        doc.setFontSize(13); doc.setTextColor(20);
+        doc.text(title, margin, margin);
+        doc.setDrawColor(215); doc.setLineWidth(0.3);
+        doc.line(margin, margin + 3, pageW - margin, margin + 3);
+        const availW = pageW - margin * 2, availH = contentBottom - (margin + 8);
+        const ratio = Math.min(availW / shot.width, availH / shot.height);
+        const w = shot.width * ratio, h = shot.height * ratio;
+        doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, margin + 8, w, h);
+      };
+      // A simple compass rose (rosa dos ventos) in a floor plan's top-right
+      // corner — the app has no surveyed site orientation on file, so it
+      // always points "up" as north, the usual default for an as-built
+      // field sketch without a measured heading.
+      const drawCompassRose = (cx, cy, r) => {
+        doc.setDrawColor(70); doc.setLineWidth(0.3);
+        doc.circle(cx, cy, r);
+        doc.setLineWidth(0.2);
+        doc.line(cx, cy - r, cx, cy + r);
+        doc.line(cx - r, cy, cx + r, cy);
+        doc.setFillColor(30, 30, 30);
+        doc.triangle(cx, cy - r - 0.6, cx - 1.3, cy - r + 2.6, cx + 1.3, cy - r + 2.6, "F");
+        doc.setFontSize(6); doc.setTextColor(30);
+        doc.text("N", cx, cy - r - 1.6, { align: "center" });
+        doc.setFontSize(5); doc.setTextColor(120);
+        doc.text("S", cx, cy + r + 3, { align: "center" });
+        doc.text("L", cx + r + 3, cy + 1.3, { align: "center" });
+        doc.text("O", cx - r - 3, cy + 1.3, { align: "center" });
+      };
+      // A floor plan carries its own compact door/window schedule right on
+      // the same sheet, the way a real drawing set does — the P1/J1 tags on
+      // the plan are only useful next to a table that decodes them into
+      // real dimensions and material, not off on a separate page. Sized to
+      // the level's actual door/window count (capped) so a level with just
+      // one or two openings doesn't lose drawing space it doesn't need.
+      const addFloorPlanSheet = (title, shot, doors, windows) => {
+        beginSheet(title);
+        doc.setFontSize(13); doc.setTextColor(20);
+        doc.text(title, margin, margin);
+        doc.setDrawColor(215); doc.setLineWidth(0.3);
+        doc.line(margin, margin + 3, pageW - margin, margin + 3);
+        drawCompassRose(pageW - margin - 8, margin - 1, 5);
+
+        const hasSchedule = doors.length > 0 || windows.length > 0;
+        const rowH = 4.4;
+        const doorBlockRows = doors.length ? 2 + doors.length : 0;
+        const winBlockRows = windows.length ? 2 + windows.length : 0;
+        const scheduleH = hasSchedule ? Math.min(74, 5 + (doorBlockRows + winBlockRows) * rowH) : 0;
+
+        const imgTop = margin + 11;
+        const availW = pageW - margin * 2;
+        const availH = contentBottom - imgTop - (hasSchedule ? scheduleH + 5 : 0);
+        const ratio = Math.min(availW / shot.width, availH / shot.height);
+        const w = shot.width * ratio, h = shot.height * ratio;
+        doc.addImage(shot.dataUrl, "PNG", margin + (availW - w) / 2, imgTop, w, h);
+        if (!hasSchedule) return;
+
+        let ty = contentBottom - scheduleH;
+        doc.setDrawColor(210); doc.setLineWidth(0.25);
+        doc.line(margin, ty - 3, pageW - margin, ty - 3);
+        doc.setFontSize(8.5); doc.setTextColor(20);
+        doc.text("Tabela de esquadrias", margin, ty); ty += 4.5;
+
+        const colX = [margin, margin + 14, margin + 46, pageW - margin - 46];
+        const colEnd = pageW - margin;
+        const drawSub = (label, items, dimText, typeOf) => {
+          if (!items.length) return;
+          doc.setFontSize(6.8); doc.setTextColor(110);
+          doc.text(label, margin, ty); ty += 3.6;
+          doc.setFontSize(6.3); doc.setTextColor(140);
+          doc.text("CÓD", colX[0], ty); doc.text("DIMENSÕES", colX[1], ty);
+          doc.text("MATERIAL/TIPO", colX[2], ty); doc.text("CONDIÇÃO", colX[3], ty);
+          ty += 1; doc.setDrawColor(220); doc.line(margin, ty, colEnd, ty); ty += 3;
+          items.forEach(it => {
+            doc.setFontSize(7); doc.setTextColor(40);
+            doc.text(it.tag || "-", colX[0], ty);
+            doc.text(oneLine(dimText(it), colX[2] - colX[1] - 3), colX[1], ty);
+            doc.text(oneLine(typeOf(it) || "-", colX[3] - colX[2] - 3), colX[2], ty);
+            doc.text(oneLine(it.condition || "-", colEnd - colX[3]), colX[3], ty);
+            ty += rowH;
+          });
+        };
+        drawSub("PORTAS", doors, d => `${d.width ?? "-"}×${d.height ?? "-"} m`, d => d.doorType);
+        drawSub("JANELAS", windows, wdw => `${wdw.width ?? "-"}×${wdw.height ?? "-"} m (peit. ${wdw.peitoril ?? "-"})`, wdw => wdw.windowType);
+      };
+      // The carimbo's cells (and now the tables' columns) are narrow and
+      // fixed-width — jsPDF's maxWidth wraps overflowing text onto a second
+      // line instead of clipping it, which then prints straight through the
+      // cell's bottom edge or the next column. Truncate to one line (at the
+      // current font size) instead of letting it wrap.
+      const oneLine = (text, maxW) => {
+        if (!text) return text;
+        if (doc.getTextWidth(text) <= maxW) return text;
+        let t = text;
+        while (t.length > 1 && doc.getTextWidth(t + "…") > maxW) t = t.slice(0, -1);
+        return t + "…";
+      };
+      // A small hand-rolled table renderer (jsPDF has no table primitive of
+      // its own) — columns are {label, w (mm), align}. Spills onto a
+      // continuation sheet, header row repeated, whenever a row wouldn't
+      // fit above the carimbo; sums a numeric column into a printed total
+      // when totalCol/totalLabel are given (areas, counts).
+      const addTableSheet = (title, columns, rows, opts = {}) => {
+        beginSheet(title);
+        const colX = []; { let x = margin; columns.forEach(c => { colX.push(x); x += c.w; }); }
+        let y = margin;
+        const drawHeading = t => {
+          doc.setFontSize(13); doc.setTextColor(20);
+          doc.text(t, margin, y);
+          doc.setDrawColor(215); doc.setLineWidth(0.3);
+          doc.line(margin, y + 3, pageW - margin, y + 3);
+          y += 14;
+        };
+        const drawHeader = () => {
+          doc.setFontSize(7.5); doc.setTextColor(120);
+          columns.forEach((c, i) => {
+            if (c.align === "right") doc.text(c.label, colX[i] + c.w - 2, y, { align: "right" });
+            else doc.text(c.label, colX[i], y);
+          });
+          doc.setDrawColor(190); doc.setLineWidth(0.25);
+          doc.line(margin, y + 2, pageW - margin, y + 2);
+          y += 7;
+        };
+        drawHeading(title);
+        drawHeader();
+        if (!rows.length) {
+          doc.setFontSize(9); doc.setTextColor(120);
+          doc.text("Nenhum registro lançado ainda.", margin, y);
+          return;
+        }
+        doc.setFontSize(8.5);
+        rows.forEach(row => {
+          if (y > contentBottom) {
+            beginSheet(`${title} (cont.)`);
+            y = margin;
+            drawHeading(`${title} (continuação)`);
+            drawHeader();
+            doc.setFontSize(8.5);
+          }
+          columns.forEach((c, i) => {
+            doc.setTextColor(40);
+            const text = oneLine(String(row[i] ?? "-"), c.w - 3);
+            if (c.align === "right") doc.text(text, colX[i] + c.w - 2, y, { align: "right" });
+            else doc.text(text, colX[i], y);
+          });
+          y += 5.5;
+        });
+        if (opts.totalLabel) {
+          y += 2;
+          if (y > contentBottom) { beginSheet(`${title} (cont.)`); y = margin; drawHeading(`${title} (continuação)`); }
+          doc.setDrawColor(190); doc.line(margin, y - 3.5, pageW - margin, y - 3.5);
+          doc.setFontSize(9); doc.setTextColor(20);
+          doc.text(opts.totalLabel, margin, y);
+        }
+      };
+
+      // ---- Página 1: dados do levantamento ----
+      beginSheet("Dados do levantamento");
+      let y = margin;
+      doc.setFontSize(18); doc.setTextColor(20); doc.text(buildingInfo?.name || "Levantamento BIM", margin, y); y += 9;
+      doc.setFontSize(10); doc.setTextColor(90);
+      doc.text(`Código do projeto: ${session?.code || "-"}`, margin, y); y += 6;
+      doc.text(`Endereço: ${composeAddress(buildingInfo) || "não informado"}`, margin, y); y += 6;
+      doc.text(`Tipo: ${buildingInfo?.type || "-"}  ·  Níveis: ${levels.length}`, margin, y); y += 6;
+      doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, margin, y); y += 10;
+
+      // ---- Planta de situação (mapa do endereço, se houver chave configurada) ----
+      if (siteMap) {
+        if (y > contentBottom - 62) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+        doc.setFontSize(11); doc.setTextColor(20);
+        doc.text("Planta de situação", margin, y); y += 5;
+        const mapW = 85, mapH = mapW * (siteMap.height / siteMap.width);
+        doc.addImage(siteMap.dataUrl, "PNG", margin, y, mapW, mapH);
+        doc.setDrawColor(210); doc.setLineWidth(0.3); doc.rect(margin, y, mapW, mapH);
+        y += mapH + 3.5;
+        doc.setFontSize(6); doc.setTextColor(150);
+        doc.text("Mapa: © OpenStreetMap contributors · geoapify.com", margin, y);
+        y += 8;
+      }
+
+      doc.setTextColor(20); doc.setFontSize(13); doc.text("Resumo por nível", margin, y); y += 7;
+      doc.setFontSize(9); doc.setTextColor(60);
+      levels.forEach(l => {
+        const els = l.sketchElements || [];
+        const walls = els.filter(e => e.type === "wall").length;
+        const doorsCount = els.filter(e => e.type === "door").length;
+        const windowsCount = els.filter(e => e.type === "window").length;
+        if (y > contentBottom) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+        doc.text(`${l.name} — cota ${toNum(l.elevation, 0)} m — ${walls} parede(s), ${doorsCount} porta(s), ${windowsCount} janela(s)`, margin, y);
+        y += 5.5;
+      });
+
+      // ---- Observações gerais (texto livre do carimbo, uma linha = uma nota numerada) ----
+      const observacoes = (buildingInfo?.observacoes || "").split("\n").map(s => s.trim()).filter(Boolean);
+      if (observacoes.length) {
+        y += 4;
+        if (y > contentBottom - 14) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+        doc.setTextColor(20); doc.setFontSize(13); doc.text("Observações", margin, y); y += 7;
+        doc.setFontSize(9); doc.setTextColor(60);
+        observacoes.forEach((obs, i) => {
+          const num = String(i + 1).padStart(2, "0");
+          const lines = doc.splitTextToSize(`${num}. ${obs}`, pageW - margin * 2);
+          lines.forEach(line => {
+            if (y > contentBottom) { beginSheet("Dados do levantamento (cont.)"); y = margin; }
+            doc.text(line, margin, y);
+            y += 5;
+          });
+        });
+      }
+
+      // ---- Quadros de áreas e esquadrias ----
+      const tableW = pageW - margin * 2;
+      const roomsAreaTotal = rooms.reduce((s, r) => s + toNum(r.area, 0), 0);
+      addTableSheet("Quadro de áreas — Ambientes",
+        [{ label: "AMBIENTE", w: tableW * 0.30 }, { label: "NÍVEL", w: tableW * 0.18 },
+         { label: "ÁREA (M²)", w: tableW * 0.15, align: "right" }, { label: "USO", w: tableW * 0.37 }],
+        rooms.map(r => [r.name || "Ambiente sem nome", r.level || "-", r.area ? String(r.area) : "a definir", r.use || "sem uso definido"]),
+        { totalLabel: `Área total de ambientes: ${roomsAreaTotal.toFixed(2)} m²` });
+
+      const allWalls = levels.flatMap(l => (l.sketchElements || []).filter(e => e.type === "wall").map(w => ({ ...w, levelName: l.name })));
+      const wallsAreaTotal = allWalls.reduce((s, w) => s + toNum(w.length, 0) * toNum(w.height, 0), 0);
+      addTableSheet("Quadro de áreas — Paredes",
+        [{ label: "TAG", w: tableW * 0.10 }, { label: "NÍVEL", w: tableW * 0.16 }, { label: "TIPO", w: tableW * 0.22 },
+         { label: "COMPR. (M)", w: tableW * 0.15, align: "right" }, { label: "ALT. (M)", w: tableW * 0.13, align: "right" },
+         { label: "ÁREA (M²)", w: tableW * 0.14, align: "right" }, { label: "CONDIÇÃO", w: tableW * 0.10 }],
+        allWalls.map(w => [w.tag || "-", w.levelName, w.wallType || "-", w.length ?? "-", w.height ?? "-", (toNum(w.length, 0) * toNum(w.height, 0)).toFixed(2), w.condition || "-"]),
+        { totalLabel: `Área total de paredes: ${wallsAreaTotal.toFixed(2)} m²` });
+
+      // Portas/janelas ficam na própria prancha da planta (addFloorPlanSheet
+      // abaixo) — o tag P1/J1 no desenho só faz sentido ao lado da tabela
+      // que decodifica em dimensão/material, então não repetimos como
+      // pranchas de quadro separadas.
+
+      // ---- Plantas baixas: uma página por nível que já tem algo desenhado ----
+      for (const level of levels) {
+        const els = level.sketchElements || [];
+        if (!els.some(e => e.type === "wall")) continue;
+        setTab("croqui");
+        setCroquiViewMode("2d");
+        setCroquiLevelId(level.id);
+        await sleep(550);
+        const svgEl = document.querySelector('[data-croqui-svg="true"]');
+        const shot = svgEl ? await svgToPngDataUrl(svgEl) : null;
+        if (shot) {
+          const doors = els.filter(e => e.type === "door");
+          const windows = els.filter(e => e.type === "window");
+          addFloorPlanSheet(`Planta baixa — ${level.name}`, shot, doors, windows);
+        }
+      }
+
+      // ---- Modelo 3D (casa toda) ----
+      if (levels.some(l => (l.sketchElements || []).some(e => e.type === "wall"))) {
+        setTab("croqui"); setCroquiViewMode("3d"); setView3dMode("casa");
+        await sleep(900);
+        const canvasEl = document.querySelector('[data-threed-mount="true"] canvas');
+        if (canvasEl && canvasEl.width && canvasEl.height) {
+          addImageSheet("Modelo 3D", { dataUrl: canvasEl.toDataURL("image/png"), width: canvasEl.width, height: canvasEl.height });
+        }
+      }
+
+      // ---- Moldura + carimbo em todas as folhas ----
+      const total = sheetMeta.length;
+      const projetista = buildingInfo?.projetista
+        ? buildingInfo.projetista + (buildingInfo?.projetistaRegistro ? ` · ${buildingInfo.projetistaRegistro}` : "")
+        : "";
+      sheetMeta.forEach((meta, i) => {
+        const num = i + 1;
+        doc.setPage(num);
+        doc.setDrawColor(60); doc.setLineWidth(0.5);
+        doc.rect(frameMargin, frameMargin, pageW - frameMargin * 2, pageH - frameMargin * 2);
+
+        doc.setFillColor(255, 255, 255);
+        doc.rect(carimboX, carimboY, carimboW, carimboH, "F");
+        doc.setDrawColor(40); doc.setLineWidth(0.4);
+        doc.rect(carimboX, carimboY, carimboW, carimboH);
+        const rowLogo = 12, rowTitle = 8, rowProj = 9, rowResp = carimboH - rowLogo - rowTitle - rowProj;
+        const halfW = carimboW / 2;
+        let ry = carimboY;
+        doc.line(carimboX, ry + rowLogo, carimboX + carimboW, ry + rowLogo);
+        if (buildingInfo?.logoDataUrl && buildingInfo.logoW && buildingInfo.logoH) {
+          const aspect = buildingInfo.logoW / buildingInfo.logoH;
+          let lh = rowLogo - 3, lw = lh * aspect;
+          if (lw > 26) { lw = 26; lh = lw / aspect; }
+          try { doc.addImage(buildingInfo.logoDataUrl, "PNG", carimboX + 2, ry + (rowLogo - lh) / 2, lw, lh); } catch (e) {}
+        }
+        doc.setFontSize(9.5); doc.setTextColor(20);
+        doc.text(oneLine(buildingInfo?.empresa || "BRAVES BIM FIELD", carimboW - 32), carimboX + 30, ry + rowLogo / 2 + 2.8);
+        ry += rowLogo;
+
+        doc.line(carimboX, ry + rowTitle, carimboX + carimboW, ry + rowTitle);
+        doc.setFontSize(8); doc.setTextColor(20);
+        doc.text(oneLine(meta.title, carimboW - 4), carimboX + 2, ry + rowTitle / 2 + 2.4);
+        ry += rowTitle;
+
+        doc.line(carimboX, ry + rowProj, carimboX + carimboW, ry + rowProj);
+        doc.line(carimboX + halfW, ry, carimboX + halfW, ry + rowProj);
+        doc.setFontSize(6.5); doc.setTextColor(130);
+        doc.text("PROJETO", carimboX + 2, ry + 3.3);
+        doc.text("CÓDIGO", carimboX + halfW + 2, ry + 3.3);
+        doc.setFontSize(7.5); doc.setTextColor(20);
+        doc.text(oneLine(buildingInfo?.name || "-", halfW - 4), carimboX + 2, ry + 7.5);
+        doc.text(oneLine(session?.code || "-", halfW - 4), carimboX + halfW + 2, ry + 7.5);
+        ry += rowProj;
+
+        doc.line(carimboX + halfW, ry, carimboX + halfW, ry + rowResp);
+        doc.setFontSize(6.5); doc.setTextColor(130);
+        doc.text("RESPONSÁVEL TÉCNICO", carimboX + 2, ry + 3.3);
+        doc.text("DATA · PRANCHA", carimboX + halfW + 2, ry + 3.3);
+        doc.setFontSize(7.5); doc.setTextColor(20);
+        doc.text(oneLine(projetista || "não informado", halfW - 4), carimboX + 2, ry + 7.5);
+        doc.text(oneLine(`${new Date().toLocaleDateString("pt-BR")} · ${num}/${total}`, halfW - 4), carimboX + halfW + 2, ry + 7.5);
+      });
+
+      const safeName = (buildingInfo?.name || "levantamento_bim").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_");
+      doc.save(`${safeName}.pdf`);
+      pushLog("PDF do levantamento exportado.", "info");
+    } catch (e) {
+      pushLog("Não foi possível gerar o PDF.", "info");
+    } finally {
+      setTab(prevTab); setModeloSub(prevModeloSub); setView3dMode(prevView3dMode); setCroquiLevelId(prevCroquiLevelId); setCroquiViewMode(prevCroquiViewMode);
+      setPdfExporting(false);
+    }
+  }
+
+  if (!session) return <JoinScreen onJoin={joinProject} />;
+
+  const totalArea = rooms.reduce((s, r) => s + (toNum(r.area, 0)), 0).toFixed(1);
+  const allEls = levels.flatMap(l => l.sketchElements || []);
+  const totalElements = allEls.length + rooms.reduce((s, r) => s + r.floors.length, 0);
+
+  const TABS = [
+    { id: "croqui", label: "Croqui", Icon: Pencil },
+    { id: "modelo", label: "Elementos", Icon: Rotate3d },
+    { id: "ambientes", label: "Ambientes", Icon: LayoutGrid },
+    { id: "tabelas", label: "Tabelas", Icon: Table2 },
+    { id: "sync", label: "Sincronização", Icon: RefreshCw },
+  ];
+
+  return (
+    <div className="braves-app-root relative w-full overflow-hidden flex flex-col" style={{ ...METAL_BG, height: "var(--app-vh, 100dvh)", fontFamily: "'Plus Jakarta Sans','Inter','Helvetica Neue',sans-serif" }}>
+      <Watermark />
+      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhotoCaptured} />
+
+      <div className="relative px-4 pt-2 pb-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <BrandMark size={30} />
+            <div>
+              <div className="text-base font-semibold leading-tight" style={{ ...heading, color: C.chalk, fontSize: "17px" }}>{buildingInfo?.name || "BRAVES BIM FIELD"}</div>
+              <div className="text-[11px] -mt-0.5 flex items-center gap-1" style={{ color: C.mute }}>
+                {session.role === "tablet" ? <Tablet size={11} /> : <Smartphone size={11} />}
+                {editingCode ? (
+                  <>
+                    <input autoFocus value={codeDraft} onChange={e => setCodeDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { renameProjectCode(codeDraft); setEditingCode(false); } if (e.key === "Escape") setEditingCode(false); }}
+                      className="w-16 px-1 rounded text-[11px] uppercase" style={{ ...mono, background: "rgba(255,255,255,0.1)", color: C.chalk, border: `1px solid ${C.gold}` }} />
+                    <button onClick={() => { renameProjectCode(codeDraft); setEditingCode(false); }}><CheckCircle2 size={12} color={C.gold} /></button>
+                  </>
+                ) : (
+                  <button onClick={() => { setCodeDraft(session.code); setEditingCode(true); }} style={{ ...heading, fontWeight: 700 }} className="underline decoration-dotted">{session.code}</button>
+                )}
+                <button onClick={() => navigator.clipboard?.writeText(session.code)}><Copy size={10} /></button>
+                <button onClick={switchProject} className="ml-1.5 flex items-center gap-0.5" style={{ ...heading, fontWeight: 600, color: C.gold }}><Home size={10} /> Início</button>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1 items-center justify-end">
+            <Pill active={online} label={online ? "ONLINE" : "SEM SINAL — SALVANDO NO APARELHO"} Icon={online ? Wifi : WifiOff} />
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${C.line}` }}>
+              <Users size={11} color={C.gold} />
+              <span className="text-[10px]" style={{ ...mono, color: C.chalk }}>{peers}</span>
+            </div>
+            <Pill active={conn.revit} label="REVIT" Icon={conn.revit ? Wifi : WifiOff} />
+            <Pill active={conn.cad} label="CAD" Icon={conn.cad ? Wifi : WifiOff} />
+          </div>
+        </div>
+        {pending > 0 && (
+          <div className="mt-1.5 flex justify-end">
+            <span className="text-[10px] px-2 py-1 rounded-full" style={{ ...heading, fontWeight: 600, color: C.bad, background: "rgba(193,84,63,0.14)", border: "1px solid rgba(193,84,63,0.4)" }}>{pending} pendente(s)</span>
+          </div>
+        )}
+        <div className="mt-1.5 flex gap-4 text-xs" style={{ color: C.mute }}>
+          <span style={{ ...heading, fontWeight: 600 }}>{rooms.length} ambientes</span><span>·</span>
+          <span style={{ ...heading, fontWeight: 600 }}>{totalArea} m²</span><span>·</span>
+          <span style={{ ...heading, fontWeight: 600 }}>{totalElements} elementos</span><span>·</span>
+          <span style={{ ...heading, fontWeight: 600 }}>{levels.length} níveis</span>
+        </div>
+      </div>
+
+      <div className="relative flex-1 min-h-0 p-4 overflow-y-auto">
+        {tab === "ambientes" && !activeRoom && !ambientesLevelFilter && (
+          <div className="space-y-2">
+            {levels.map(l => {
+              const roomsHere = rooms.filter(r => r.level === l.name);
+              const totalArea = roomsHere.reduce((s, r) => s + (toNum(r.area, 0)), 0);
+              return (
+                <button key={l.id} onClick={() => setAmbientesLevelFilter(l.name)}
+                  className="w-full text-left p-3 rounded-lg flex items-center gap-3"
+                  style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                  <div className="w-9 h-9 rounded flex items-center justify-center" style={{ background: C.panelAlt }}>
+                    <Layers3 size={16} color={C.gold} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: C.chalk }}>{l.name}</div>
+                    <div className="text-[11px]" style={{ color: C.mute }}>{roomsHere.length} ambiente(s) · {totalArea.toFixed(1)} m² de área construída · cota {l.elevation} m · pé-direito {l.wallHeightDefault || "2.80"} m</div>
+                  </div>
+                  <ChevronRight size={16} color={C.mute} />
+                </button>
+              );
+            })}
+            {levels.length === 0 && <div className="text-[11px] italic text-center py-6" style={{ color: C.mute }}>Nenhum nível criado ainda.</div>}
+          </div>
+        )}
+
+        {tab === "ambientes" && !activeRoom && ambientesLevelFilter && (
+          <div className="space-y-2">
+            <button onClick={() => setAmbientesLevelFilter(null)} className="text-xs mb-1 flex items-center gap-1" style={{ color: C.mute }}>← Voltar aos níveis</button>
+            <div className="text-xs font-semibold mb-1" style={{ color: C.gold }}>{ambientesLevelFilter}</div>
+            {rooms.filter(r => r.level === ambientesLevelFilter).map(r => {
+              const revealed = pressedRoomId === r.id;
+              const confirming = confirmDeleteRoomId === r.id;
+              const startPress = () => {
+                longPressTimer.current = setTimeout(() => { setPressedRoomId(r.id); justLongPressed.current = true; }, 500);
+              };
+              const cancelPress = () => { if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; } };
+              if (confirming) {
+                return (
+                  <div key={r.id} className="w-full p-3 rounded-lg flex items-center gap-2 flex-wrap"
+                    style={{ background: "rgba(193,84,63,0.1)", border: `1px solid ${C.bad}` }}>
+                    <span className="text-xs flex-1" style={{ color: C.chalk }}>Apagar "{r.name}"? Essa ação não pode ser desfeita.</span>
+                    <button onClick={() => setConfirmDeleteRoomId(null)} className="text-[11px] px-2.5 py-1.5 rounded" style={{ color: C.mute, background: C.panelAlt }}>Cancelar</button>
+                    <button onClick={() => { removeRoom(r.id); setConfirmDeleteRoomId(null); setPressedRoomId(null); }}
+                      className="text-[11px] px-2.5 py-1.5 rounded" style={{ color: "#141311", background: C.bad }}>Apagar</button>
+                  </div>
+                );
+              }
+              return (
+                <div key={r.id} role="button" tabIndex={0}
+                  onClick={() => {
+                    // A long press's own mouseup/touchend is still followed by a
+                    // native click on release — without this, that trailing
+                    // click would immediately re-toggle the just-revealed trash
+                    // icon back off before anyone could tap it.
+                    if (justLongPressed.current) { justLongPressed.current = false; return; }
+                    if (revealed) { setPressedRoomId(null); return; }
+                    setActiveRoomId(r.id);
+                  }}
+                  onTouchStart={startPress} onTouchEnd={cancelPress} onTouchMove={cancelPress}
+                  onMouseDown={startPress} onMouseUp={cancelPress} onMouseLeave={cancelPress}
+                  className="w-full text-left p-3 rounded-lg flex items-center gap-3 cursor-pointer"
+                  style={{ background: C.panel, border: `1px solid ${revealed ? C.bad : C.line}` }}>
+                  <div className="w-9 h-9 rounded flex items-center justify-center" style={{ background: C.panelAlt }}>
+                    <Building2 size={16} color={C.gold} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: C.chalk }}>{r.name}</div>
+                    <div className="text-[11px] flex items-center gap-1.5" style={{ color: C.mute }}>
+                      <span>{r.area ? `${r.area} m²` : "área não definida"}</span>
+                      {r.photos > 0 && <span className="flex items-center gap-0.5"><Camera size={10} />{r.photos}</span>}
+                      {r.geo && <MapPin size={10} />}
+                    </div>
+                  </div>
+                  {revealed ? (
+                    <button onClick={e => { e.stopPropagation(); setConfirmDeleteRoomId(r.id); }}
+                      title="Apagar ambiente" className="p-1.5 rounded shrink-0" style={{ color: C.bad, background: "rgba(193,84,63,0.14)" }}>
+                      <Trash2 size={16} />
+                    </button>
+                  ) : (
+                    <>
+                      <span className="text-[10px] px-2 py-1 rounded" style={{ color: conditionColor(r.condition), background: "rgba(255,255,255,0.06)" }}>{r.condition}</span>
+                      <ChevronRight size={16} color={C.mute} />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {rooms.filter(r => r.level === ambientesLevelFilter).length > 0 && (
+              <p className="text-[10px] text-center" style={{ color: C.muteDim }}>Segure um ambiente pra apagar.</p>
+            )}
+
+            {rooms.filter(r => r.level === ambientesLevelFilter).length === 0 && (
+              <div className="text-[11px] italic text-center py-6" style={{ color: C.mute }}>Nenhum ambiente traçado ainda neste nível.</div>
+            )}
+            <button onClick={() => { setCroquiLevelId(levels.find(l => l.name === ambientesLevelFilter)?.id || null); setTab("croqui"); }}
+              className="w-full py-3 rounded-lg flex items-center justify-center gap-2 text-sm" style={{ border: `1px dashed ${C.line}`, color: C.mute }}>
+              <Pencil size={14} /> Ir ao Croqui pra desenhar um ambiente
+            </button>
+            <p className="text-[11px] text-center pt-1" style={{ color: C.muteDim }}>Ambientes só existem se forem desenhados na aba Croqui (ferramenta "Ambiente") — a área é medida automaticamente a partir do contorno real, sem digitar nada à mão.</p>
+          </div>
+        )}
+
+        {tab === "ambientes" && activeRoom && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => setActiveRoomId(null)} className="text-xs flex items-center gap-1" style={{ color: C.mute }}>← Voltar aos ambientes</button>
+              <button onClick={() => { setActiveRoomId(null); setTab("ambientes"); }} className="text-xs flex items-center gap-1 px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}><Home size={12} /> Início</button>
+            </div>
+            <div className="p-3 rounded-lg mb-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <div className="text-lg font-semibold mb-2" style={{ ...heading, color: C.chalk, fontSize: "20px" }}>{activeRoom.name}</div>
+              <StatRow label="Nível" value={activeRoom.level} />
+              <StatRow label="Área" value={activeRoom.area ? `${activeRoom.area} m²` : "ainda não definida"} />
+              <StatRow label="Área de parede" value={activeRoomWallFaces.length ? `${activeRoomWallAreaTotal.toFixed(2)} m²` : "sem parede vinculada"} />
+              <StatRow label="Piso" value={activeRoomPolygon?.floorFinish || "A definir"} />
+              <StatRow label="Forro" value={`${activeRoomPolygon?.ceilingFinish || "A definir"}${activeRoom.area ? ` · ${activeRoom.area} m²` : ""}`} />
+              <StatRow label="Uso" value={activeRoom.use || "—"} />
+              <StatRow label="Condição geral" value={activeRoom.condition} />
+              {activeRoom.geo && <StatRow label="GPS" value={`${activeRoom.geo.lat}, ${activeRoom.geo.lon}`} />}
+              <div className="mt-2">
+                <div className="text-[11px] mb-1" style={{ color: C.mute }}>OBSERVAÇÕES DE CAMPO</div>
+                <textarea value={activeRoom.notes} placeholder="Anotar patologias, divergências com projeto, etc."
+                  onChange={e => updateRooms(rs => rs.map(r => r.id === activeRoom.id ? { ...r, notes: e.target.value } : r))}
+                  className="w-full text-xs p-2 rounded" rows={2} style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+              </div>
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => openCamera(activeRoom.id)} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                  <ImagePlus size={13} /> {activeRoom.photos} foto(s) — tirar nova
+                </button>
+                <button onClick={() => markLocation(activeRoom.id)} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                  <LocateFixed size={13} /> Marcar local
+                </button>
+              </div>
+              {(photoThumbs[activeRoom.id] || []).length > 0 && (
+                <div className="flex gap-1.5 mt-2 overflow-x-auto">
+                  {photoThumbs[activeRoom.id].map((url, i) => <img key={i} src={url} alt="" className="w-14 h-14 rounded object-cover" style={{ border: `1px solid ${C.line}` }} />)}
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded-lg mb-3 flex items-center justify-between" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+              <span className="text-[11px]" style={{ color: C.mute }}>Paredes, portas e janelas agora se desenham na aba Croqui (nível inteiro, geometria real).</span>
+              <button onClick={() => { const lvl = levels.find(l => l.name === activeRoom.level); if (lvl) setCroquiLevelId(lvl.id); setTab("croqui"); }}
+                className="text-[11px] px-2.5 py-1.5 rounded shrink-0 ml-2" style={{ background: C.goldTint, color: C.gold }}>Ir ao Croqui</button>
+            </div>
+
+            <div className="mb-3">
+              <div className="text-xs font-medium mb-1.5" style={{ color: C.chalk }}>Paredes</div>
+              <div className="space-y-1.5">
+                {activeRoomWallFaces.length === 0 && <div className="text-[11px] italic" style={{ color: C.mute }}>Nenhuma parede vinculada a este ambiente ainda — desenhe o contorno encostado nas paredes reais no Croqui.</div>}
+                {activeRoomWallFaces.map(({ wall, finish, color }, i) => (
+                  <div key={`${wall.id}-${i}`} className="flex items-center gap-2 px-2.5 py-2 rounded flex-wrap" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                    <BrickWall size={13} color={C.mute} />
+                    <span className="text-xs font-semibold" style={{ ...mono, color: C.gold }}>{wall.tag}</span>
+                    <span className="text-[11px]" style={{ color: C.mute }}>{wall.length}×{wall.height} m = {(toNum(wall.length, 0) * toNum(wall.height, 0)).toFixed(2)} m²</span>
+                    <span className="text-[11px]" style={{ color: C.chalk }}>{finish || "A definir"}</span>
+                    {finish === "Pintura" && color && <span className="w-3.5 h-3.5 rounded-full inline-block shrink-0" style={{ background: color, border: `1px solid ${C.line}` }} />}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded ml-auto shrink-0" style={{ color: conditionColor(wall.condition), background: "rgba(255,255,255,0.06)" }}>{wall.condition}</span>
+                    {wall.demolir && <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ color: C.bad, background: "rgba(193,84,63,0.14)" }}>Demolir</span>}
+                    {wall.construir && <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ color: C.good, background: "rgba(107,156,90,0.14)" }}>À construir</span>}
+                  </div>
+                ))}
+                {activeRoomWallFaces.length > 0 && (
+                  <div className="text-[11px] text-right pr-1" style={{ color: C.mute }}>Total de parede: {activeRoomWallAreaTotal.toFixed(2)} m²</div>
+                )}
+              </div>
+            </div>
+
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium" style={{ color: C.chalk }}>Pisos</span>
+                <button onClick={() => addFloor(activeRoom.id)} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}>
+                  <Plus size={11} /> adicionar
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                {activeRoom.floors.length === 0 && <div className="text-[11px] italic" style={{ color: C.mute }}>Nenhum piso registrado.</div>}
+                {activeRoom.floors.map(f => <FloorRow key={f.id} el={f} onPatch={p => patchFloor(activeRoom.id, f.id, p)} onDelete={() => removeFloor(activeRoom.id, f.id)} />)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "croqui" && (
+          <div>
+            {/* The croqui (2D sketch) is the app's main tool, so its own
+                canvas gets first claim on vertical space — this row folds
+                what used to be two full-width rows (a "Planta 2D/3D" toggle
+                above the card, plus a "Croqui do nível" line inside it) into
+                one, so VectorSketch's own auto-sizing (which fills whatever
+                is left down to the bottom nav) has more room to give the
+                canvas. */}
+            <div className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <div className="flex items-center gap-1.5 mb-2">
+                {croquiViewMode === "2d" ? (
+                  levels.length > 0 ? (
+                    <select value={croquiLevel?.id || ""} onChange={e => setCroquiLevelId(e.target.value)} className="text-xs px-2 py-1.5 rounded w-24 truncate"
+                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                      {levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  ) : <span className="text-xs" style={{ color: C.mute }}>Nenhum nível criado</span>
+                ) : croquiViewMode === "elevacao" ? (
+                  elevationRoomOptions.length > 0 ? (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <select value={elevationRoomName || ""} onChange={e => setElevationRoomName(e.target.value)} className="text-xs px-2 py-1.5 rounded w-24 truncate"
+                        style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                        {elevationRoomOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                      <button onClick={() => setElevationZoom(z => Math.max(0.35, +(z - 0.15).toFixed(2)))} title="Diminuir (ver mais folhas)"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomOut size={13} color={C.chalk} /></button>
+                      <button onClick={() => setElevationZoom(1)} title="Zoom padrão" className="px-1.5 py-1.5 rounded text-[10px] shrink-0"
+                        style={{ ...heading, fontWeight: 600, background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>{Math.round(elevationZoom * 100)}%</button>
+                      <button onClick={() => setElevationZoom(z => Math.min(2, +(z + 0.15).toFixed(2)))} title="Aumentar"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><ZoomIn size={13} color={C.chalk} /></button>
+                      <button onClick={elevUndo} disabled={!elevUndoStack.length} title="Voltar (desfazer um arraste na Elevação)"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, opacity: elevUndoStack.length ? 1 : 0.4 }}><Undo2 size={13} color={C.chalk} /></button>
+                      <button onClick={elevRedo} disabled={!elevRedoStack.length} title="Avançar"
+                        className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, opacity: elevRedoStack.length ? 1 : 0.4 }}><Redo2 size={13} color={C.chalk} /></button>
+                      <div className="flex gap-0.5 rounded p-0.5 shrink-0" style={{ background: C.panelAlt }}>
+                        <button onClick={() => { setElevTool("selecionar"); setElevCotaPending(null); }} title="Selecionar"
+                          className="p-1 rounded" style={{ background: elevTool === "selecionar" ? C.gold : "transparent" }}>
+                          <MousePointer2 size={13} color={elevTool === "selecionar" ? "#141311" : C.chalk} />
+                        </button>
+                        <button onClick={() => { setElevTool("cota"); setElevSelectedCota(null); }} title="Cota (toque dois pontos na mesma parede)"
+                          className="p-1 rounded" style={{ background: elevTool === "cota" ? C.gold : "transparent" }}>
+                          <Ruler size={13} color={elevTool === "cota" ? "#141311" : C.chalk} />
+                        </button>
+                      </div>
+                      {elevSelectedCota && (
+                        <button onClick={deleteSelectedElevCota} title="Apagar cota selecionada"
+                          className="p-1.5 rounded shrink-0" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}><Trash2 size={13} color="#C1543F" /></button>
+                      )}
+                    </div>
+                  ) : <span className="text-xs" style={{ color: C.mute }}>Nenhuma parede neste nível</span>
+                ) : (
+                  <div className="flex gap-1 rounded p-0.5" style={{ background: C.panelAlt }}>
+                    <button onClick={() => setView3dMode("casa")} className="flex items-center gap-1 px-2 py-1 rounded text-[11px]"
+                      style={{ ...heading, fontWeight: 600, background: view3dMode === "casa" ? C.gold : "transparent", color: view3dMode === "casa" ? "#141311" : C.mute }}>
+                      <Home size={11} /> Casa toda
+                    </button>
+                    <button onClick={() => setView3dMode("ambiente")} className="flex items-center gap-1 px-2 py-1 rounded text-[11px]"
+                      style={{ ...heading, fontWeight: 600, background: view3dMode === "ambiente" ? C.gold : "transparent", color: view3dMode === "ambiente" ? "#141311" : C.mute }}>
+                      <Box size={11} /> Ambiente
+                    </button>
+                  </div>
+                )}
+                {croquiViewMode === "2d" && hasPhaseElements2D && (
+                  <button onClick={() => setPhaseMenuOpen2D(v => !v)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] shrink-0"
+                    style={{ ...heading, fontWeight: 600, background: phaseMenuOpen2D ? C.goldTint : C.panelAlt, color: phaseMenuOpen2D ? C.gold : C.mute, border: `1px solid ${phaseMenuOpen2D ? C.gold : C.line}` }}>
+                    <Layers size={12} /> Vistas: {PHASE_VIEWS.find(v => v.id === phaseView2D)?.label}
+                    <ChevronDown size={12} style={{ transform: phaseMenuOpen2D ? "rotate(180deg)" : undefined }} />
+                  </button>
+                )}
+                <div className="flex gap-1 shrink-0 rounded p-0.5 ml-auto" style={{ background: C.panelAlt }}>
+                  <button onClick={() => setCroquiViewMode("2d")} className="px-2.5 py-1 rounded text-[11px]"
+                    style={{ ...heading, fontWeight: 600, background: croquiViewMode === "2d" ? C.gold : "transparent", color: croquiViewMode === "2d" ? "#141311" : C.mute }}>
+                    2D
+                  </button>
+                  <button onClick={() => {
+                    setCroquiViewMode("elevacao");
+                    if (elevationRoomOptions.includes(elevationRoomName)) return;
+                    const walls = croquiLevel?.sketchElements?.filter(e => e.type === "wall") || [];
+                    const firstWall = walls[0] || null;
+                    const firstRoomName = firstWall ? wallRoomAdjacency(croquiLevel, firstWall).faceA : null;
+                    setElevationRoomName(firstRoomName);
+                  }} className="px-2.5 py-1 rounded text-[11px]"
+                    style={{ ...heading, fontWeight: 600, background: croquiViewMode === "elevacao" ? C.gold : "transparent", color: croquiViewMode === "elevacao" ? "#141311" : C.mute }}>
+                    Elevação
+                  </button>
+                  <button onClick={() => setCroquiViewMode("3d")} className="px-2.5 py-1 rounded text-[11px]"
+                    style={{ ...heading, fontWeight: 600, background: croquiViewMode === "3d" ? C.gold : "transparent", color: croquiViewMode === "3d" ? "#141311" : C.mute }}>
+                    3D
+                  </button>
+                </div>
+              </div>
+
+              {croquiViewMode === "2d" && hasPhaseElements2D && phaseMenuOpen2D && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  {PHASE_VIEWS.map(({ id, label }) => (
+                    <button key={id} onClick={() => { setPhaseView2D(id); setPhaseMenuOpen2D(false); }} className="px-2 py-1 rounded text-[10px]"
+                      style={{ ...heading, fontWeight: 600, background: phaseView2D === id ? C.goldTint : C.panelAlt, color: phaseView2D === id ? C.gold : C.mute, border: `1px solid ${phaseView2D === id ? C.gold : C.line}` }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {croquiViewMode === "2d" && croquiLevel && (
+                <VectorSketch level={croquiLevel} allLevels={levels} rooms={rooms.filter(r => r.level === croquiLevel.name)}
+                  onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
+                  onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
+                  onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)}
+                  phaseView={phaseView2D} roofOverlays={croquiRoofOverlays}
+                  exportMode={pdfExporting} onOpenThreeD={() => setCroquiViewMode("3d")} />
+              )}
+              {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
+              {croquiViewMode === "elevacao" && croquiLevel && (
+                elevationRoomWalls.length > 0 ? (
+                  <div style={{ height: elevationNaturalHeight ? elevationNaturalHeight * elevationZoom : undefined, overflow: "hidden" }}>
+                  <div ref={elevationScaleRef} style={{ transform: `scale(${elevationZoom})`, transformOrigin: "top left" }}>
+                  {/* Every wall's own sheet, side by side wherever the
+                      screen is wide enough for more than one (a tablet, or
+                      a phone turned sideways) instead of always one long
+                      vertical scroll — auto-fit lets however many actually
+                      fit per row do so, then wraps the rest down, still
+                      falling back to one per row on a narrow phone. */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", alignItems: "start" }}>
+                    {/* Every wall of the room — not a one-at-a-time picker —
+                        so the whole ambiente is visible without extra taps. */}
+                    {elevationRoomWalls.map(w => {
+                      // "Externo" is the building's own outside face, not
+                      // any one room's inside — never clipped to a room
+                      // span, and stacked across every pavimento that
+                      // shares this same wall footprint so the full height
+                      // of the building shows, not just this one level's.
+                      if (elevationRoomName === "Externo") {
+                        const stack = buildingElevationStack(levels, croquiLevel, w);
+                        const topLevel = stack[stack.length - 1]?.level;
+                        return (
+                          <div key={w.id}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[11px] font-semibold" style={{ color: C.gold }}>Parede {w.tag}</span>
+                              {topLevel && (
+                                <button onClick={() => clearElevAdjustments(topLevel, w.id)} title="Apagar ajustes de posição desta parede (cotas e tags arrastados)"
+                                  className="text-[10px] underline shrink-0" style={{ color: C.mute }}>apagar ajustes</button>
+                              )}
+                            </div>
+                            <div className="flex flex-col-reverse">
+                              {stack.map(({ level: lvl, wall: sw }) => (
+                                <ElevationView key={lvl.id + ":" + sw.id} level={lvl} wallId={sw.id}
+                                  onPatchOpening={(id, patch) => updateLevelElement(lvl.id, id, patch)}
+                                  onPatchDimStyle={(key, patch) => patchElevDimStyle(lvl, key, patch)}
+                                  onDragBegin={pushElevHistory}
+                                  elevTool={elevTool}
+                                  pendingPointM={elevCotaPending?.levelId === lvl.id && elevCotaPending?.wallId === sw.id ? elevCotaPending : null}
+                                  onElevCotaTap={(xM, yM) => handleElevCotaTap(lvl.id, sw.id, xM, yM)}
+                                  selectedCotaId={elevSelectedCota?.levelId === lvl.id && elevSelectedCota?.wallId === sw.id ? elevSelectedCota.id : null}
+                                  onSelectCota={id => setElevSelectedCota({ levelId: lvl.id, wallId: sw.id, id })} />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                      const scale = toNum(croquiLevel.sketchScale, 0.5);
+                      const toM = (px) => (px / GRID) * scale;
+                      const fullLenPx = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+                      const span = wallSpanForRoom(croquiLevel, w, elevationRoomName) || { startPx: 0, endPx: fullLenPx };
+                      return (
+                        <div key={w.id}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[11px] font-semibold" style={{ color: C.gold }}>Parede {w.tag}</span>
+                            <button onClick={() => clearElevAdjustments(croquiLevel, w.id)} title="Apagar ajustes de posição desta parede (cotas e tags arrastados)"
+                              className="text-[10px] underline shrink-0" style={{ color: C.mute }}>apagar ajustes</button>
+                          </div>
+                          <ElevationView level={croquiLevel} wallId={w.id} spanStartM={toM(span.startPx)} spanEndM={toM(span.endPx)}
+                            onPatchOpening={(id, patch) => updateLevelElement(croquiLevel.id, id, patch)}
+                            onPatchDimStyle={(key, patch) => patchElevDimStyle(croquiLevel, key, patch)}
+                            onDragBegin={pushElevHistory}
+                            elevTool={elevTool}
+                            pendingPointM={elevCotaPending?.levelId === croquiLevel.id && elevCotaPending?.wallId === w.id ? elevCotaPending : null}
+                            onElevCotaTap={(xM, yM) => handleElevCotaTap(croquiLevel.id, w.id, xM, yM)}
+                            selectedCotaId={elevSelectedCota?.levelId === croquiLevel.id && elevSelectedCota?.wallId === w.id ? elevSelectedCota.id : null}
+                            onSelectCota={id => setElevSelectedCota({ levelId: croquiLevel.id, wallId: w.id, id })} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  </div>
+                  </div>
+                ) : (
+                  <div className="text-center text-sm py-10" style={{ color: C.mute }}>Selecione um ambiente com paredes para ver as elevações.</div>
+                )
+              )}
+              {croquiViewMode === "elevacao" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}
+            </div>
+
+            {croquiViewMode === "3d" && (
+              <div>
+                <div className="flex gap-1.5 mb-3 flex-wrap">
+                  {view3dMode === "ambiente" && (
+                    <select value={view3dRoomId || ""} onChange={e => setView3dRoomId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
+                      style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                      <option value="">Selecione um ambiente</option>
+                      {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  )}
+                  <button onClick={() => setView3dOpen(o => !o)} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs ml-auto"
+                    style={{ background: view3dOpen ? C.goldTint : C.panelAlt, color: view3dOpen ? C.gold : C.mute, border: `1px solid ${view3dOpen ? "#FFFFFF" : C.line}` }}>
+                    <DoorOpen size={12} /> {view3dOpen ? "Portas/janelas abertas" : "Portas/janelas fechadas"}
+                  </button>
+                </div>
+
+                {levels.some(l => (l.sketchElements || []).some(e => (e.type === "wall" || e.type === "door" || e.type === "window") && (e.demolir || e.construir))) && (
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    <span className="text-[10px] shrink-0" style={{ color: C.mute }}>Vistas:</span>
+                    {PHASE_VIEWS.map(({ id, label }) => (
+                      <button key={id} onClick={() => setPhaseView3D(id)} className="px-2 py-1 rounded text-[10px]"
+                        style={{ ...heading, fontWeight: 600, background: phaseView3D === id ? C.goldTint : C.panelAlt, color: phaseView3D === id ? C.gold : C.mute, border: `1px solid ${phaseView3D === id ? C.gold : C.line}` }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5 mb-2 p-2 rounded-lg" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-1 text-[11px] shrink-0" style={{ color: C.mute }}>
+                      <Scissors size={12} /> Corte:
+                    </span>
+                    {[
+                      { key: "x", label: "Eixo X", min: -15 },
+                      { key: "y", label: "Eixo Y (altura)", min: -1 },
+                      { key: "z", label: "Eixo Z", min: -15 },
+                    ].map(({ key, label }) => {
+                      const axis = sectionCut[key];
+                      return (
+                        <button key={key} onClick={() => setSectionCut(s => ({ ...s, [key]: { ...s[key], enabled: !s[key].enabled } }))}
+                          className="px-2 py-1 rounded text-[11px] shrink-0"
+                          style={{ background: axis.enabled ? C.goldTint : "transparent", color: axis.enabled ? C.gold : C.mute, border: `1px solid ${axis.enabled ? "#FFFFFF" : C.line}` }}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Only an enabled axis's own slider takes a row — off by
+                      default (all three), this used to always reserve three
+                      full rows regardless, eating space the 3D view itself
+                      could use instead. */}
+                  {[
+                    { key: "x", label: "X", min: -15 },
+                    { key: "y", label: "Y", min: -1 },
+                    { key: "z", label: "Z", min: -15 },
+                  ].filter(({ key }) => sectionCut[key].enabled).map(({ key, label, min }) => {
+                    const axis = sectionCut[key];
+                    return (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-[10px] w-3 shrink-0" style={{ color: C.mute }}>{label}</span>
+                        <input type="range" min={min} max="15" step="0.1" value={axis.position}
+                          onChange={e => setSectionCut(s => ({ ...s, [key]: { ...s[key], position: toNum(e.target.value, s[key].position) } }))}
+                          className="flex-1 min-w-[100px]" />
+                        <span className="text-[10px] shrink-0" style={{ ...mono, color: C.mute }}>{axis.position.toFixed(1)} m</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {view3dMode === "casa" && (
+                  <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
+                    <ThreeDView buildingLevels={levels.map(levelToMeters)} elevationsById={Object.fromEntries(levels.map(l => [l.id, toNum(l.elevation, 0)]))}
+                      roofs={roofs.map(roof => {
+                        const footprint = roofFootprintFromLevel(levels.find(l => l.name === roof.level));
+                        if (!footprint) return null;
+                        const baseElevation = roofBaseElevation(roof, footprint);
+                        const geo = computeRoofPlanes(roofPlaneSettings(roof), footprint, baseElevation);
+                        return { id: roof.id, name: roof.name, tileType: roof.tileType || TILE_TYPES[0], pitchDeg: toNum(roof.pitchDeg, 30), baseElevation, aguas: roof.aguas, ...geo };
+                      }).filter(Boolean)}
+                      openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
+                  </Suspense>
+                )}
+                {view3dMode === "ambiente" && (() => {
+                  const room = rooms.find(r => r.id === view3dRoomId);
+                  if (!room) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Escolha um ambiente acima.</div>;
+                  const level = levels.find(l => l.name === room.level);
+                  const data = level ? levelToMetersForRoom(level, room) : null;
+                  if (!data) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Este ambiente ainda não tem um contorno desenhado. Vá ao Croqui, use a ferramenta "Ambiente" e feche o contorno vinculando a este nome.</div>;
+                  return (
+                    <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
+                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
+                    </Suspense>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "modelo" && (
+          <div>
+            <div className="flex gap-1.5 mb-3 flex-wrap">
+              {[{ id: "elementos", label: "Elementos" }, { id: "pisos", label: "Pisos" }, { id: "coberturas", label: "Coberturas" }, { id: "niveis", label: "Níveis" }].map(s => (
+                <button key={s.id} onClick={() => setModeloSub(s.id)} className="px-2.5 py-1.5 rounded text-xs"
+                  style={{ ...heading, fontWeight: 600, background: modeloSub === s.id ? C.goldTint : C.panelAlt, color: modeloSub === s.id ? C.gold : C.mute, border: `1px solid ${modeloSub === s.id ? "#FFFFFF" : C.line}` }}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            {modeloSub === "elementos" && (
+              <div className="space-y-4">
+                <div className="flex gap-1.5">
+                  {[
+                    { type: "wall", icon: RectangleHorizontal, label: "Paredes" },
+                    { type: "door", icon: DoorClosed, label: "Portas" },
+                    { type: "window", icon: Layers3, label: "Janelas" },
+                  ].map(f => (
+                    <button key={f.type} onClick={() => setElementTypeFilter(f.type)} title={f.label}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs"
+                      style={{ ...heading, fontWeight: 600, background: elementTypeFilter === f.type ? C.goldTint : C.panelAlt, color: elementTypeFilter === f.type ? C.gold : C.mute, border: `1px solid ${elementTypeFilter === f.type ? "#FFFFFF" : C.line}` }}>
+                      <f.icon size={13} /> {f.label}
+                    </button>
+                  ))}
+                </div>
+                <input type="text" value={elementSearch} onChange={e => setElementSearch(e.target.value)}
+                  placeholder="Buscar por tag (P1, J5…)" className="w-full px-2.5 py-1.5 rounded text-xs"
+                  style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+                {levels.map(l => {
+                  const items = (l.sketchElements || []).filter(e => e.type === elementTypeFilter)
+                    .filter(e => !elementSearch.trim() || (e.tag || "").toLowerCase().includes(elementSearch.trim().toLowerCase()));
+                  // While searching, every level with a match opens on its
+                  // own regardless of its collapsed state — otherwise
+                  // finding a tag would still mean manually opening each
+                  // level to check.
+                  const collapsed = elementSearch.trim() ? items.length === 0 : collapsedLevels.has(l.id);
+                  const emptyLabel = elementTypeFilter === "wall" ? "Nenhuma parede neste nível." : elementTypeFilter === "door" ? "Nenhuma porta neste nível." : "Nenhuma janela neste nível.";
+                  return (
+                    <div key={l.id}>
+                      <button onClick={() => setCollapsedLevels(s => {
+                        const next = new Set(s);
+                        if (next.has(l.id)) next.delete(l.id); else next.add(l.id);
+                        return next;
+                      })} className="text-xs font-semibold mb-1.5 flex items-center gap-1.5 w-full text-left" style={{ color: C.gold }}>
+                        <ChevronDown size={12} style={{ transform: collapsed ? "rotate(-90deg)" : undefined }} /> {l.name.toUpperCase()} <span style={{ color: C.mute, ...mono, fontWeight: 400 }}>· cota {l.elevation} m</span>
+                      </button>
+                      {!collapsed && (
+                        <div className="space-y-1.5 mb-2">
+                          {elementTypeFilter === "wall" && items.map(el => <WallRow key={el.id} el={el} adjacency={wallRoomAdjacency(l, el)} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
+                          {elementTypeFilter === "door" && items.map(el => <DoorRow key={el.id} el={el} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
+                          {elementTypeFilter === "window" && items.map(el => <WindowRow key={el.id} el={el} onPatch={p => updateLevelElement(l.id, el.id, p)} onDelete={() => removeLevelElement(l.id, el.id)} />)}
+                          {items.length === 0 && (
+                            <div className="text-[11px] italic" style={{ color: C.mute }}>{emptyLabel}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {modeloSub === "pisos" && (
+              <div className="space-y-4">
+                {/* Two separate "piso" ideas share this tab: the zones
+                    actually traced in the Croqui with the "Piso" tool
+                    (their own polygon, material, color and area — the
+                    ones that show up in 2D/3D) come first, since those
+                    are what someone drawing in the Croqui expects to find
+                    here; the per-ambiente manual record below (no
+                    geometry of its own, just a material/condição entry
+                    for quantities) is a separate, older piece of data. */}
+                <div>
+                  <p className="text-[11px] mb-2" style={{ color: C.mute }}>Pisos traçados no Croqui (ferramenta "Piso"):</p>
+                  {levels.every(l => !(l.sketchElements || []).some(e => e.type === "floor")) && (
+                    <div className="text-[11px] italic p-3 rounded-lg" style={{ color: C.mute, background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                      Nenhum piso traçado ainda. Vá ao Croqui, escolha a ferramenta "Piso" e trace a área.
+                    </div>
+                  )}
+                  {levels.map(l => {
+                    const floorZones = (l.sketchElements || []).filter(e => e.type === "floor");
+                    if (!floorZones.length) return null;
+                    return (
+                      <div key={l.id} className="mb-3">
+                        <div className="text-xs font-semibold mb-1.5" style={{ color: C.gold }}>{l.name.toUpperCase()}</div>
+                        <div className="space-y-1.5">
+                          {floorZones.map(f => (
+                            <div key={f.id} className="flex items-center gap-2 px-2.5 py-2 rounded flex-wrap" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                              <TypeSelect value={f.floorType || FLOOR_TYPES[0]} options={FLOOR_TYPES} onChange={v => updateLevelElement(l.id, f.id, { floorType: v })} />
+                              <input type="color" value={f.floorColor || "#B08A5C"} onChange={e => updateLevelElement(l.id, f.id, { floorColor: e.target.value })}
+                                title="Cor de referência" className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
+                              <span className="text-[11px]" style={{ color: C.chalk }}>{f.area} m²</span>
+                              <button onClick={() => removeLevelElement(l.id, f.id)} className="ml-auto"><Trash2 size={12} color={C.mute} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[11px]" style={{ color: C.mute }}>Registro manual por ambiente (tipo de revestimento, área e condição — sem geometria própria):</p>
+                {rooms.length === 0 && (
+                  <div className="text-[11px] italic p-3 rounded-lg" style={{ color: C.mute, background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                    Ainda não há ambientes nomeados. Vá ao Croqui, feche um contorno com a ferramenta "Ambiente" e dê um nome — ele aparece aqui na sequência.
+                  </div>
+                )}
+                {rooms.map(r => (
+                  <div key={r.id}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium" style={{ color: C.chalk }}>{r.name} <span style={{ color: C.mute, fontWeight: 400 }}>· {r.level}</span></span>
+                      <button onClick={() => addFloor(r.id)} className="flex items-center gap-1 text-[11px] px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}>
+                        <Plus size={11} /> novo piso
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 mb-2">
+                      {r.floors.length === 0 && <div className="text-[11px] italic" style={{ color: C.mute }}>Nenhum piso registrado.</div>}
+                      {r.floors.map(f => <FloorRow key={f.id} el={f} onPatch={p => patchFloor(r.id, f.id, p)} onDelete={() => removeFloor(r.id, f.id)} />)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {modeloSub === "coberturas" && (
+              <div className="space-y-3">
+                <div className="p-2.5 rounded-lg text-[11px]" style={{ background: C.panelAlt, border: `1px solid ${C.line}`, color: C.mute }}>
+                  Cada água vira um plano de telhado no Revit (Roof by Footprint) com a inclinação lançada aqui — e o comprimento de rufo/calha entra direto na planilha de quantitativos exportada.
+                </div>
+                {roofs.map(roof => {
+                  const totalRoofArea = roof.aguas.reduce((s, a) => s + (toNum(a.area, 0)), 0).toFixed(1);
+                  const totalRufo = roof.aguas.reduce((s, a) => s + (toNum(a.rufo, 0)), 0).toFixed(1);
+                  const totalCalha = roof.aguas.reduce((s, a) => s + (toNum(a.calha, 0)), 0).toFixed(1);
+                  // A roof has no shape of its own — it's generated on the
+                  // fly from its level's own walls (roofFootprintFromLevel)
+                  // every time it's drawn, in the Croqui overlay above and
+                  // in 3D. When that level doesn't resolve (renamed/removed
+                  // since this roof was created) or has no walls yet, the
+                  // roof used to just silently render nothing everywhere,
+                  // which reads as "the roof disappeared" with no clue why.
+                  const roofLevel = levels.find(l => l.name === roof.level);
+                  const roofMissing = !roofFootprintFromLevel(roofLevel);
+                  return (
+                    <div key={roof.id} className="p-3 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                      {roofMissing && (
+                        <div className="flex items-center gap-1.5 mb-2 p-2 rounded text-[11px]" style={{ background: "rgba(193,84,63,0.14)", color: C.bad }}>
+                          <TriangleAlert size={13} />
+                          {roofLevel ? "Esse nível ainda não tem paredes desenhadas — desenhe o contorno no Croqui para o telhado aparecer." : "O nível desta cobertura não existe mais — escolha outro nível abaixo."}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mb-2">
+                        <Triangle size={14} color={C.gold} />
+                        <input value={roof.name} onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, name: e.target.value } : r))}
+                          className="text-sm font-medium flex-1 bg-transparent" style={{ color: C.chalk }} />
+                        <select value={roof.level} onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, level: e.target.value } : r))}
+                          className="text-[11px] px-2 py-1 rounded" style={{ background: C.panelAlt, color: C.mute, border: `1px solid ${C.line}` }}>
+                          {levels.map(l => <option key={l.id}>{l.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                        {[{ id: "1agua", label: "1 água" }, { id: "2aguas", label: "2 águas" }, { id: "4aguas", label: "4 águas" }].map(s => (
+                          <button key={s.id} onClick={() => setRoofField(roof.id, { shape: s.id })} className="px-2 py-1 rounded text-[10px]"
+                            style={{ ...heading, fontWeight: 600, background: (roof.shape || "2aguas") === s.id ? C.goldTint : C.panelAlt, color: (roof.shape || "2aguas") === s.id ? C.gold : C.mute, border: `1px solid ${(roof.shape || "2aguas") === s.id ? C.gold : C.line}` }}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mb-2 text-[11px]">
+                        <span style={{ color: C.mute }}>Telha:</span>
+                        <select value={roof.tileType || TILE_TYPES[0]} onChange={e => setRoofField(roof.id, { tileType: e.target.value })}
+                          className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+                          {TILE_TYPES.map(t => <option key={t}>{t}</option>)}
+                        </select>
+                        <span style={{ color: C.mute }}>Inclinação:</span>
+                        <input type="text" inputMode="decimal" value={roof.pitchDeg ?? "30"} onChange={e => setRoofField(roof.id, { pitchDeg: e.target.value })}
+                          className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                        <span style={{ color: C.mute }}>°</span>
+                        {roof.hidden ? (
+                          <>
+                            <span style={{ color: C.mute }}>Recuo (para dentro):</span>
+                            <input type="text" inputMode="decimal" value={roof.recuoM ?? "0.1"} onChange={e => setRoofField(roof.id, { recuoM: e.target.value })}
+                              className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                            <span style={{ color: C.mute }}>m</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ color: C.mute }}>Beiral (para fora):</span>
+                            <input type="text" inputMode="decimal" value={roof.overhangM ?? "0.4"} onChange={e => setRoofField(roof.id, { overhangM: e.target.value })}
+                              className="w-12 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                            <span style={{ color: C.mute }}>m</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap mb-2 text-[11px]">
+                        {/* "Escondido" (platibanda): the roof edge sits
+                            recessed inward from the wall's outer face (by
+                            "Recuo" above) instead of projecting a beiral
+                            past it — both overhangM and recuoM are kept in
+                            state (so switching back and forth never loses
+                            either value typed before), roofPlaneSettings
+                            picks whichever one applies. */}
+                        <button onClick={() => setRoofField(roof.id, { hidden: !roof.hidden })} className="px-2 py-1 rounded text-[10px]"
+                          style={{ ...heading, fontWeight: 600, background: roof.hidden ? C.goldTint : C.panelAlt, color: roof.hidden ? C.gold : C.mute, border: `1px solid ${roof.hidden ? C.gold : C.line}` }}>
+                          {roof.hidden ? "✓ " : ""}Telhado escondido (platibanda)
+                        </button>
+                        <span style={{ color: C.mute }}>Ajuste de nível:</span>
+                        <input type="text" inputMode="decimal" value={roof.elevationOffsetM ?? "0"} onChange={e => setRoofField(roof.id, { elevationOffsetM: e.target.value })}
+                          className="w-14 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                        <span style={{ color: C.mute }}>m (+ acima / − abaixo do topo das paredes)</span>
+                      </div>
+                      {(roof.shape === "2aguas" || roof.shape === "4aguas") && (
+                        <div className="flex items-center gap-1.5 mb-2 text-[11px] flex-wrap">
+                          <span style={{ color: C.mute }}>Cumeeira:</span>
+                          {[{ id: "auto", label: "Auto" }, { id: "x", label: "Norte-Sul" }, { id: "y", label: "Leste-Oeste" }].map(o => (
+                            <button key={o.id} onClick={() => setRoofField(roof.id, { ridgeAxis: o.id })} className="px-2 py-1 rounded text-[10px]"
+                              style={{ background: (roof.ridgeAxis || "auto") === o.id ? C.goldTint : C.panelAlt, color: (roof.ridgeAxis || "auto") === o.id ? C.gold : C.mute, border: `1px solid ${(roof.ridgeAxis || "auto") === o.id ? C.gold : C.line}` }}>
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {roof.shape === "1agua" && (
+                        <div className="flex items-center gap-2 mb-2 text-[11px]">
+                          <span style={{ color: C.mute }}>Lado alto:</span>
+                          <select value={roof.highEdge || "maxY"} onChange={e => setRoofField(roof.id, { highEdge: e.target.value })}
+                            className="text-[11px] px-1.5 py-1 rounded" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }}>
+                            <option value="minX">Oeste</option><option value="maxX">Leste</option><option value="minY">Norte</option><option value="maxY">Sul</option>
+                          </select>
+                        </div>
+                      )}
+                      <button onClick={() => recalcRoofGeometry(roof.id)} className="mb-2 flex items-center gap-1 text-[11px] px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}>
+                        <RefreshCw size={11} /> Recalcular águas e áreas a partir das paredes
+                      </button>
+                      <div className="text-[11px] mb-2" style={{ color: C.mute }}>{roof.aguas.length} água(s) · {totalRoofArea} m² · {totalRufo} m de rufo · {totalCalha} m de calha</div>
+                      <div className="space-y-1.5">
+                        {roof.aguas.map((agua, i) => (
+                          <div key={agua.id} className="p-2 rounded space-y-1.5" style={{ background: C.panelAlt, border: `1px solid ${C.line}` }}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] w-14" style={{ ...mono, color: C.gold }}>Água {i + 1}</span>
+                              <input type="text" inputMode="decimal" value={agua.inclinacao} placeholder="Inclinação"
+                                onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, aguas: r.aguas.map(a => a.id === agua.id ? { ...a, inclinacao: e.target.value } : a) } : r))}
+                                className="w-14 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                              <span className="text-[10px]" style={{ color: C.mute }}>° inclin.</span>
+                              <input type="text" inputMode="decimal" value={agua.area} placeholder="Área m²"
+                                onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, aguas: r.aguas.map(a => a.id === agua.id ? { ...a, area: e.target.value } : a) } : r))}
+                                className="w-14 px-1.5 py-1 rounded text-xs ml-auto" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                              <span className="text-[10px]" style={{ color: C.mute }}>m²</span>
+                              <button onClick={() => removeAgua(roof.id, agua.id)}><Trash2 size={12} color={C.mute} /></button>
+                            </div>
+                            <div className="flex items-center gap-2 pl-16">
+                              <span className="text-[10px]" style={{ color: C.mute }}>Rufo</span>
+                              <input type="text" inputMode="decimal" value={agua.rufo || ""} placeholder="0"
+                                onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, aguas: r.aguas.map(a => a.id === agua.id ? { ...a, rufo: e.target.value } : a) } : r))}
+                                className="w-14 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                              <span className="text-[10px]" style={{ color: C.mute }}>m</span>
+                              <span className="text-[10px] ml-3" style={{ color: C.mute }}>Calha</span>
+                              <input type="text" inputMode="decimal" value={agua.calha || ""} placeholder="0"
+                                onChange={e => updateRoofs(rs => rs.map(r => r.id === roof.id ? { ...r, aguas: r.aguas.map(a => a.id === agua.id ? { ...a, calha: e.target.value } : a) } : r))}
+                                className="w-14 px-1.5 py-1 rounded text-xs" style={{ background: "rgba(255,255,255,0.06)", color: C.chalk, border: `1px solid ${C.line}` }} />
+                              <span className="text-[10px]" style={{ color: C.mute }}>m</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={() => addAgua(roof.id)} className="mt-2 flex items-center gap-1 text-[11px] px-2 py-1 rounded" style={{ color: C.gold, background: C.goldTint }}>
+                        <Plus size={11} /> adicionar água
+                      </button>
+                    </div>
+                  );
+                })}
+                <button onClick={addRoof} className="w-full py-3 rounded-lg flex items-center justify-center gap-2 text-sm" style={{ border: `1px dashed ${C.line}`, color: C.mute }}>
+                  <Plus size={16} /> Nova cobertura
+                </button>
+              </div>
+            )}
+
+            {modeloSub === "niveis" && (
+              <div className="space-y-2">
+                {levels.map(l => (
+                  <div key={l.id} className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                    <Layers3 size={14} color={C.gold} />
+                    <input value={l.name} onChange={e => updateLevels(ls => ls.map(x => x.id === l.id ? { ...x, name: e.target.value } : x))}
+                      className="text-sm flex-1 bg-transparent" style={{ color: C.chalk }} />
+                    <input type="text" inputMode="decimal" value={l.elevation} onChange={e => updateLevels(ls => ls.map(x => x.id === l.id ? { ...x, elevation: e.target.value } : x))}
+                      className="w-20 px-2 py-1 rounded text-xs text-right" style={{ ...mono, background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+                    <span className="text-[10px]" style={{ color: C.mute }}>m</span>
+                    <button onClick={() => updateLevels(ls => ls.filter(x => x.id !== l.id))}><Trash2 size={13} color={C.mute} /></button>
+                  </div>
+                ))}
+                <button onClick={addLevel} className="w-full py-3 rounded-lg flex items-center justify-center gap-2 text-sm" style={{ border: `1px dashed ${C.line}`, color: C.mute }}>
+                  <Plus size={16} /> Novo nível
+                </button>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {tab === "tabelas" && (
+          <TablesTab levels={levels} rooms={rooms}
+            updateLevelElement={updateLevelElement} removeLevelElement={removeLevelElement}
+            resizeWallLength={resizeWallLength} nameRoomPolygon={nameRoomPolygon} />
+        )}
+
+        {tab === "sync" && (
+          <SyncTab syncing={syncing} runSync={runSync} exportJSON={exportJSON} exportCSV={exportCSV} exportPDF={exportPDF} pdfExporting={pdfExporting} log={log}
+            buildingInfo={buildingInfo} onUpdateBuildingInfo={updateBuildingInfo} onLogoFileChange={onLogoFileChange}
+            pdfOrientation={pdfOrientation} onSetPdfOrientation={setPdfOrientation} />
+        )}
+      </div>
+
+      <div data-braves-bottom-nav className="relative flex shrink-0" style={{ background: "#141311", borderTop: `1px solid ${C.line}` }}>
+        {TABS.map(({ id, label, Icon }) => (
+          <button key={id} onClick={() => { setTab(id); if (id !== "ambientes") setActiveRoomId(null); }}
+            className="flex-1 py-3 flex flex-col items-center gap-1">
+            <Icon size={18} color={tab === id ? C.gold : C.muteDim} />
+            <span className="text-[10px]" style={{ ...heading, fontWeight: 600, color: tab === id ? C.gold : C.muteDim }}>{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
