@@ -78,6 +78,9 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   const xCompacto = larguraDisponivel / 2 + 0.2;
   const xDetalhe = larguraDisponivel / 2 + 1.4;
 
+  const espacamentoEstriboCm =
+    elemento.tipo === 'pilar_arranque' || elemento.tipo === 'viga_baldrame' ? elemento.armadura.estribo.espacamento : undefined;
+
   const formaBase = calcularForma(geometria.comprimento, geometria.largura, geometria.altura);
   const concretoBase = calcularConcreto(geometria.comprimento * geometria.largura * geometria.altura, elemento.traco);
   const troncoCalc = tronco
@@ -130,6 +133,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
             comprimentoDisponivel={geometria.comprimento}
             larguraDisponivel={geometria.largura}
             alturaElemento={geometria.altura}
+            espacamentoEstriboCm={grupo.descricao.toLowerCase().includes('estribo') ? espacamentoEstriboCm : undefined}
             tipoElemento={elemento.tipo}
             cor={corArmadura(elemento)}
           />

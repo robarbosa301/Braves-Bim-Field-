@@ -15,20 +15,26 @@ interface Props {
   grupo: GrupoArmaduraResultado;
   comprimentoDisponivel: number; // extensão em X (m)
   larguraDisponivel: number; // extensão em Z (m)
-  /** Altura real do elemento (m) — só usada pro laço do estribo de viga (largura × altura). */
+  /** Altura real do elemento (m) — pro laço do estribo de viga (largura × altura) e pro espalhamento vertical do estribo de pilar. */
   alturaElemento?: number;
+  /** Espaçamento real do estribo, em cm (vindo do projeto/IFC) — se não vier, usa uma folga artificial. */
+  espacamentoEstriboCm?: number;
   tipoElemento?: TipoElemento;
   cor: string;
 }
 
-function retanguloEstribo(w: number, h: number): [number, number, number][] {
-  return [
-    [-w / 2, 0, -h / 2],
-    [w / 2, 0, -h / 2],
-    [w / 2, 0, h / 2],
-    [-w / 2, 0, h / 2],
-    [-w / 2, 0, -h / 2],
-  ];
+const GANCHO_ESTRIBO_M = 0.06;
+
+/** Laço fechado do estribo + a ponta do gancho (dobra) num dos cantos — geometria real de execução, não uma barra reta. */
+function retanguloEstriboComGancho(w: number, h: number): [number, number, number][] {
+  const c1: [number, number, number] = [-w / 2, 0, -h / 2];
+  const c2: [number, number, number] = [w / 2, 0, -h / 2];
+  const c3: [number, number, number] = [w / 2, 0, h / 2];
+  const c4: [number, number, number] = [-w / 2, 0, h / 2];
+  // gancho: continua na diagonal pra fora do canto onde o laço fecha (mesma direção do centro até o canto)
+  const norma = Math.hypot(c1[0], c1[2]) || 1;
+  const gancho: [number, number, number] = [c1[0] + (c1[0] / norma) * GANCHO_ESTRIBO_M, 0, c1[2] + (c1[2] / norma) * GANCHO_ESTRIBO_M];
+  return [c1, c2, c3, c4, c1, gancho];
 }
 
 /**
@@ -42,7 +48,15 @@ function retanguloEstribo(w: number, h: number): [number, number, number][] {
  * de X. Estribo é desenhado como o laço fechado real (não uma barra reta) — é a geometria que vai
  * pro canteiro, não uma barra solta.
  */
-export function GrupoArmaduraVisual({ grupo, comprimentoDisponivel, larguraDisponivel, alturaElemento, tipoElemento, cor }: Props) {
+export function GrupoArmaduraVisual({
+  grupo,
+  comprimentoDisponivel,
+  larguraDisponivel,
+  alturaElemento,
+  espacamentoEstriboCm,
+  tipoElemento,
+  cor,
+}: Props) {
   const raio = grupo.diametroMm / 2000;
   const comprimentoBarra = Math.max(grupo.comprimentoUnitarioM, 0.05);
   const desc = grupo.descricao.toLowerCase();
@@ -50,23 +64,22 @@ export function GrupoArmaduraVisual({ grupo, comprimentoDisponivel, larguraDispo
   const n = Math.max(1, Math.min(grupo.quantidade, MAX_BARRAS_VISUAL));
 
   if (desc.includes('estribo')) {
-    // laço do estribo, na seção real que ele abraça — pilar: a própria seção (comprimento ×
-    // largura, plano XZ, igual à vista geral); viga: largura × altura (plano YZ, já que o
-    // comprimento da viga é o vão, não faz parte do laço).
     const ehViga = tipoElemento === 'viga_baldrame';
+    // Viga: os estribos correm em fila no eixo X (comprimento do vão), como são montados no
+    // canteiro. Pilar: correm empilhados no eixo Y (altura), um acima do outro — o próprio laço
+    // fica deitado no plano XZ, igual à vista geral, sem precisar girar.
     const [ladoX, ladoZ] = ehViga ? [alturaElemento ?? larguraDisponivel, larguraDisponivel] : [comprimentoDisponivel, larguraDisponivel];
-    const laco = retanguloEstribo(Math.max(ladoX - 2 * raio, 0.05), Math.max(ladoZ - 2 * raio, 0.05));
-    // Estribo real é bem menor que o vão do elemento — se espalhar os laços dentro do próprio
-    // comprimentoDisponivel eles ficam maiores que o espaço entre eles e se sobrepõem, virando um
-    // borrão. Espaça pelo próprio tamanho do laço (+ uma folga fixa) em vez do vão do elemento.
-    const nEstribos = Math.max(1, Math.min(grupo.quantidade, 6));
-    const passo = ladoX + 0.06;
-    const vaoEstribos = (nEstribos - 1) * passo;
-    const xs = posicoesEquidistantes(nEstribos, vaoEstribos);
+    const laco = retanguloEstriboComGancho(Math.max(ladoX - 2 * raio, 0.05), Math.max(ladoZ - 2 * raio, 0.05));
+    // Usa o espaçamento real do projeto quando disponível — senão (elemento sem esse dado ainda),
+    // cai numa folga baseada no próprio tamanho do laço, só pra não sobrepor.
+    const passoReal = espacamentoEstriboCm ? espacamentoEstriboCm / 100 : ladoX + 0.06;
+    const nEstribos = Math.max(1, Math.min(grupo.quantidade, 10));
+    const vaoEstribos = (nEstribos - 1) * passoReal;
+    const posicoes = posicoesEquidistantes(nEstribos, vaoEstribos);
     return (
       <group>
-        {xs.map((x, i) => (
-          <group key={i} position={[x, 0, 0]} rotation={ehViga ? [0, 0, Math.PI / 2] : [0, 0, 0]}>
+        {posicoes.map((p, i) => (
+          <group key={i} position={ehViga ? [p, 0, 0] : [0, p, 0]} rotation={ehViga ? [0, 0, Math.PI / 2] : [0, 0, 0]}>
             <Line points={laco} color={cor} lineWidth={2} />
           </group>
         ))}
