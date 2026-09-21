@@ -79,8 +79,9 @@ interface PilarProps {
 /** Barras longitudinais ao redor do perímetro + estribos ao longo da altura do pilar. */
 export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
   const cobM = armadura.cobrimento / 100;
-  const w = geometria.largura - 2 * cobM;
-  const d = geometria.comprimento - 2 * cobM;
+  // w = extensão em X, d = extensão em Z — mesma convenção do ConcretoBox (X=comprimento, Z=largura).
+  const w = geometria.comprimento - 2 * cobM;
+  const d = geometria.largura - 2 * cobM;
   const raio = armadura.longitudinais.diametro / 2000;
   const pontos = pontosPerimetro(armadura.longitudinais.quantidade, w, d);
 
