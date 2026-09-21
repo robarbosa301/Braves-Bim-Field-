@@ -2,8 +2,7 @@ import { useMemo } from 'react';
 import { DoubleSide } from 'three';
 import { Edges } from '@react-three/drei';
 import { criarGeometriaTronco } from './frustumGeometry';
-
-const ESPESSURA_TABUA = 0.025; // m, mesma espessura usada em FormaBox
+import { ESPESSURA_TABUA } from './FormaBox';
 
 interface Props {
   comprimentoBase: number;

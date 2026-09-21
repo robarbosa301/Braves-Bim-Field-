@@ -1,4 +1,4 @@
-const ESPESSURA_TABUA = 0.025; // m, ~2.5cm — só para representação visual da fôrma
+export const ESPESSURA_TABUA = 0.025; // m, ~2.5cm — só para representação visual da fôrma
 
 interface Props {
   comprimento: number; // X

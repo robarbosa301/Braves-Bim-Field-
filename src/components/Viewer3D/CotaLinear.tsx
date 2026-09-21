@@ -41,16 +41,23 @@ export function CotaLinear({ eixo, medidaM, offset, rotulo, cor = '#67e8f9' }: P
   );
 }
 
-/** Cotas de comprimento (X), largura (Z) e altura (Y) de um volume em caixa, deslocadas pra fora dele. */
+/**
+ * Cotas de comprimento (X), largura (Z) e altura (Y) de um volume em caixa, deslocadas pra fora
+ * dele. `espessuraTabua`, quando informada, soma uma 4ª cota mostrando a espessura da tábua da
+ * fôrma (medida na quina, perpendicular à face) — as outras 3 já dão conta de cubo/tronco de
+ * concreto, que não tem espessura de peça própria.
+ */
 export function CotasCaixa({
   comprimento,
   largura,
   altura,
+  espessuraTabua,
   cor,
 }: {
   comprimento: number;
   largura: number;
   altura: number;
+  espessuraTabua?: number;
   cor?: string;
 }) {
   const folga = 0.12;
@@ -65,6 +72,15 @@ export function CotasCaixa({
         rotulo="alt."
         cor={cor}
       />
+      {espessuraTabua !== undefined && (
+        <CotaLinear
+          eixo="z"
+          medidaM={espessuraTabua}
+          offset={[-comprimento / 2 - folga, altura + folga, largura / 2 + espessuraTabua / 2]}
+          rotulo="esp. tábua"
+          cor={cor}
+        />
+      )}
     </group>
   );
 }

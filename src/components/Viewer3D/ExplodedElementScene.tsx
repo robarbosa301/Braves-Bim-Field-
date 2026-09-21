@@ -8,6 +8,7 @@ import { FormaBox } from './FormaBox';
 import { TroncoConcreto, TroncoForma } from './TroncoMesh';
 import { GrupoArmaduraVisual } from './GrupoArmaduraVisual';
 import { CotaLinear, CotasCaixa } from './CotaLinear';
+import { ESPESSURA_TABUA } from './FormaBox';
 import { corArmadura, corConcreto, corForma } from './statusColor';
 
 function n(v: number, casas = 2) {
@@ -67,7 +68,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
     conteudo: (
       <>
         <FormaBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corForma(elemento)} explode={0.1} />
-        <CotasCaixa comprimento={geometria.comprimento} largura={geometria.largura} altura={geometria.altura} />
+        <CotasCaixa comprimento={geometria.comprimento} largura={geometria.largura} altura={geometria.altura} espessuraTabua={ESPESSURA_TABUA} />
       </>
     ),
     rotulo: (
@@ -85,7 +86,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
       conteudo: (
         <>
           <TroncoForma comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corForma(elemento)} />
-          <CotasCaixa comprimento={tronco.comprimento} largura={tronco.largura} altura={tronco.altura} />
+          <CotasCaixa comprimento={tronco.comprimento} largura={tronco.largura} altura={tronco.altura} espessuraTabua={ESPESSURA_TABUA} />
         </>
       ),
       rotulo: (
@@ -102,9 +103,9 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
     const barraCorreEmZ = grupo.descricao.toLowerCase().includes('direção z');
     niveis.push({
       altura: slotAltura,
-      // grupos de armadura ficam um pouco mais espaçados entre si que fôrma/concreto — ajuda a
+      // grupos de armadura ficam mais espaçados entre si que fôrma/concreto — ajuda a
       // distinguir camadas parecidas, como as duas direções da malha inferior da sapata.
-      gapExtra: gap * 0.6,
+      gapExtra: gap * 1.1,
       conteudo: (
         <>
           <GrupoArmaduraVisual
@@ -121,7 +122,7 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
                 ? [geometria.comprimento / 2 + 0.12, 0.1, 0]
                 : [0, 0.1, -geometria.largura / 2 - 0.12]
             }
-            rotulo={`⌀${n(grupo.diametroMm, 1)}mm ·`}
+            rotulo={`⌀${n(grupo.diametroMm, 1)}mm · linear`}
           />
         </>
       ),
@@ -131,8 +132,8 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
           titulo={grupo.descricao}
           linhas={[
             `${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`,
-            `${n(grupo.comprimentoUnitarioM)} m/un`,
-            `${n(grupo.comprimentoTotalM)} m total · ${n(grupo.pesoKg, 1)} kg`,
+            `${n(grupo.comprimentoUnitarioM)} m linear/barra`,
+            `${n(grupo.comprimentoTotalM)} m linear total · ${n(grupo.pesoKg, 1)} kg`,
           ]}
         />
       ),
