@@ -101,7 +101,11 @@ export function GrupoArmaduraVisual({
     );
   }
 
-  const zs = posicoesEquidistantes(n, larguraDisponivel * 0.85);
+  // Largura real (seção de pilar/viga) costuma ser bem menor que o comprimento total da cena
+  // explodida — espalhar as barras só nessa largura verdadeira faz elas ficarem próximas demais
+  // pra distinguir a essa escala (viram uma barra só, visualmente). Usa uma largura mínima de
+  // exibição só pra separar as barras na tela; a largura real continua nas cotas e no card.
+  const zs = posicoesEquidistantes(n, Math.max(larguraDisponivel, 0.3) * 0.85);
   return (
     <group>
       {zs.map((z, i) => (
