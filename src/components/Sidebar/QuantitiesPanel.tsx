@@ -7,6 +7,14 @@ function n(v: number, casas = 2) {
 export function QuantitiesPanel({ q }: { q: QuantitativoElemento }) {
   return (
     <div className="quantities">
+      <section className="peso-total-destaque">
+        <h4>Peso total do elemento</h4>
+        <p className="total">{n(q.pesoTotalKg, 1)} kg</p>
+        <p className="hint">
+          Concreto: {n(q.pesoConcretoKg, 1)} kg · Aço: {n(q.armadura.pesoTotalKg, 1)} kg
+        </p>
+      </section>
+
       <section>
         <h4>Fôrma de madeira</h4>
         <p>
@@ -30,7 +38,9 @@ export function QuantitiesPanel({ q }: { q: QuantitativoElemento }) {
 
       <section>
         <h4>Concreto</h4>
-        <p className="total">Volume: {n(q.volumeConcretoM3, 3)} m³</p>
+        <p className="total">
+          Volume: {n(q.volumeConcretoM3, 3)} m³ · Peso: {n(q.pesoConcretoKg, 1)} kg
+        </p>
         <table>
           <tbody>
             <tr>

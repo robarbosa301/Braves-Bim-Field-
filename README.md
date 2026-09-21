@@ -17,15 +17,16 @@ Abre em `http://localhost:5173`. Funciona em qualquer navegador moderno, incluin
 
 ## O que o MVP faz
 
-1. **Criar elementos** (barra lateral esquerda): sapata, pilar de arranque, viga baldrame — cada um com uma identificação (tag) de campo, ex. `S1`, `P1`, `VB1`.
+1. **Criar elementos** (barra lateral esquerda): sapata, pilar de arranque, viga baldrame — cada um com uma identificação (tag) de campo, ex. `S1`, `P1`, `VB1`. A lista fica agrupada por tipo, com cada grupo retrátil (clica no cabeçalho pra abrir/fechar) e mostrando a quantidade e o peso total do grupo — útil com dezenas de elementos importados. Selecionar um elemento pelo viewer 3D expande o grupo dele sozinho na lista.
 2. **Visualizador 3D** (react-three-fiber/Three.js): cada elemento é renderizado com 3 camadas independentes, ligáveis/desligáveis no topo da tela:
    - **Fôrma**: taipais de madeira nas faces laterais.
    - **Concreto**: o volume de concreto, colorido em cinza (previsto) ou verde (concretado).
    - **Armadura**: barras longitudinais/malha e estribos, representados na quantidade calculada.
    - Clicar em um elemento no viewer (ou na lista) seleciona-o, abre o painel de detalhes, destaca a peça inteira com um contorno amarelo (independente de quais camadas estão ligadas) e gira a câmera pra centralizar nela — importante quando o elemento selecionado está fora do enquadramento atual.
 3. **Quantitativos** (aba "Quantitativos" do painel direito), recalculados ao vivo a partir da geometria:
+   - **Peso total do elemento** (concreto + aço), em destaque no topo — também aparece por elemento e por grupo (subtotal) na lista lateral.
    - **Fôrma**: dimensões de cada face e área total (m²).
-   - **Concreto**: volume (m³), sacos de cimento, m³/kg de areia e brita, litros de água — a partir do traço informado.
+   - **Concreto**: volume (m³), peso (kg — cimento+areia+brita+água, a massa real do traço dosado, não uma densidade padrão), sacos de cimento, m³/kg de areia e brita, litros de água.
    - **Armadura**: por grupo de barras — quantidade, diâmetro, comprimento unitário/total, peso (kg) e volume.
 4. **Execução** (aba "Execução"): cada elemento tem 3 etapas — Fôrma, Armação, Concretagem. Marcar como executado registra a data; a etapa de concretagem também aceita o volume real de concreto lançado, para comparar com o previsto. O status colore o elemento no viewer 3D.
 5. Os dados ficam salvos no `localStorage` do navegador (projeto local, sem backend ainda).

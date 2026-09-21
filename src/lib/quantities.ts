@@ -14,6 +14,10 @@ export interface QuantitativoElemento {
   forma: ResultadoForma;
   concreto: ResultadoConcreto;
   armadura: ResultadoArmadura;
+  /** Peso do concreto fresco (cimento + areia + brita + água) — a massa real do volume dosado, não uma densidade padrão. */
+  pesoConcretoKg: number;
+  /** Peso do elemento pronto: concreto + aço. */
+  pesoTotalKg: number;
 }
 
 /**
@@ -79,5 +83,8 @@ export function calcularQuantitativo(elemento: BimElement): QuantitativoElemento
     }
   }
 
-  return { volumeConcretoM3, forma, concreto, armadura };
+  const pesoConcretoKg = concreto.cimentoKg + concreto.areiaKg + concreto.britaKg + concreto.aguaLitros;
+  const pesoTotalKg = pesoConcretoKg + armadura.pesoTotalKg;
+
+  return { volumeConcretoM3, forma, concreto, armadura, pesoConcretoKg, pesoTotalKg };
 }
