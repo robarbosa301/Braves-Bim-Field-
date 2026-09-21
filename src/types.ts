@@ -100,6 +100,14 @@ interface ElementoBase {
   etapas: EtapaExecucao[];
   /** Posição no canteiro, para posicionar no viewer 3D (m). */
   posicao: { x: number; y: number; z: number };
+  /**
+   * Rotação em torno do eixo vertical (Y, radianos), quando o elemento veio de um IFC e sua
+   * orientação real não é a mesma do eixo X do app (comum: pilares/vigas de um projeto real não
+   * são todos paralelos ao mesmo eixo). Gira o elemento inteiro (fôrma/concreto/armadura) em
+   * torno da própria posição ao renderizar — sem isso, todo elemento é desenhado como se seu
+   * "comprimento" corresse sempre no eixo X do app, ignorando a orientação real do projeto.
+   */
+  rotacaoY?: number;
   /** Classe de resistência do concreto (ex. "C-25"), quando vinda de um projeto importado. Só informativo. */
   classeConcreto?: string;
   /** Cobrimento nominal (cm), quando vindo de um projeto importado — sobrepõe o cobrimento da armadura paramétrica na exibição. */

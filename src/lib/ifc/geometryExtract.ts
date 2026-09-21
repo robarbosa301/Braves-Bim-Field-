@@ -1,5 +1,5 @@
 import { asNum, asVec3, getArgs, getType, type Arg, type StepModel } from './stepParser';
-import { applyTransform, readAxis2Placement3D } from './placement';
+import { applyTransform, readAxis2Placement3D, type Vec3 } from './placement';
 
 function collectRefIds(args: Arg[]): number[] {
   const out: number[] = [];
@@ -63,6 +63,16 @@ export interface GeometriaExtraida {
   origem: 'extrusao' | 'bbox';
   /** Ponto de referência (centro do footprint em X/Y, base em Z) no referencial LOCAL do objeto, em cm. */
   centroBaseLocal: [number, number, number];
+  /**
+   * Direções mundiais (coordenadas IFC, X/Y horizontais) dos eixos locais X e Y da Position da
+   * extrusão — usadas pra descobrir a orientação horizontal real do elemento: pilar usa o eixo Y
+   * (direção do "comprimento" = yDim do perfil); viga usa o eixo Z, que é a própria direção da
+   * extrusão (`eixoZMundo`, abaixo). Undefined quando a geometria veio do fallback bbox (sem
+   * Position explícita pra ler).
+   */
+  eixoXMundo?: Vec3;
+  eixoYMundo?: Vec3;
+  eixoZMundo?: Vec3;
 }
 
 /**
@@ -107,7 +117,16 @@ export function extrairGeometria(model: StepModel, representationId: number): Ge
           (Math.min(...ys) + Math.max(...ys)) / 2,
           Math.min(...zs),
         ];
-        return { a: xDim, b: yDim, depth, origem: 'extrusao', centroBaseLocal };
+        return {
+          a: xDim,
+          b: yDim,
+          depth,
+          origem: 'extrusao',
+          centroBaseLocal,
+          eixoXMundo: positionTransform ? [positionTransform.rot[0][0], positionTransform.rot[1][0], positionTransform.rot[2][0]] : undefined,
+          eixoYMundo: positionTransform ? [positionTransform.rot[0][1], positionTransform.rot[1][1], positionTransform.rot[2][1]] : undefined,
+          eixoZMundo: positionTransform ? [positionTransform.rot[0][2], positionTransform.rot[1][2], positionTransform.rot[2][2]] : undefined,
+        };
       }
     }
   }

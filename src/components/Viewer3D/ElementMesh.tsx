@@ -33,7 +33,11 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
   const folgaDestaque = 0.03;
 
   return (
-    <group position={[elemento.posicao.x, elemento.posicao.y, elemento.posicao.z]} onClick={handleClick}>
+    <group
+      position={[elemento.posicao.x, elemento.posicao.y, elemento.posicao.z]}
+      rotation={[0, elemento.rotacaoY ?? 0, 0]}
+      onClick={handleClick}
+    >
       {selecionado && (
         <mesh position={[0, alturaTotalDestaque / 2, 0]}>
           <boxGeometry

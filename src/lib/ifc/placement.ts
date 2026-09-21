@@ -83,6 +83,16 @@ export function readAxis2Placement3D(model: StepModel, id: number): Transform {
   return { rot, t: location };
 }
 
+/**
+ * Converte uma direção horizontal em coordenadas IFC (X/Y) no ângulo (radianos) de rotação em
+ * torno do eixo Y que, no referencial do app (Y-up), alinha o eixo X local de um elemento a essa
+ * direção — usa a mesma troca X/Y→X/Z (sem inverter sinal) que `posicaoMundo` já usa pra
+ * posição, então o resultado é consistente com o resto do pipeline de importação.
+ */
+export function anguloRotacaoY([ifcX, ifcY]: Vec3): number {
+  return Math.atan2(-ifcY, ifcX);
+}
+
 /** Resolve a transformação absoluta (mundo) de um IfcLocalPlacement, subindo a cadeia de pais. */
 export function resolvePlacement(
   model: StepModel,

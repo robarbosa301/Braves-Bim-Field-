@@ -4,7 +4,7 @@ import { TRACO_PADRAO, etapasIniciais } from '../../types';
 import { DENSIDADE_ACO_KG_M3 } from '../concrete';
 import { pesoLinearKgM } from '../steel';
 import { asNum, asRefId, asStr, getArgs, getType, parseStepModel, type Arg, type StepModel } from './stepParser';
-import { applyTransform, resolvePlacement, type Transform } from './placement';
+import { anguloRotacaoY, applyTransform, resolvePlacement, type Transform } from './placement';
 import { extrairGeometria, extrairGeometriaSapata } from './geometryExtract';
 import { agruparBarras, parseReinforcingBar, separarPorDirecao, type BarraInfo, type GrupoArmaduraImportada } from './rebarExtract';
 
@@ -297,6 +297,9 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
         classeConcreto,
         cobrimentoProjeto: cobrimento,
         geometria: { largura: geo.a / 100, comprimento: geo.b / 100, altura: alturaCm / 100 },
+        // "comprimento" do pilar = yDim do perfil (geo.b) — a direção real dele no projeto é o
+        // eixo Y local da Position da extrusão, não necessariamente o eixo X do app.
+        rotacaoY: geo.eixoYMundo ? anguloRotacaoY(geo.eixoYMundo) : undefined,
         armadura: {
           longitudinais: { diametro: gLong?.diametroMm ?? 10, quantidade: gLong?.quantidade ?? 4 },
           estribo: { diametro: gEstribo?.diametroMm ?? 5, espacamento: Math.max(5, espEstribo) },
@@ -325,6 +328,9 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
         classeConcreto,
         cobrimentoProjeto: cobrimento,
         geometria: { comprimento: comprimentoCm / 100, largura: geo.a / 100, altura: geo.b / 100 },
+        // "comprimento" da viga = a própria extrusão (geo.depth) — a direção real dela no
+        // projeto é o eixo Z local da Position (eixo da extrusão), não necessariamente X do app.
+        rotacaoY: geo.eixoZMundo ? anguloRotacaoY(geo.eixoZMundo) : undefined,
         armadura: {
           superior: { diametro: gSup?.diametroMm ?? 10, quantidade: gSup?.quantidade ?? 2 },
           inferior: { diametro: gInf?.diametroMm ?? 10, quantidade: gInf?.quantidade ?? 2 },
