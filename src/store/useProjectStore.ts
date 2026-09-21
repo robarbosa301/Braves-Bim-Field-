@@ -10,6 +10,7 @@ interface ProjectState {
 
   setNomeObra: (nome: string) => void;
   adicionarElemento: (tipo: BimElement['tipo'], tag: string) => void;
+  importarElementos: (elementos: BimElement[]) => void;
   atualizarElemento: (id: string, patch: Partial<BimElement>) => void;
   removerElemento: (id: string) => void;
   selecionarElemento: (id: string | null) => void;
@@ -36,6 +37,9 @@ export const useProjectStore = create<ProjectState>()(
           const novo = criarElementoPadrao(tipo, tag, { x: offset, y: 0, z: 0 });
           return { elementos: [...state.elementos, novo], elementoSelecionadoId: novo.id };
         }),
+
+      importarElementos: (elementos) =>
+        set(() => ({ elementos, elementoSelecionadoId: elementos[0]?.id ?? null })),
 
       atualizarElemento: (id, patch) =>
         set((state) => ({

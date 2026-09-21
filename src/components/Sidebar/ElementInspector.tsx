@@ -34,6 +34,13 @@ export function ElementInspector({ elemento }: { elemento: BimElement }) {
         </button>
       </div>
 
+      {elemento.classeConcreto && (
+        <p className="hint">
+          Projeto (IFC): concreto {elemento.classeConcreto}
+          {elemento.cobrimentoProjeto !== undefined && `, cobrimento ${elemento.cobrimentoProjeto}cm`}.
+        </p>
+      )}
+
       <div className="tabs">
         <button className={aba === 'editar' ? 'active' : ''} onClick={() => setAba('editar')}>
           Editar

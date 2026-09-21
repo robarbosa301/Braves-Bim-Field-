@@ -64,7 +64,10 @@ export function QuantitiesPanel({ q }: { q: QuantitativoElemento }) {
       </section>
 
       <section>
-        <h4>Armadura</h4>
+        <h4>
+          Armadura
+          {q.armadura.origem === 'importada' && <span className="badge-ifc">dados reais do IFC</span>}
+        </h4>
         <table>
           <tbody>
             {q.armadura.grupos.map((g) => (

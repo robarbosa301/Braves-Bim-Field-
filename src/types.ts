@@ -80,6 +80,18 @@ export interface ArmaduraViga {
   gancho: number; // cm, comprimento do gancho longitudinal nas pontas
 }
 
+/** Um grupo de barras já resolvido (quantidade, diâmetro, comprimento, peso) — usado tanto
+ * pelo cálculo paramétrico (src/lib/steel.ts) quanto pela armadura importada de um IFC. */
+export interface GrupoArmaduraResultado {
+  descricao: string;
+  quantidade: number;
+  diametroMm: number;
+  comprimentoUnitarioM: number;
+  comprimentoTotalM: number;
+  pesoKg: number;
+  volumeM3: number;
+}
+
 interface ElementoBase {
   id: string;
   tag: string; // identificação de campo, ex. "S1", "P3", "VB2"
@@ -88,6 +100,17 @@ interface ElementoBase {
   etapas: EtapaExecucao[];
   /** Posição no canteiro, para posicionar no viewer 3D (m). */
   posicao: { x: number; y: number; z: number };
+  /** Classe de resistência do concreto (ex. "C-25"), quando vinda de um projeto importado. Só informativo. */
+  classeConcreto?: string;
+  /** Cobrimento nominal (cm), quando vindo de um projeto importado — sobrepõe o cobrimento da armadura paramétrica na exibição. */
+  cobrimentoProjeto?: number;
+  /**
+   * Quando o elemento veio de um IFC, os grupos de armadura reais (quantidade, diâmetro e
+   * comprimento vindos do projeto) — usados no lugar do cálculo paramétrico em `armadura`
+   * para os quantitativos. O campo `armadura` continua existindo (com uma estimativa
+   * compatível) só para alimentar a visualização 3D e permanecer editável.
+   */
+  armaduraImportada?: GrupoArmaduraResultado[];
 }
 
 export interface Sapata extends ElementoBase {

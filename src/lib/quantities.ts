@@ -1,6 +1,6 @@
 import type { BimElement } from '../types';
-import { calcularConcreto, calcularForma, ResultadoConcreto, ResultadoForma } from './concrete';
-import { calcularArmaduraPilar, calcularArmaduraSapata, calcularArmaduraViga, ResultadoArmadura } from './steel';
+import { calcularConcreto, calcularForma, DENSIDADE_ACO_KG_M3, ResultadoConcreto, ResultadoForma } from './concrete';
+import { calcularArmaduraPilar, calcularArmaduraSapata, calcularArmaduraViga, ResultadoArmadura, totalizar } from './steel';
 
 export interface QuantitativoElemento {
   volumeConcretoM3: number;
@@ -22,16 +22,31 @@ export function calcularQuantitativo(elemento: BimElement): QuantitativoElemento
   const concreto = calcularConcreto(volumeConcretoM3, elemento.traco);
 
   let armadura: ResultadoArmadura;
-  switch (elemento.tipo) {
-    case 'sapata':
-      armadura = calcularArmaduraSapata(elemento.geometria, elemento.armadura);
-      break;
-    case 'pilar_arranque':
-      armadura = calcularArmaduraPilar(elemento.geometria, elemento.armadura);
-      break;
-    case 'viga_baldrame':
-      armadura = calcularArmaduraViga(elemento.geometria, elemento.armadura);
-      break;
+  if (elemento.armaduraImportada && elemento.armaduraImportada.length > 0) {
+    armadura = totalizar(
+      elemento.armaduraImportada.map((g) => ({
+        descricao: `${g.descricao}`,
+        quantidade: g.quantidade,
+        diametroMm: g.diametroMm,
+        comprimentoUnitarioM: g.comprimentoUnitarioM,
+        comprimentoTotalM: g.comprimentoTotalM,
+        pesoKg: g.pesoKg,
+        volumeM3: g.volumeM3 ?? (g.pesoKg / DENSIDADE_ACO_KG_M3),
+      })),
+      'importada',
+    );
+  } else {
+    switch (elemento.tipo) {
+      case 'sapata':
+        armadura = calcularArmaduraSapata(elemento.geometria, elemento.armadura);
+        break;
+      case 'pilar_arranque':
+        armadura = calcularArmaduraPilar(elemento.geometria, elemento.armadura);
+        break;
+      case 'viga_baldrame':
+        armadura = calcularArmaduraViga(elemento.geometria, elemento.armadura);
+        break;
+    }
   }
 
   return { volumeConcretoM3, forma, concreto, armadura };

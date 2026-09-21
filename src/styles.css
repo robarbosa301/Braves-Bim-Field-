@@ -135,6 +135,37 @@ button.danger:hover {
   background: #d24747;
 }
 
+button.secondary {
+  background: #3a3f47;
+  width: 100%;
+}
+
+button.secondary:hover {
+  background: #474d57;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.import-ifc {
+  margin-bottom: 12px;
+}
+
+.badge-ifc {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: #2f6fed33;
+  color: #7fa6f5;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
 .element-list ul {
   list-style: none;
   margin: 0;

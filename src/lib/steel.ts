@@ -43,14 +43,17 @@ export interface ResultadoArmadura {
   pesoTotalKg: number;
   volumeTotalM3: number;
   comprimentoTotalM: number;
+  /** 'importada' quando os grupos vieram de um IFC (quantidades/comprimentos reais do projeto). */
+  origem: 'calculada' | 'importada';
 }
 
-function totalizar(grupos: GrupoBarrasResultado[]): ResultadoArmadura {
+export function totalizar(grupos: GrupoBarrasResultado[], origem: ResultadoArmadura['origem'] = 'calculada'): ResultadoArmadura {
   return {
     grupos,
     pesoTotalKg: grupos.reduce((a, g) => a + g.pesoKg, 0),
     volumeTotalM3: grupos.reduce((a, g) => a + g.volumeM3, 0),
     comprimentoTotalM: grupos.reduce((a, g) => a + g.comprimentoTotalM, 0),
+    origem,
   };
 }
 

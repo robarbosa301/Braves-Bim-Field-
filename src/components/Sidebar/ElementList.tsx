@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import type { BimElement } from '../../types';
+import { ImportIfc } from './ImportIfc';
 
 const ROTULOS: Record<BimElement['tipo'], string> = {
   sapata: 'Sapata',
@@ -8,9 +9,22 @@ const ROTULOS: Record<BimElement['tipo'], string> = {
   viga_baldrame: 'Viga baldrame',
 };
 
+const ORDEM_TIPO: Record<BimElement['tipo'], number> = {
+  sapata: 0,
+  pilar_arranque: 1,
+  viga_baldrame: 2,
+};
+
 function statusResumo(el: BimElement): string {
   const feitos = el.etapas.filter((e) => e.executado).length;
   return `${feitos}/${el.etapas.length}`;
+}
+
+function ordenar(elementos: BimElement[]): BimElement[] {
+  return [...elementos].sort((a, b) => {
+    if (a.tipo !== b.tipo) return ORDEM_TIPO[a.tipo] - ORDEM_TIPO[b.tipo];
+    return a.tag.localeCompare(b.tag, 'pt-BR', { numeric: true });
+  });
 }
 
 export function ElementList() {
@@ -42,19 +56,24 @@ export function ElementList() {
         </div>
       </div>
 
+      <ImportIfc />
+
       <ul>
-        {elementos.map((el) => (
+        {ordenar(elementos).map((el) => (
           <li
             key={el.id}
             className={el.id === selecionadoId ? 'selected' : ''}
             onClick={() => selecionar(el.id)}
           >
-            <span className="tag">{el.tag}</span>
+            <span className="tag">
+              {el.tag}
+              {el.armaduraImportada && el.armaduraImportada.length > 0 && <span className="badge-ifc">IFC</span>}
+            </span>
             <span className="tipo">{ROTULOS[el.tipo]}</span>
             <span className="status">{statusResumo(el)}</span>
           </li>
         ))}
-        {elementos.length === 0 && <li className="empty">Nenhum elemento ainda. Adicione uma sapata para começar.</li>}
+        {elementos.length === 0 && <li className="empty">Nenhum elemento ainda. Adicione uma sapata ou importe um IFC.</li>}
       </ul>
     </div>
   );
