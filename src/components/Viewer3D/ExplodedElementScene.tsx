@@ -1,10 +1,12 @@
+import type { ReactNode } from 'react';
 import { Bounds, Html } from '@react-three/drei';
 import type { BimElement } from '../../types';
 import { calcularQuantitativo } from '../../lib/quantities';
+import { calcularConcreto, calcularForma, calcularTroncoPiramide } from '../../lib/concrete';
 import { ConcretoBox } from './ConcretoBox';
 import { FormaBox } from './FormaBox';
 import { TroncoConcreto, TroncoForma } from './TroncoMesh';
-import { ArmaduraPilarMesh, ArmaduraSapataMesh, ArmaduraVigaMesh } from './ArmaduraMeshes';
+import { GrupoArmaduraVisual } from './GrupoArmaduraVisual';
 import { corArmadura, corConcreto, corForma } from './statusColor';
 
 function n(v: number, casas = 2) {
@@ -32,104 +34,123 @@ function Rotulo({
   );
 }
 
-function ArmaduraDoElemento({ elemento, cor }: { elemento: BimElement; cor: string }) {
-  if (elemento.tipo === 'sapata') {
-    return <ArmaduraSapataMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={cor} />;
-  }
-  if (elemento.tipo === 'pilar_arranque') {
-    return <ArmaduraPilarMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={cor} />;
-  }
-  return <ArmaduraVigaMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={cor} />;
-}
-
 /**
- * Vista isolada de um único elemento, em formato de explosão vertical: a fôrma de madeira
- * "abre" embaixo (os taipais se separam do volume), no meio fica a montagem da armadura, e o
- * concreto "sobe" por cima — cada camada com um rótulo mostrando seus quantitativos. A câmera
- * se ajusta sozinha (drei Bounds).
+ * Vista isolada de um único elemento, em explosão vertical: cada sub-componente real do
+ * elemento (o bloco da base e o tronco de pirâmide da sapata; cada grupo de armadura —
+ * malha inferior/superior, longitudinais/estribos, superior/inferior/estribos da viga) fica
+ * no seu próprio nível, com um rótulo mostrando só os números daquele pedaço. A câmera se
+ * ajusta sozinha (drei Bounds).
  */
 export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   const q = calcularQuantitativo(elemento);
   const { geometria } = elemento;
   const tronco = elemento.tipo === 'sapata' ? elemento.tronco : undefined;
-  const alturaTotal = geometria.altura + (tronco?.altura ?? 0);
-  const maiorDimensaoHoriz = Math.max(geometria.comprimento, geometria.largura, 0.3);
-  const gap = Math.max(alturaTotal, maiorDimensaoHoriz) * 0.7 + 0.25;
-  const explodeForma = 0.12 + maiorDimensaoHoriz * 0.15;
-  const xRotulo = maiorDimensaoHoriz / 2 + explodeForma + 0.35;
+  const larguraDisponivel = Math.max(geometria.comprimento, geometria.largura, 0.3);
+  const slotAltura = Math.max(geometria.altura, tronco?.altura ?? 0, 0.35);
+  const gap = slotAltura * 0.55 + 0.25;
+  const xRotulo = larguraDisponivel / 2 + 0.4;
 
-  const yForma = 0;
-  const yArmadura = yForma + alturaTotal + gap;
-  const yConcreto = yArmadura + alturaTotal + gap;
+  const formaBase = calcularForma(geometria.comprimento, geometria.largura, geometria.altura);
+  const concretoBase = calcularConcreto(geometria.comprimento * geometria.largura * geometria.altura, elemento.traco);
+  const troncoCalc = tronco
+    ? calcularTroncoPiramide(geometria.comprimento, geometria.largura, tronco.comprimento, tronco.largura, tronco.altura)
+    : undefined;
+  const concretoTronco = troncoCalc ? calcularConcreto(troncoCalc.volumeM3, elemento.traco) : undefined;
+
+  // Monta a pilha de níveis, de baixo pra cima: fôrma(s) -> cada grupo de armadura -> concreto(s).
+  type Nivel = { altura: number; conteudo: ReactNode; rotulo: ReactNode };
+  const niveis: Nivel[] = [];
+
+  niveis.push({
+    altura: geometria.altura,
+    conteudo: <FormaBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corForma(elemento)} explode={0.1} />,
+    rotulo: (
+      <Rotulo
+        posicao={[xRotulo, geometria.altura / 2, 0]}
+        titulo={tronco ? 'Fôrma — bloco da base' : 'Fôrma de madeira'}
+        linhas={[`${n(formaBase.areaTotalM2)} m² de área`, `${n(geometria.comprimento)} × ${n(geometria.largura)} × ${n(geometria.altura)} m`]}
+      />
+    ),
+  });
+
+  if (tronco && troncoCalc) {
+    niveis.push({
+      altura: tronco.altura,
+      conteudo: <TroncoForma comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corForma(elemento)} />,
+      rotulo: (
+        <Rotulo
+          posicao={[xRotulo, tronco.altura / 2, 0]}
+          titulo="Fôrma — tronco de pirâmide"
+          linhas={[`${n(troncoCalc.areaTotalM2)} m² de área`, `topo ${n(tronco.comprimento)} × ${n(tronco.largura)} m, altura ${n(tronco.altura)} m`]}
+        />
+      ),
+    });
+  }
+
+  for (const grupo of q.armadura.grupos) {
+    niveis.push({
+      altura: slotAltura,
+      conteudo: <GrupoArmaduraVisual grupo={grupo} larguraDisponivel={larguraDisponivel} cor={corArmadura(elemento)} />,
+      rotulo: (
+        <Rotulo
+          posicao={[xRotulo, 0, 0]}
+          titulo={grupo.descricao}
+          linhas={[`${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`, `${n(grupo.comprimentoUnitarioM)} m/un · ${n(grupo.pesoKg, 1)} kg total`]}
+        />
+      ),
+    });
+  }
+
+  niveis.push({
+    altura: geometria.altura,
+    conteudo: <ConcretoBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corConcreto(elemento)} />,
+    rotulo: (
+      <Rotulo
+        posicao={[xRotulo, geometria.altura / 2, 0]}
+        titulo={tronco ? 'Concreto — bloco da base' : 'Concreto'}
+        linhas={[
+          `${n(geometria.comprimento * geometria.largura * geometria.altura, 3)} m³`,
+          `${n(concretoBase.cimentoSacos, 1)} sacos cimento`,
+          `${n(concretoBase.areiaM3, 2)} m³ areia · ${n(concretoBase.britaM3, 2)} m³ brita`,
+        ]}
+      />
+    ),
+  });
+
+  if (tronco && troncoCalc && concretoTronco) {
+    niveis.push({
+      altura: tronco.altura,
+      conteudo: <TroncoConcreto comprimentoBase={geometria.comprimento} larguraBase={geometria.largura} comprimentoTopo={tronco.comprimento} larguraTopo={tronco.largura} altura={tronco.altura} y0={0} cor={corConcreto(elemento)} />,
+      rotulo: (
+        <Rotulo
+          posicao={[xRotulo, tronco.altura / 2, 0]}
+          titulo="Concreto — tronco de pirâmide"
+          linhas={[
+            `${n(troncoCalc.volumeM3, 3)} m³`,
+            `${n(concretoTronco.cimentoSacos, 1)} sacos cimento`,
+            `${n(concretoTronco.areiaM3, 2)} m³ areia · ${n(concretoTronco.britaM3, 2)} m³ brita`,
+          ]}
+        />
+      ),
+    });
+  }
+
+  let yAtual = 0;
+  const posicionados = niveis.map((nivel) => {
+    const y = yAtual;
+    yAtual += nivel.altura + gap;
+    return { ...nivel, y };
+  });
 
   return (
     <Bounds fit clip observe margin={1.25} key={elemento.id}>
       <group>
-        {/* Fôrma — taipais afastados do volume ("abertos") */}
-        <group position={[0, yForma, 0]}>
-          <FormaBox
-            comprimento={geometria.comprimento}
-            altura={geometria.altura}
-            largura={geometria.largura}
-            cor={corForma(elemento)}
-            explode={explodeForma}
-          />
-          {tronco && (
-            <TroncoForma
-              comprimentoBase={geometria.comprimento}
-              larguraBase={geometria.largura}
-              comprimentoTopo={tronco.comprimento}
-              larguraTopo={tronco.largura}
-              altura={tronco.altura}
-              y0={geometria.altura}
-              cor={corForma(elemento)}
-            />
-          )}
-          <Rotulo
-            posicao={[xRotulo, alturaTotal / 2, 0]}
-            titulo="Fôrma de madeira"
-            linhas={[`${n(q.forma.areaTotalM2)} m² de área`, `${n(geometria.comprimento)} × ${n(geometria.largura)} × ${n(alturaTotal)} m`]}
-          />
-        </group>
-
-        {/* Armadura — a montagem, flutuando no meio */}
-        <group position={[0, yArmadura, 0]}>
-          <ArmaduraDoElemento elemento={elemento} cor={corArmadura(elemento)} />
-          <Rotulo
-            posicao={[xRotulo, alturaTotal / 2, 0]}
-            titulo="Armadura"
-            linhas={
-              q.armadura.grupos.length > 0
-                ? q.armadura.grupos.map((g) => `${g.descricao}: ${g.quantidade}un · ${n(g.pesoKg, 1)}kg`)
-                : ['sem barras']
-            }
-          />
-        </group>
-
-        {/* Concreto — "sobe" por cima de tudo */}
-        <group position={[0, yConcreto, 0]}>
-          <ConcretoBox comprimento={geometria.comprimento} altura={geometria.altura} largura={geometria.largura} cor={corConcreto(elemento)} />
-          {tronco && (
-            <TroncoConcreto
-              comprimentoBase={geometria.comprimento}
-              larguraBase={geometria.largura}
-              comprimentoTopo={tronco.comprimento}
-              larguraTopo={tronco.largura}
-              altura={tronco.altura}
-              y0={geometria.altura}
-              cor={corConcreto(elemento)}
-            />
-          )}
-          <Rotulo
-            posicao={[xRotulo, alturaTotal / 2, 0]}
-            titulo="Concreto"
-            linhas={[
-              `${n(q.volumeConcretoM3, 3)} m³`,
-              `${n(q.concreto.cimentoSacos, 1)} sacos cimento`,
-              `${n(q.concreto.areiaM3, 2)} m³ areia · ${n(q.concreto.britaM3, 2)} m³ brita`,
-            ]}
-          />
-        </group>
+        {posicionados.map((nivel, i) => (
+          <group key={i} position={[0, nivel.y, 0]}>
+            {nivel.conteudo}
+            {nivel.rotulo}
+          </group>
+        ))}
       </group>
     </Bounds>
   );
