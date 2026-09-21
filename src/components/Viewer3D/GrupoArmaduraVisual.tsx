@@ -1,5 +1,6 @@
 import { Line } from '@react-three/drei';
 import type { GrupoArmaduraResultado, TipoElemento } from '../../types';
+import { pontosPerimetro } from './ArmaduraMeshes';
 
 function posicoesEquidistantes(qtd: number, vao: number): number[] {
   if (qtd <= 1) return [0];
@@ -93,6 +94,24 @@ export function GrupoArmaduraVisual({
       <group>
         {xs.map((x, i) => (
           <mesh key={i} position={[x, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[raio, raio, comprimentoBarra, 8]} />
+            <meshStandardMaterial color={cor} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  if (desc.includes('longitudinal') && tipoElemento === 'pilar_arranque') {
+    // Pilar é vertical — a longitudinal corre em pé (eixo Y), distribuída no perímetro da seção,
+    // igual a como fica montada de verdade (a gaiola), não deitada como na viga (horizontal).
+    const larguraExibicao = Math.max(comprimentoDisponivel, 0.3);
+    const alturaExibicao = Math.max(larguraDisponivel, 0.3);
+    const pontos = pontosPerimetro(n, larguraExibicao, alturaExibicao);
+    return (
+      <group>
+        {pontos.map(([x, z], i) => (
+          <mesh key={i} position={[x, 0, z]}>
             <cylinderGeometry args={[raio, raio, comprimentoBarra, 8]} />
             <meshStandardMaterial color={cor} />
           </mesh>

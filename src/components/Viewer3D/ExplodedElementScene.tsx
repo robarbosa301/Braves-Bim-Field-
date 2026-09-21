@@ -120,7 +120,9 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
   }
 
   for (const grupo of q.armadura.grupos) {
-    const barraCorreEmZ = grupo.descricao.toLowerCase().includes('direção z');
+    const descLower = grupo.descricao.toLowerCase();
+    const barraCorreEmZ = descLower.includes('direção z');
+    const barraCorreEmY = descLower.includes('longitudinal') && elemento.tipo === 'pilar_arranque';
     niveis.push({
       altura: slotAltura,
       // grupos de armadura ficam mais espaçados entre si que fôrma/concreto — ajuda a
@@ -138,12 +140,14 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
             cor={corArmadura(elemento)}
           />
           <CotaLinear
-            eixo={barraCorreEmZ ? 'z' : 'x'}
+            eixo={barraCorreEmY ? 'y' : barraCorreEmZ ? 'z' : 'x'}
             medidaM={grupo.comprimentoUnitarioM}
             offset={
-              barraCorreEmZ
-                ? [geometria.comprimento / 2 + 0.12, 0.1, 0]
-                : [0, 0.1, -geometria.largura / 2 - 0.12]
+              barraCorreEmY
+                ? [Math.max(geometria.comprimento, 0.3) / 2 + 0.15, 0, 0]
+                : barraCorreEmZ
+                  ? [geometria.comprimento / 2 + 0.12, 0.1, 0]
+                  : [0, 0.1, -geometria.largura / 2 - 0.12]
             }
             rotulo={`⌀${n(grupo.diametroMm, 1)}mm · linear`}
           />

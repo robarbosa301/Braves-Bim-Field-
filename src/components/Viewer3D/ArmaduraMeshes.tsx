@@ -8,7 +8,7 @@ function posicoesEquidistantes(qtd: number, vao: number): number[] {
 }
 
 /** Distribui n pontos ao longo do perímetro de um retângulo w x d, começando por um canto. */
-function pontosPerimetro(n: number, w: number, d: number): [number, number][] {
+export function pontosPerimetro(n: number, w: number, d: number): [number, number][] {
   const perimetro = 2 * (w + d);
   const pontos: [number, number][] = [];
   for (let i = 0; i < n; i++) {
