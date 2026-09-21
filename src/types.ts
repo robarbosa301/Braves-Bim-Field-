@@ -115,10 +115,21 @@ interface ElementoBase {
 
 export interface Sapata extends ElementoBase {
   tipo: 'sapata';
+  /** Bloco da base (o retângulo maior, junto ao lastro). */
   geometria: {
     comprimento: number; // m (eixo X)
     largura: number; // m (eixo Y)
     altura: number; // m (eixo Z)
+  };
+  /**
+   * Tronco de pirâmide opcional sobre a base — dimensões do TOPO (onde nasce o pilar) e a
+   * altura do tronco. A base do tronco é o topo do bloco `geometria`. Quando ausente, a
+   * sapata é um bloco simples (sem dado/pedestal).
+   */
+  tronco?: {
+    comprimento: number; // m, dimensão do topo (eixo X)
+    largura: number; // m, dimensão do topo (eixo Y)
+    altura: number; // m
   };
   armadura: ArmaduraSapata;
 }

@@ -2,6 +2,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { BimElement, CamadaVisivel } from '../../types';
 import { ConcretoBox } from './ConcretoBox';
 import { FormaBox } from './FormaBox';
+import { TroncoConcreto, TroncoForma } from './TroncoMesh';
 import { ArmaduraPilarMesh, ArmaduraSapataMesh, ArmaduraVigaMesh } from './ArmaduraMeshes';
 import { corArmadura, corConcreto, corForma } from './statusColor';
 import { Edges } from '@react-three/drei';
@@ -18,6 +19,7 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
   const comprimento = geometria.comprimento;
   const largura = geometria.largura;
   const altura = geometria.altura;
+  const tronco = elemento.tipo === 'sapata' ? elemento.tronco : undefined;
 
   function handleClick(e: ThreeEvent<MouseEvent>) {
     e.stopPropagation();
@@ -29,6 +31,17 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
       {camadas.has('concreto') && (
         <group>
           <ConcretoBox comprimento={comprimento} altura={altura} largura={largura} cor={corConcreto(elemento)} />
+          {tronco && (
+            <TroncoConcreto
+              comprimentoBase={comprimento}
+              larguraBase={largura}
+              comprimentoTopo={tronco.comprimento}
+              larguraTopo={tronco.largura}
+              altura={tronco.altura}
+              y0={altura}
+              cor={corConcreto(elemento)}
+            />
+          )}
           {selecionado && (
             <mesh position={[0, altura / 2, 0]}>
               <boxGeometry args={[comprimento, altura, largura]} />
@@ -39,7 +52,20 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
         </group>
       )}
       {camadas.has('forma') && (
-        <FormaBox comprimento={comprimento} altura={altura} largura={largura} cor={corForma(elemento)} />
+        <group>
+          <FormaBox comprimento={comprimento} altura={altura} largura={largura} cor={corForma(elemento)} />
+          {tronco && (
+            <TroncoForma
+              comprimentoBase={comprimento}
+              larguraBase={largura}
+              comprimentoTopo={tronco.comprimento}
+              larguraTopo={tronco.largura}
+              altura={tronco.altura}
+              y0={altura}
+              cor={corForma(elemento)}
+            />
+          )}
+        </group>
       )}
       {camadas.has('armadura') && elemento.tipo === 'sapata' && (
         <ArmaduraSapataMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />

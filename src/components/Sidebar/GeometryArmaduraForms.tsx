@@ -7,11 +7,35 @@ export function SapataFields({ el, onChange }: { el: Sapata; onChange: (patch: P
   return (
     <>
       <fieldset className="group">
-        <legend>Geometria</legend>
+        <legend>Geometria (bloco da base)</legend>
         <NumberField label="Comprimento" suffix="m" value={g.comprimento} onChange={(v) => onChange({ geometria: { ...g, comprimento: v } })} />
         <NumberField label="Largura" suffix="m" value={g.largura} onChange={(v) => onChange({ geometria: { ...g, largura: v } })} />
         <NumberField label="Altura" suffix="m" value={g.altura} onChange={(v) => onChange({ geometria: { ...g, altura: v } })} />
       </fieldset>
+      {el.tronco && (
+        <fieldset className="group">
+          <legend>Tronco de pirâmide (dado/pedestal)</legend>
+          <NumberField
+            label="Comprimento (topo)"
+            suffix="m"
+            value={el.tronco.comprimento}
+            onChange={(v) => onChange({ tronco: { ...el.tronco!, comprimento: v } })}
+          />
+          <NumberField
+            label="Largura (topo)"
+            suffix="m"
+            value={el.tronco.largura}
+            onChange={(v) => onChange({ tronco: { ...el.tronco!, largura: v } })}
+          />
+          <NumberField
+            label="Altura do tronco"
+            suffix="m"
+            value={el.tronco.altura}
+            onChange={(v) => onChange({ tronco: { ...el.tronco!, altura: v } })}
+          />
+          <p className="hint">Vindo do sólido real do IFC — o pilar nasce nas dimensões do topo.</p>
+        </fieldset>
+      )}
       <fieldset className="group">
         <legend>Armadura (malha inferior)</legend>
         <NumberField label="⌀ direção X" suffix="mm" step={0.5} value={a.diametroX} onChange={(v) => onChange({ armadura: { ...a, diametroX: v } })} />

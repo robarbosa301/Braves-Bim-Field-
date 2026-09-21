@@ -113,3 +113,44 @@ export function calcularForma(
   const areaTotalM2 = faces.reduce((acc, f) => acc + f.areaM2, 0);
   return { comprimentoM, larguraM, alturaM, faces, areaTotalM2 };
 }
+
+export interface ResultadoTronco {
+  volumeM3: number;
+  faces: FaceForma[];
+  areaTotalM2: number;
+}
+
+/**
+ * Volume e área de fôrma de um tronco de pirâmide reto de base retangular (o "dado"/pedestal
+ * da sapata, entre o topo do bloco da base e o nascimento do pilar). Fórmula clássica do
+ * volume do tronco: V = h/3 · (A1 + A2 + √(A1·A2)). As 4 faces laterais são trapézios —
+ * a área de cada uma usa a altura inclinada (slant height), não a altura vertical.
+ */
+export function calcularTroncoPiramide(
+  baseComprimentoM: number,
+  baseLarguraM: number,
+  topoComprimentoM: number,
+  topoLarguraM: number,
+  alturaM: number,
+): ResultadoTronco {
+  const a1 = baseComprimentoM * baseLarguraM;
+  const a2 = topoComprimentoM * topoLarguraM;
+  const volumeM3 = (alturaM / 3) * (a1 + a2 + Math.sqrt(a1 * a2));
+
+  const insetLargura = (baseLarguraM - topoLarguraM) / 2;
+  const insetComprimento = (baseComprimentoM - topoComprimentoM) / 2;
+  const slantFrenteFundo = Math.hypot(alturaM, insetLargura);
+  const slantLaterais = Math.hypot(alturaM, insetComprimento);
+
+  const areaFrenteFundo = ((baseComprimentoM + topoComprimentoM) / 2) * slantFrenteFundo;
+  const areaLaterais = ((baseLarguraM + topoLarguraM) / 2) * slantLaterais;
+
+  const faces: FaceForma[] = [
+    { nome: 'frente (tronco)', larguraM: baseComprimentoM, alturaM: slantFrenteFundo, areaM2: areaFrenteFundo },
+    { nome: 'fundo (tronco)', larguraM: baseComprimentoM, alturaM: slantFrenteFundo, areaM2: areaFrenteFundo },
+    { nome: 'esquerda (tronco)', larguraM: baseLarguraM, alturaM: slantLaterais, areaM2: areaLaterais },
+    { nome: 'direita (tronco)', larguraM: baseLarguraM, alturaM: slantLaterais, areaM2: areaLaterais },
+  ];
+  const areaTotalM2 = faces.reduce((acc, f) => acc + f.areaM2, 0);
+  return { volumeM3, faces, areaTotalM2 };
+}

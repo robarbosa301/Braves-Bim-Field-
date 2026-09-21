@@ -5,7 +5,7 @@ import { DENSIDADE_ACO_KG_M3 } from '../concrete';
 import { pesoLinearKgM } from '../steel';
 import { asNum, asRefId, asStr, getArgs, getType, parseStepModel, type Arg, type StepModel } from './stepParser';
 import { applyTransform, resolvePlacement, type Transform } from './placement';
-import { extrairGeometria } from './geometryExtract';
+import { extrairGeometria, extrairGeometriaSapata } from './geometryExtract';
 import { agruparBarras, parseReinforcingBar, type BarraInfo, type GrupoArmaduraImportada } from './rebarExtract';
 
 export interface Pavimento {
@@ -178,27 +178,27 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
       continue;
     }
 
-    const geo = extrairGeometria(model, representationId);
-    if (!geo) {
-      avisos.push(`${tag}: não foi possível extrair geometria, ignorado.`);
-      continue;
-    }
-
     const props = lerPropriedades(model, propIndex.get(id) ?? []);
     const cobrimento = propNum(props, 'Cobrimento', 'ConcreteCover') ?? 3;
     const classeConcreto = propStr(props, 'Classe de concreto', 'StrengthClass');
-    const posicao = posicaoMundo(model, objectPlacementId, geo.centroBaseLocal, placementCache);
 
     if (tipo === 'IFCFOOTING') {
+      const geoSapata = extrairGeometriaSapata(model, representationId);
+      if (!geoSapata) {
+        avisos.push(`${tag}: não foi possível extrair geometria da sapata, ignorada.`);
+        continue;
+      }
+      const posicao = posicaoMundo(model, objectPlacementId, geoSapata.centroBaseLocal, placementCache);
+
       const gruposSapata = gruposArmadura.filter((g) => g.tag === tag && g.categoria.toLowerCase().includes('sapata'));
       const totalBarras = gruposSapata.reduce((a, g) => a + g.quantidade, 0);
       const diametro = gruposSapata[0]?.diametroMm ?? 10;
       const qtdX = Math.max(1, Math.round(totalBarras / 2));
       const qtdY = Math.max(1, totalBarras - qtdX);
-      const comprimentoM = geo.a / 100;
-      const larguraM = geo.b / 100;
-      const espX = qtdX > 1 ? ((larguraM * 100 - 2 * cobrimento) / (qtdX - 1)) : 15;
-      const espY = qtdY > 1 ? ((comprimentoM * 100 - 2 * cobrimento) / (qtdY - 1)) : 15;
+      const comprimentoM = geoSapata.base.comprimento / 100;
+      const larguraM = geoSapata.base.largura / 100;
+      const espX = qtdX > 1 ? (larguraM * 100 - 2 * cobrimento) / (qtdX - 1) : 15;
+      const espY = qtdY > 1 ? (comprimentoM * 100 - 2 * cobrimento) / (qtdY - 1) : 15;
 
       const sapata: Sapata = {
         id: uuidv4(),
@@ -209,7 +209,14 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
         etapas: etapasIniciais(),
         classeConcreto,
         cobrimentoProjeto: cobrimento,
-        geometria: { comprimento: comprimentoM, largura: larguraM, altura: geo.depth / 100 },
+        geometria: { comprimento: comprimentoM, largura: larguraM, altura: geoSapata.base.altura / 100 },
+        tronco: geoSapata.tronco
+          ? {
+              comprimento: geoSapata.tronco.comprimento / 100,
+              largura: geoSapata.tronco.largura / 100,
+              altura: geoSapata.tronco.altura / 100,
+            }
+          : undefined,
         armadura: {
           diametroX: diametro,
           espacamentoX: Math.max(5, espX),
@@ -221,7 +228,17 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
         armaduraImportada: gruposSapata.map(converterGrupo),
       };
       elementos.push(sapata);
-    } else if (tipo === 'IFCCOLUMN') {
+      continue;
+    }
+
+    const geo = extrairGeometria(model, representationId);
+    if (!geo) {
+      avisos.push(`${tag}: não foi possível extrair geometria, ignorado.`);
+      continue;
+    }
+    const posicao = posicaoMundo(model, objectPlacementId, geo.centroBaseLocal, placementCache);
+
+    if (tipo === 'IFCCOLUMN') {
       const gLong = buscarGrupo(gruposArmadura, tag, (c) => c.includes('longitudinal'));
       const gEstribo = buscarGrupo(gruposArmadura, tag, (c) => c.includes('estribo') && !c.includes('aberto'));
       const gruposPilar = gruposArmadura.filter((g) => g.tag === tag && !g.categoria.toLowerCase().includes('sapata'));

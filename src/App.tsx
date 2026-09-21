@@ -14,6 +14,7 @@ export default function App() {
   const selecionarElemento = useProjectStore((s) => s.selecionarElemento);
 
   const [camadas, setCamadas] = useState<Set<CamadaVisivel>>(new Set(['forma', 'concreto', 'armadura']));
+  const [modoIsolado, setModoIsolado] = useState(false);
 
   function toggleCamada(camada: CamadaVisivel) {
     setCamadas((prev) => {
@@ -26,11 +27,23 @@ export default function App() {
 
   const elementoSelecionado = elementos.find((e) => e.id === elementoSelecionadoId) ?? null;
 
+  function selecionarEManterIsolado(id: string | null) {
+    selecionarElemento(id);
+    if (!id) setModoIsolado(false);
+  }
+
   return (
     <div className="app">
       <header className="topbar">
         <input className="obra-nome" value={nomeObra} onChange={(e) => setNomeObra(e.target.value)} />
-        <LayerToggle camadas={camadas} onToggle={toggleCamada} />
+        <div className="topbar-right">
+          {elementoSelecionado && (
+            <button className={`toggle-isolado ${modoIsolado ? 'active' : ''}`} onClick={() => setModoIsolado((v) => !v)}>
+              {modoIsolado ? '← Ver obra inteira' : 'Vista isolada / explodida'}
+            </button>
+          )}
+          {!modoIsolado && <LayerToggle camadas={camadas} onToggle={toggleCamada} />}
+        </div>
       </header>
 
       <div className="body">
@@ -43,7 +56,8 @@ export default function App() {
             elementos={elementos}
             camadas={camadas}
             elementoSelecionadoId={elementoSelecionadoId}
-            onSelecionar={selecionarElemento}
+            onSelecionar={selecionarEManterIsolado}
+            elementoIsolado={modoIsolado ? elementoSelecionado : null}
           />
         </main>
 

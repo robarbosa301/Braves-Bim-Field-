@@ -137,4 +137,80 @@ export function extrairGeometria(model: StepModel, representationId: number): Ge
   };
 }
 
+export interface GeometriaSapata {
+  base: { comprimento: number; largura: number; altura: number };
+  /** Presente quando o sólido tem um footprint mais estreito no topo (tronco de pirâmide/dado). */
+  tronco?: { comprimento: number; largura: number; altura: number };
+  centroBaseLocal: [number, number, number];
+}
+
+/**
+ * Extrai a geometria de uma sapata a partir do sólido explícito do IFC, detectando o
+ * formato em tronco de pirâmide: agrupa os vértices por nível Z e procura o primeiro nível
+ * cujo footprint (X/Y) é visivelmente menor que o da base — esse é o início do tronco, que
+ * vai até o nível mais alto (o topo, onde nasce o pilar). Sem essa redução de footprint, cai
+ * para um bloco simples (sem tronco).
+ */
+export function extrairGeometriaSapata(model: StepModel, representationId: number): GeometriaSapata | undefined {
+  const points: [number, number, number][] = [];
+  collectPoints(model, representationId, points);
+  if (points.length === 0) return undefined;
+
+  const porZ = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
+  for (const [x, y, z] of points) {
+    const zr = Math.round(z * 100) / 100; // cm, arredonda p/ evitar ruído de ponto flutuante
+    const cur = porZ.get(zr);
+    if (!cur) porZ.set(zr, { minX: x, maxX: x, minY: y, maxY: y });
+    else {
+      cur.minX = Math.min(cur.minX, x);
+      cur.maxX = Math.max(cur.maxX, x);
+      cur.minY = Math.min(cur.minY, y);
+      cur.maxY = Math.max(cur.maxY, y);
+    }
+  }
+  const niveis = [...porZ.entries()].map(([z, bb]) => ({ z, ...bb })).sort((a, b) => a.z - b.z);
+  if (niveis.length < 2) return undefined;
+
+  const fundo = niveis[0];
+  const largFundo = fundo.maxX - fundo.minX;
+  const compFundo = fundo.maxY - fundo.minY;
+  if (largFundo <= 0 || compFundo <= 0) return undefined;
+
+  const centroBaseLocal: [number, number, number] = [(fundo.minX + fundo.maxX) / 2, (fundo.minY + fundo.maxY) / 2, fundo.z];
+
+  // procura o primeiro nível com footprint visivelmente menor (>1cm) que o da base
+  let indiceMudanca = -1;
+  for (let i = 1; i < niveis.length; i++) {
+    const l = niveis[i].maxX - niveis[i].minX;
+    const c = niveis[i].maxY - niveis[i].minY;
+    if (l < largFundo - 1 || c < compFundo - 1) {
+      indiceMudanca = i;
+      break;
+    }
+  }
+
+  if (indiceMudanca === -1) {
+    // sem redução de footprint: bloco simples até o nível mais alto
+    const topo = niveis[niveis.length - 1];
+    const altura = topo.z - fundo.z;
+    if (altura <= 0) return undefined;
+    return { base: { comprimento: compFundo, largura: largFundo, altura }, centroBaseLocal };
+  }
+
+  const baseTopoNivel = niveis[indiceMudanca - 1];
+  const alturaBase = baseTopoNivel.z - fundo.z;
+  if (alturaBase <= 0) return undefined;
+
+  const topoNivel = niveis[niveis.length - 1];
+  const alturaTronco = topoNivel.z - baseTopoNivel.z;
+  const compTopo = topoNivel.maxY - topoNivel.minY;
+  const largTopo = topoNivel.maxX - topoNivel.minX;
+
+  return {
+    base: { comprimento: compFundo, largura: largFundo, altura: alturaBase },
+    tronco: alturaTronco > 0 && compTopo > 0 && largTopo > 0 ? { comprimento: compTopo, largura: largTopo, altura: alturaTronco } : undefined,
+    centroBaseLocal,
+  };
+}
+
 export { findEntity, collectPoints, collectRefIds };

@@ -7,9 +7,10 @@ interface Props {
   camadas: Set<CamadaVisivel>;
   elementoSelecionadoId: string | null;
   onSelecionar: (id: string | null) => void;
+  elementoIsolado: BimElement | null;
 }
 
-export function Viewer({ elementos, camadas, elementoSelecionadoId, onSelecionar }: Props) {
+export function Viewer({ elementos, camadas, elementoSelecionadoId, onSelecionar, elementoIsolado }: Props) {
   return (
     <Canvas shadows camera={{ position: [4, 3, 4], fov: 45 }}>
       <color attach="background" args={['#1b1e22']} />
@@ -18,6 +19,7 @@ export function Viewer({ elementos, camadas, elementoSelecionadoId, onSelecionar
         camadas={camadas}
         elementoSelecionadoId={elementoSelecionadoId}
         onSelecionar={onSelecionar}
+        elementoIsolado={elementoIsolado}
       />
     </Canvas>
   );
