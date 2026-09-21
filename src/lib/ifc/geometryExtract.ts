@@ -190,19 +190,25 @@ export function extrairGeometriaSapata(model: StepModel, representationId: numbe
   const niveis = [...porZ.entries()].map(([z, bb]) => ({ z, ...bb })).sort((a, b) => a.z - b.z);
   if (niveis.length < 2) return undefined;
 
+  // Convenção do resto do pipeline (posicaoMundo, ConcretoBox): comprimento corre no eixo X do
+  // app, que é o mesmo X do IFC sem troca nenhuma; largura corre no eixo Z do app, que é o Y do
+  // IFC (troca Z-up→Y-up). Ou seja: comprimento = extensão em X (IFC), largura = extensão em Y
+  // (IFC) — nessa ordem, não o contrário (bug histórico: estava invertido aqui, sem dar problema
+  // visível em sapatas quase quadradas, mas ficando óbvio no tronco, bem mais alongado, e depois
+  // que o pilar por cima passou a ter sua orientação real, gerando desalinhamento nítido).
   const fundo = niveis[0];
-  const largFundo = fundo.maxX - fundo.minX;
-  const compFundo = fundo.maxY - fundo.minY;
-  if (largFundo <= 0 || compFundo <= 0) return undefined;
+  const extXFundo = fundo.maxX - fundo.minX;
+  const extYFundo = fundo.maxY - fundo.minY;
+  if (extXFundo <= 0 || extYFundo <= 0) return undefined;
 
   const centroBaseLocal: [number, number, number] = [(fundo.minX + fundo.maxX) / 2, (fundo.minY + fundo.maxY) / 2, fundo.z];
 
   // procura o primeiro nível com footprint visivelmente menor (>1cm) que o da base
   let indiceMudanca = -1;
   for (let i = 1; i < niveis.length; i++) {
-    const l = niveis[i].maxX - niveis[i].minX;
-    const c = niveis[i].maxY - niveis[i].minY;
-    if (l < largFundo - 1 || c < compFundo - 1) {
+    const extX = niveis[i].maxX - niveis[i].minX;
+    const extY = niveis[i].maxY - niveis[i].minY;
+    if (extX < extXFundo - 1 || extY < extYFundo - 1) {
       indiceMudanca = i;
       break;
     }
@@ -213,7 +219,7 @@ export function extrairGeometriaSapata(model: StepModel, representationId: numbe
     const topo = niveis[niveis.length - 1];
     const altura = topo.z - fundo.z;
     if (altura <= 0) return undefined;
-    return { base: { comprimento: compFundo, largura: largFundo, altura }, centroBaseLocal };
+    return { base: { comprimento: extXFundo, largura: extYFundo, altura }, centroBaseLocal };
   }
 
   const baseTopoNivel = niveis[indiceMudanca - 1];
@@ -222,12 +228,12 @@ export function extrairGeometriaSapata(model: StepModel, representationId: numbe
 
   const topoNivel = niveis[niveis.length - 1];
   const alturaTronco = topoNivel.z - baseTopoNivel.z;
-  const compTopo = topoNivel.maxY - topoNivel.minY;
-  const largTopo = topoNivel.maxX - topoNivel.minX;
+  const extXTopo = topoNivel.maxX - topoNivel.minX;
+  const extYTopo = topoNivel.maxY - topoNivel.minY;
 
   return {
-    base: { comprimento: compFundo, largura: largFundo, altura: alturaBase },
-    tronco: alturaTronco > 0 && compTopo > 0 && largTopo > 0 ? { comprimento: compTopo, largura: largTopo, altura: alturaTronco } : undefined,
+    base: { comprimento: extXFundo, largura: extYFundo, altura: alturaBase },
+    tronco: alturaTronco > 0 && extXTopo > 0 && extYTopo > 0 ? { comprimento: extXTopo, largura: extYTopo, altura: alturaTronco } : undefined,
     centroBaseLocal,
   };
 }
