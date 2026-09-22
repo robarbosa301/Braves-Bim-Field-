@@ -72,9 +72,11 @@ export function GrupoArmaduraVisual({
     const [ladoX, ladoZ] = ehViga ? [alturaElemento ?? larguraDisponivel, larguraDisponivel] : [comprimentoDisponivel, larguraDisponivel];
     const laco = retanguloEstriboComGancho(Math.max(ladoX - 2 * raio, 0.05), Math.max(ladoZ - 2 * raio, 0.05));
     // Usa o espaçamento real do projeto quando disponível — senão (elemento sem esse dado ainda),
-    // cai numa folga baseada no próprio tamanho do laço, só pra não sobrepor.
+    // cai numa folga baseada no próprio tamanho do laço, só pra não sobrepor. A quantidade real
+    // de estribos do projeto é desenhada por inteiro (sem limite artificial) — é a peça que vai
+    // pro canteiro, contar "quase todos" no 3D não serve pra conferir a armação.
     const passoReal = espacamentoEstriboCm ? espacamentoEstriboCm / 100 : ladoX + 0.06;
-    const nEstribos = Math.max(1, Math.min(grupo.quantidade, 10));
+    const nEstribos = Math.max(1, grupo.quantidade);
     const vaoEstribos = (nEstribos - 1) * passoReal;
     const posicoes = posicoesEquidistantes(nEstribos, vaoEstribos);
     return (

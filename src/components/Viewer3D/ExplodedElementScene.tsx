@@ -154,7 +154,9 @@ export function ExplodedElementScene({ elemento }: { elemento: BimElement }) {
         </>
       ),
       anchoraY: 0,
-      titulo: grupo.descricao,
+      // Quantidade real de barras/estribos direto na etiqueta — sem isso, o único jeito de saber
+      // se o 3D bate com o projeto era contar os laços na tela ou clicar pra abrir o card.
+      titulo: `${grupo.descricao} — ${grupo.quantidade}×`,
       linhas: [
         `${grupo.quantidade} barras · ⌀${n(grupo.diametroMm, 1)}mm`,
         `${n(grupo.comprimentoUnitarioM)} m linear/barra`,

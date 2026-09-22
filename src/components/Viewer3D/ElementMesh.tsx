@@ -32,6 +32,14 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
   const alturaTotalDestaque = altura + (tronco?.altura ?? 0) + (elemento.tipo === 'pilar_arranque' ? elemento.continuaAteM ?? 0 : 0);
   const folgaDestaque = 0.03;
 
+  // Quantidade real de estribos do projeto (quando o elemento veio de um IFC) — usada no lugar de
+  // uma contagem reconstruída a partir do espaçamento, pra o 3D bater exatamente com o projeto em
+  // vez de uma aproximação (que também sofria arredondamento pra baixo e podia mostrar a menos).
+  const qtdEstriboReal = elemento.armaduraImportada?.find((g) => {
+    const d = g.descricao.toLowerCase();
+    return d.includes('estribo') && !d.includes('aberto');
+  })?.quantidade;
+
   return (
     <group
       position={[elemento.posicao.x, elemento.posicao.y, elemento.posicao.z]}
@@ -79,6 +87,11 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
           )}
         </group>
       )}
+      {camadas.has('forma') && elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
+        <group position={[0, altura, 0]}>
+          <FormaBox comprimento={comprimento} altura={elemento.continuaAteM} largura={largura} cor={corForma(elemento)} />
+        </group>
+      )}
       {camadas.has('armadura') && elemento.tipo === 'sapata' && (
         <ArmaduraSapataMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
       )}
@@ -88,10 +101,16 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
           armadura={elemento.armadura}
           cor={corArmadura(elemento)}
           continuaAteM={elemento.continuaAteM}
+          qtdEstriboReal={qtdEstriboReal}
         />
       )}
       {camadas.has('armadura') && elemento.tipo === 'viga_baldrame' && (
-        <ArmaduraVigaMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
+        <ArmaduraVigaMesh
+          geometria={elemento.geometria}
+          armadura={elemento.armadura}
+          cor={corArmadura(elemento)}
+          qtdEstriboReal={qtdEstriboReal}
+        />
       )}
       {camadas.has('concreto') && elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
         <group position={[0, altura, 0]}>
