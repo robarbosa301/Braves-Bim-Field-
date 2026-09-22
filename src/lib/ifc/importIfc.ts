@@ -354,7 +354,10 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
   // visualizador desenhar um indicador (tracejado) mostrando que o pilar continua ali.
   const vigasImportadas = elementos.filter((e): e is VigaBaldrame => e.tipo === 'viga_baldrame');
   if (vigasImportadas.length > 0) {
-    const topoVigasY = Math.max(...vigasImportadas.map((v) => v.posicao.y));
+    // Face SUPERIOR da viga (base da viga + a própria altura dela), não a base — o pilar
+    // continua até onde a viga realmente termina em cima, senão sobra um vão do tamanho da
+    // altura da viga (ex. 40cm) mesmo depois de "completar" o trecho de continuação.
+    const topoVigasY = Math.max(...vigasImportadas.map((v) => v.posicao.y + v.geometria.altura));
     for (const el of elementos) {
       if (el.tipo !== 'pilar_arranque') continue;
       const topoAtualY = el.posicao.y + el.geometria.altura;
