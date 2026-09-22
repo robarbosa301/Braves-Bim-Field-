@@ -1,5 +1,6 @@
-import { asNum, asStr, getArgs, getType, type StepModel } from './stepParser';
+import { asNum, asRefId, asStr, getArgs, getType, type StepModel } from './stepParser';
 import { findEntity, collectRefIds } from './geometryExtract';
+import { applyTransform, resolvePlacement, type Transform } from './placement';
 
 function dist(a: [number, number, number], b: [number, number, number]): number {
   const dx = a[0] - b[0];
@@ -83,6 +84,11 @@ export interface BarraInfo {
   categoria: string;
   diametroMm: number;
   comprimentoCm: number;
+  /** Posição Z (mundo, cm, eixo vertical do IFC) da origem do placement da barra — usada só pra
+   * medir espaçamento REAL entre barras de um mesmo grupo (ex. estribos de um pilar), já que o
+   * IFC não exporta "espaçamento" como propriedade. Só faz sentido pra elementos verticais
+   * (pilares): pra vigas, a distribuição é horizontal, não em Z. */
+  zMundoCm?: number;
 }
 
 /** Separa "P1 - Estribo" em { tag: "P1", categoria: "Estribo" }. */
@@ -96,6 +102,7 @@ export function parseReinforcingBar(
   model: StepModel,
   id: number,
   comprimentoCache: Map<number, number>,
+  placementCache?: Map<number, Transform>,
 ): BarraInfo | undefined {
   const args = getArgs(model, id);
   if (!args) return undefined;
@@ -107,7 +114,30 @@ export function parseReinforcingBar(
   const { tag, categoria } = separarNome(nome);
   const comprimentoCm = resolverComprimentoBarraCm(model, representationId, comprimentoCache);
 
-  return { tag, categoria, diametroMm: diametroCm * 10, comprimentoCm };
+  let zMundoCm: number | undefined;
+  if (placementCache) {
+    const objectPlacementId = asRefId(args[5]);
+    if (objectPlacementId !== undefined) {
+      const world = resolvePlacement(model, objectPlacementId, placementCache);
+      zMundoCm = applyTransform(world, [0, 0, 0])[2];
+    }
+  }
+
+  return { tag, categoria, diametroMm: diametroCm * 10, comprimentoCm, zMundoCm };
+}
+
+/**
+ * Espaçamento real (cm) entre barras de um grupo vertical (ex. estribos de um pilar), medido
+ * direto das posições no IFC — não uma reconstrução a partir da altura modelada do elemento
+ * (que pode ser só um trecho, como o toco embutido na sapata, não o vão real onde as barras
+ * estão distribuídas). Só confiável pra grupos com 2+ barras com posição conhecida.
+ */
+export function espacamentoRealCm(barras: BarraInfo[]): number | undefined {
+  const zs = barras.map((b) => b.zMundoCm).filter((z): z is number => z !== undefined);
+  if (zs.length < 2) return undefined;
+  zs.sort((a, b) => a - b);
+  const span = zs[zs.length - 1] - zs[0];
+  return span / (zs.length - 1);
 }
 
 export interface GrupoArmaduraImportada {

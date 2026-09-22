@@ -6,7 +6,14 @@ import { pesoLinearKgM } from '../steel';
 import { asNum, asRefId, asStr, getArgs, getType, parseStepModel, type Arg, type StepModel } from './stepParser';
 import { anguloRotacaoY, applyTransform, resolvePlacement, type Transform } from './placement';
 import { extrairGeometria, extrairGeometriaSapata } from './geometryExtract';
-import { agruparBarras, parseReinforcingBar, separarPorDirecao, type BarraInfo, type GrupoArmaduraImportada } from './rebarExtract';
+import {
+  agruparBarras,
+  espacamentoRealCm,
+  parseReinforcingBar,
+  separarPorDirecao,
+  type BarraInfo,
+  type GrupoArmaduraImportada,
+} from './rebarExtract';
 
 export interface Pavimento {
   id: number;
@@ -175,7 +182,7 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
   const barras: BarraInfo[] = [];
   for (const id of idsNoPavimento) {
     if (getType(model, id) !== 'IFCREINFORCINGBAR') continue;
-    const b = parseReinforcingBar(model, id, comprimentoCache);
+    const b = parseReinforcingBar(model, id, comprimentoCache, placementCache);
     if (b) barras.push(b);
   }
   const gruposArmadura = agruparBarras(barras);
@@ -283,9 +290,22 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
       const gLong = buscarGrupo(gruposArmadura, tag, (c) => c.includes('longitudinal'));
       const gEstribo = buscarGrupo(gruposArmadura, tag, (c) => c.includes('estribo') && !c.includes('aberto'));
       const gruposPilar = gruposArmadura.filter((g) => g.tag === tag && !g.categoria.toLowerCase().includes('sapata'));
-      const alturaCm = geo.depth;
+      // geo.depth é só o trecho do IfcColumn embutido na sapata (nasce no fundo dela e atravessa
+      // até o topo do tronco/dado — confirmado batendo a elevação do topo desse trecho com a
+      // elevação do topo do tronco pra várias sapatas) — não é a altura real do pilar de arranque
+      // visível. Vira a ancoragem real da armadura; a altura real do elemento (visível, contada
+      // nos quantitativos de concreto/fôrma) só é conhecida depois de ler a posição de todas as
+      // vigas do pavimento — resolvida no ajuste de altura logo após este laço.
+      const ancoragemCm = geo.depth;
+      const barrasEstriboPilar = barras.filter(
+        (b) => b.tag === tag && b.categoria.toLowerCase().includes('estribo') && !b.categoria.toLowerCase().includes('aberto'),
+      );
       const qtdEstribos = gEstribo?.quantidade ?? 1;
-      const espEstribo = qtdEstribos > 1 ? alturaCm / (qtdEstribos - 1) : 15;
+      // Espaçamento real medido pela posição das barras no IFC — a altura do IfcColumn não é o
+      // vão real onde os estribos estão distribuídos (ver comentário acima), então reconstruir a
+      // partir dela dava um valor errado (chegava a menos da metade do espaçamento real).
+      const espacamentoReal = espacamentoRealCm(barrasEstriboPilar);
+      const espEstribo = espacamentoReal ?? (qtdEstribos > 1 ? 100 / (qtdEstribos - 1) : 15);
 
       const pilar: PilarArranque = {
         id: uuidv4(),
@@ -296,15 +316,17 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
         etapas: etapasIniciais(),
         classeConcreto,
         cobrimentoProjeto: cobrimento,
-        geometria: { largura: geo.a / 100, comprimento: geo.b / 100, altura: alturaCm / 100 },
+        // Altura provisória (o trecho embutido) — substituída pela altura real do arranque
+        // visível no ajuste logo após este laço.
+        geometria: { largura: geo.a / 100, comprimento: geo.b / 100, altura: ancoragemCm / 100 },
         // "comprimento" do pilar = yDim do perfil (geo.b) — a direção real dele no projeto é o
         // eixo Y local da Position da extrusão, não necessariamente o eixo X do app.
         rotacaoY: geo.eixoYMundo ? anguloRotacaoY(geo.eixoYMundo) : undefined,
         armadura: {
           longitudinais: { diametro: gLong?.diametroMm ?? 10, quantidade: gLong?.quantidade ?? 4 },
-          estribo: { diametro: gEstribo?.diametroMm ?? 5, espacamento: Math.max(5, espEstribo) },
+          estribo: { diametro: gEstribo?.diametroMm ?? 5, espacamento: Math.max(3, espEstribo) },
           cobrimento,
-          comprimentoAncoragem: 40,
+          comprimentoAncoragem: ancoragemCm,
         },
         armaduraImportada: gruposPilar.map(converterGrupo),
       };
@@ -344,25 +366,30 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
     }
   }
 
-  // O pilar de arranque, tal como modelado no IFC, para exatamente no nível de referência
-  // do pavimento — mas a viga baldrame nasce mais acima, no nível 0.00 real da obra
-  // (confirmado nos desenhos de forma: Elevação da viga = 150cm acima do nível -150 do
-  // pilar). Ou seja, na obra real existe um trecho de pilar entre o topo do arranque e a
-  // viga que não faz parte deste elemento no IFC (é outro lance de pilar, fora do escopo
-  // atual). Para não inflar o quantitativo de concreto/fôrma do arranque com um trecho que
-  // não é dele, isso NÃO estica a geometria — só guarda até onde a viga fica, pra o
-  // visualizador desenhar um indicador (tracejado) mostrando que o pilar continua ali.
+  // Corrige a altura do pilar de arranque: o que foi lido acima (geo.depth, guardado
+  // provisoriamente em geometria.altura) é só o trecho do IfcColumn embutido dentro da sapata —
+  // o pilar de arranque REAL e visível vai desse ponto até a face superior da viga baldrame
+  // (confirmado: todos os arranques têm 1,50m de altura real, do topo da sapata até a emenda
+  // com o pilar do térreo). Esse trecho visível é que entra nos quantitativos de concreto/fôrma
+  // — diferente da abordagem anterior (um indicador só visual, fora do escopo), agora ele É o
+  // elemento.
   const vigasImportadas = elementos.filter((e): e is VigaBaldrame => e.tipo === 'viga_baldrame');
   if (vigasImportadas.length > 0) {
-    // Face SUPERIOR da viga (base da viga + a própria altura dela), não a base — o pilar
-    // continua até onde a viga realmente termina em cima, senão sobra um vão do tamanho da
-    // altura da viga (ex. 40cm) mesmo depois de "completar" o trecho de continuação.
+    // Face SUPERIOR da viga (base da viga + a própria altura dela), não a base — o arranque vai
+    // até onde a viga realmente termina em cima.
     const topoVigasY = Math.max(...vigasImportadas.map((v) => v.posicao.y + v.geometria.altura));
     for (const el of elementos) {
       if (el.tipo !== 'pilar_arranque') continue;
-      const topoAtualY = el.posicao.y + el.geometria.altura;
-      if (topoVigasY > topoAtualY + 0.01) {
-        (el as PilarArranque).continuaAteM = topoVigasY - topoAtualY;
+      const pilar = el as PilarArranque;
+      // Neste ponto, geometria.altura ainda guarda o trecho embutido (ancoragem) — o topo dele é
+      // onde o arranque visível começa.
+      const baseArranqueVisivelY = pilar.posicao.y + pilar.geometria.altura;
+      const alturaVisivel = topoVigasY - baseArranqueVisivelY;
+      if (alturaVisivel > 0.01) {
+        pilar.posicao.y = baseArranqueVisivelY;
+        pilar.geometria.altura = alturaVisivel;
+      } else {
+        avisos.push(`${pilar.tag}: altura do arranque calculada a partir da viga ficou <= 0, mantendo o trecho modelado no IFC.`);
       }
     }
   }

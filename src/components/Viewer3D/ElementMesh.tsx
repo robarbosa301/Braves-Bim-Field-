@@ -26,10 +26,10 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
     onSelecionar(elemento.id);
   }
 
-  // Altura total da peça (base + tronco + trecho de continuação, quando existem) — o destaque de
-  // seleção envolve a peça inteira, não só o bloco da base, e fica visível em qualquer combinação
-  // de camadas ligadas (não depende da camada Concreto estar ativa).
-  const alturaTotalDestaque = altura + (tronco?.altura ?? 0) + (elemento.tipo === 'pilar_arranque' ? elemento.continuaAteM ?? 0 : 0);
+  // Altura total da peça (base + tronco, quando existe) — o destaque de seleção envolve a peça
+  // inteira, não só o bloco da base, e fica visível em qualquer combinação de camadas ligadas
+  // (não depende da camada Concreto estar ativa).
+  const alturaTotalDestaque = altura + (tronco?.altura ?? 0);
   const folgaDestaque = 0.03;
 
   // Quantidade real de estribos do projeto (quando o elemento veio de um IFC) — usada no lugar de
@@ -87,11 +87,6 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
           )}
         </group>
       )}
-      {camadas.has('forma') && elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
-        <group position={[0, altura, 0]}>
-          <FormaBox comprimento={comprimento} altura={elemento.continuaAteM} largura={largura} cor={corForma(elemento)} />
-        </group>
-      )}
       {camadas.has('armadura') && elemento.tipo === 'sapata' && (
         <ArmaduraSapataMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
       )}
@@ -100,7 +95,6 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
           geometria={elemento.geometria}
           armadura={elemento.armadura}
           cor={corArmadura(elemento)}
-          continuaAteM={elemento.continuaAteM}
           qtdEstriboReal={qtdEstriboReal}
         />
       )}
@@ -111,11 +105,6 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
           cor={corArmadura(elemento)}
           qtdEstriboReal={qtdEstriboReal}
         />
-      )}
-      {camadas.has('concreto') && elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
-        <group position={[0, altura, 0]}>
-          <ConcretoBox comprimento={comprimento} altura={elemento.continuaAteM} largura={largura} cor={corConcreto(elemento)} />
-        </group>
       )}
     </group>
   );

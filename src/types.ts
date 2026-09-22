@@ -147,15 +147,8 @@ export interface PilarArranque extends ElementoBase {
   geometria: {
     largura: number; // m (eixo X)
     comprimento: number; // m (eixo Y) — para pilar retangular; quadrado se igual à largura
-    altura: number; // m, do topo da sapata até o topo do arranque
+    altura: number; // m, do topo da sapata até a face superior da viga baldrame (arranque real e visível)
   };
-  /**
-   * Distância (m) do topo do arranque até o nível da viga baldrame que se apoiaria nele,
-   * quando maior que zero — indica que na obra real o pilar continua além deste elemento
-   * (um lance de pilar fora do escopo atual). Só usado para desenhar um indicador visual no
-   * 3D; não entra nos quantitativos de concreto/fôrma/armadura deste elemento.
-   */
-  continuaAteM?: number;
   armadura: ArmaduraPilar;
 }
 

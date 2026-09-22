@@ -74,10 +74,6 @@ interface PilarProps {
   geometria: PilarArranque['geometria'];
   armadura: ArmaduraPilar;
   cor: string;
-  /** Trecho do pilar acima da altura própria (lance fora do escopo) que continua até a face
-   * superior da viga baldrame — quando existe, a armadura longitudinal e os estribos acompanham
-   * o pilar até lá, preenchendo o mesmo volume que o concreto (ver ElementMesh). */
-  continuaAteM?: number;
   /** Quantidade real de estribos do projeto (do IFC), quando disponível — usada no lugar da
    * contagem reconstruída a partir do espaçamento, pra o 3D bater exatamente com o projeto. */
   qtdEstriboReal?: number;
@@ -105,11 +101,9 @@ function pontosEstriboComGancho(w: number, h: number): [number, number][] {
  * Barras longitudinais ao redor do perímetro + estribos ao longo da altura do pilar, mais a
  * ancoragem na sapata: cada barra longitudinal desce `comprimentoAncoragem` abaixo da base do
  * pilar (dentro do volume da sapata) e faz um gancho em L na ponta — é essa ancoragem que
- * amarra o pilar de arranque à armadura da sapata. Quando o pilar continua até a viga
- * (`continuaAteM`), a barra e os estribos acompanham esse trecho, chegando até a face superior
- * da viga junto com o concreto.
+ * amarra o pilar de arranque à armadura da sapata.
  */
-export function ArmaduraPilarMesh({ geometria, armadura, cor, continuaAteM = 0, qtdEstriboReal }: PilarProps) {
+export function ArmaduraPilarMesh({ geometria, armadura, cor, qtdEstriboReal }: PilarProps) {
   const cobM = armadura.cobrimento / 100;
   // w = extensão em X, d = extensão em Z — mesma convenção do ConcretoBox (X=comprimento, Z=largura).
   const w = geometria.comprimento - 2 * cobM;
@@ -118,21 +112,15 @@ export function ArmaduraPilarMesh({ geometria, armadura, cor, continuaAteM = 0, 
   const pontos = pontosPerimetro(armadura.longitudinais.quantidade, w, d);
   const ancoragemM = armadura.comprimentoAncoragem / 100;
 
-  const alturaTotalPilar = geometria.altura + continuaAteM;
   // Quando vem do IFC, usa a quantidade real de estribos do projeto (não uma reconstrução a
-  // partir do espaçamento, que arredondava pra baixo e podia mostrar a menos que o real). O
-  // espaçamento real (armadura.estribo.espacamento) ainda dá o ritmo de mais quantos estribos
-  // entram no trecho de continuação até a viga, que é fora do escopo importado.
+  // partir do espaçamento, que arredondava pra baixo e podia mostrar a menos que o real).
   const passoRealM = armadura.estribo.espacamento / 100;
-  const qtdEstribosBase = qtdEstriboReal ?? Math.max(1, Math.round(geometria.altura / passoRealM) + 1);
-  const qtdEstribosExtra = continuaAteM > 0 ? Math.max(0, Math.round(continuaAteM / passoRealM)) : 0;
-  const qtdEstribos = qtdEstribosBase + qtdEstribosExtra;
-  const alturasEstribo = posicoesEquidistantes(qtdEstribos, alturaTotalPilar).map((v) => v + alturaTotalPilar / 2);
+  const qtdEstribos = qtdEstriboReal ?? Math.max(1, Math.round(geometria.altura / passoRealM) + 1);
+  const alturasEstribo = posicoesEquidistantes(qtdEstribos, geometria.altura).map((v) => v + geometria.altura / 2);
   const lacoEstribo = pontosEstriboComGancho(w, d);
 
-  const topoBarraM = geometria.altura + continuaAteM;
-  const alturaTotalBarra = topoBarraM + ancoragemM;
-  const centroYBarra = topoBarraM - alturaTotalBarra / 2;
+  const alturaTotalBarra = geometria.altura + ancoragemM;
+  const centroYBarra = geometria.altura - alturaTotalBarra / 2;
 
   return (
     <group>
