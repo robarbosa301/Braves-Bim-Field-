@@ -42,9 +42,10 @@ export function ElementInspector({ elemento }: { elemento: BimElement }) {
       )}
       {elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
         <p className="hint">
-          O pilar real continua mais {(elemento.continuaAteM * 100).toFixed(0)}cm até a viga baldrame (mostrado em
-          cinza translúcido no 3D) — esse trecho é um lance de pilar fora do escopo atual
-          (fundação/arranque/baldrame), não contabilizado nos quantitativos deste elemento.
+          O pilar real continua mais {(elemento.continuaAteM * 100).toFixed(0)}cm até a face superior da viga
+          baldrame (mostrado sólido no 3D, junto com a armadura longitudinal e os estribos) — esse trecho é um
+          lance de pilar fora do escopo atual (fundação/arranque/baldrame), não contabilizado nos quantitativos
+          deste elemento.
         </p>
       )}
 

@@ -83,17 +83,20 @@ export function ElementMesh({ elemento, camadas, selecionado, onSelecionar }: Pr
         <ArmaduraSapataMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
       )}
       {camadas.has('armadura') && elemento.tipo === 'pilar_arranque' && (
-        <ArmaduraPilarMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
+        <ArmaduraPilarMesh
+          geometria={elemento.geometria}
+          armadura={elemento.armadura}
+          cor={corArmadura(elemento)}
+          continuaAteM={elemento.continuaAteM}
+        />
       )}
       {camadas.has('armadura') && elemento.tipo === 'viga_baldrame' && (
         <ArmaduraVigaMesh geometria={elemento.geometria} armadura={elemento.armadura} cor={corArmadura(elemento)} />
       )}
       {camadas.has('concreto') && elemento.tipo === 'pilar_arranque' && elemento.continuaAteM && (
-        <mesh position={[0, altura + elemento.continuaAteM / 2, 0]}>
-          <boxGeometry args={[comprimento, elemento.continuaAteM, largura]} />
-          <meshStandardMaterial color="#6f7580" transparent opacity={0.55} />
-          <Edges color="#ffcc00" opacity={0.7} transparent scale={1} />
-        </mesh>
+        <group position={[0, altura, 0]}>
+          <ConcretoBox comprimento={comprimento} altura={elemento.continuaAteM} largura={largura} cor={corConcreto(elemento)} />
+        </group>
       )}
     </group>
   );

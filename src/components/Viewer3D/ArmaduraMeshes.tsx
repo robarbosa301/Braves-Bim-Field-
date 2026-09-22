@@ -74,18 +74,39 @@ interface PilarProps {
   geometria: PilarArranque['geometria'];
   armadura: ArmaduraPilar;
   cor: string;
+  /** Trecho do pilar acima da altura própria (lance fora do escopo) que continua até a face
+   * superior da viga baldrame — quando existe, a armadura longitudinal e os estribos acompanham
+   * o pilar até lá, preenchendo o mesmo volume que o concreto (ver ElementMesh). */
+  continuaAteM?: number;
 }
 
 /** Comprimento visual do "pé" do gancho de ancoragem (só ilustrativo — não é uma cota de projeto). */
 const GANCHO_ANCORAGEM_M = 0.12;
+/** Comprimento visual da dobra do gancho do estribo, na diagonal do canto onde o laço fecha. */
+const GANCHO_ESTRIBO_M = 0.06;
+
+/** Retângulo fechado (laço) do estribo em coordenadas locais (u,v) + a ponta do gancho/dobra num
+ * dos cantos — geometria real de execução (o estribo é um laço fechado com dobra, não uma barra
+ * reta), igual ao usado na vista explodida. */
+function pontosEstriboComGancho(w: number, h: number): [number, number][] {
+  const c1: [number, number] = [-w / 2, -h / 2];
+  const c2: [number, number] = [w / 2, -h / 2];
+  const c3: [number, number] = [w / 2, h / 2];
+  const c4: [number, number] = [-w / 2, h / 2];
+  const norma = Math.hypot(c1[0], c1[1]) || 1;
+  const gancho: [number, number] = [c1[0] + (c1[0] / norma) * GANCHO_ESTRIBO_M, c1[1] + (c1[1] / norma) * GANCHO_ESTRIBO_M];
+  return [c1, c2, c3, c4, c1, gancho];
+}
 
 /**
  * Barras longitudinais ao redor do perímetro + estribos ao longo da altura do pilar, mais a
  * ancoragem na sapata: cada barra longitudinal desce `comprimentoAncoragem` abaixo da base do
  * pilar (dentro do volume da sapata) e faz um gancho em L na ponta — é essa ancoragem que
- * amarra o pilar de arranque à armadura da sapata.
+ * amarra o pilar de arranque à armadura da sapata. Quando o pilar continua até a viga
+ * (`continuaAteM`), a barra e os estribos acompanham esse trecho, chegando até a face superior
+ * da viga junto com o concreto.
  */
-export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
+export function ArmaduraPilarMesh({ geometria, armadura, cor, continuaAteM = 0 }: PilarProps) {
   const cobM = armadura.cobrimento / 100;
   // w = extensão em X, d = extensão em Z — mesma convenção do ConcretoBox (X=comprimento, Z=largura).
   const w = geometria.comprimento - 2 * cobM;
@@ -94,18 +115,14 @@ export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
   const pontos = pontosPerimetro(armadura.longitudinais.quantidade, w, d);
   const ancoragemM = armadura.comprimentoAncoragem / 100;
 
-  const qtdEstribos = Math.max(1, Math.floor((geometria.altura * 100) / armadura.estribo.espacamento) + 1);
-  const alturasEstribo = posicoesEquidistantes(qtdEstribos, geometria.altura).map((v) => v + geometria.altura / 2);
-  const retanguloEstribo: [number, number, number][] = [
-    [-w / 2, 0, -d / 2],
-    [w / 2, 0, -d / 2],
-    [w / 2, 0, d / 2],
-    [-w / 2, 0, d / 2],
-    [-w / 2, 0, -d / 2],
-  ];
+  const alturaTotalPilar = geometria.altura + continuaAteM;
+  const qtdEstribos = Math.max(1, Math.floor((alturaTotalPilar * 100) / armadura.estribo.espacamento) + 1);
+  const alturasEstribo = posicoesEquidistantes(qtdEstribos, alturaTotalPilar).map((v) => v + alturaTotalPilar / 2);
+  const lacoEstribo = pontosEstriboComGancho(w, d);
 
-  const alturaTotalBarra = geometria.altura + ancoragemM;
-  const centroYBarra = geometria.altura - alturaTotalBarra / 2; // = (altura - ancoragemM) / 2
+  const topoBarraM = geometria.altura + continuaAteM;
+  const alturaTotalBarra = topoBarraM + ancoragemM;
+  const centroYBarra = topoBarraM - alturaTotalBarra / 2;
 
   return (
     <group>
@@ -114,26 +131,28 @@ export function ArmaduraPilarMesh({ geometria, armadura, cor }: PilarProps) {
         const dirX = x / raioRadial;
         const dirZ = z / raioRadial;
         const yPe = -ancoragemM;
+        // Dobra em L do gancho de ancoragem: segmento horizontal sólido (mesmo raio da barra),
+        // não uma linha fina — é a geometria de execução real, embutida na sapata.
+        const ganchoMeioX = x + (dirX * GANCHO_ANCORAGEM_M) / 2;
+        const ganchoMeioZ = z + (dirZ * GANCHO_ANCORAGEM_M) / 2;
+        const anguloGancho = Math.atan2(dirZ, -dirX);
         return (
           <group key={`long-${i}`}>
             <mesh position={[x, centroYBarra, z]}>
               <cylinderGeometry args={[raio, raio, alturaTotalBarra, 8]} />
               <meshStandardMaterial color={cor} />
             </mesh>
-            {/* gancho em L: dobra horizontal na ponta embutida na sapata */}
-            <Line
-              points={[
-                [x, yPe, z],
-                [x + dirX * GANCHO_ANCORAGEM_M, yPe, z + dirZ * GANCHO_ANCORAGEM_M],
-              ]}
-              color={cor}
-              lineWidth={2}
-            />
+            <mesh position={[ganchoMeioX, yPe, ganchoMeioZ]} rotation={[0, anguloGancho, Math.PI / 2]}>
+              <cylinderGeometry args={[raio, raio, GANCHO_ANCORAGEM_M, 8]} />
+              <meshStandardMaterial color={cor} />
+            </mesh>
           </group>
         );
       })}
       {alturasEstribo.map((y, i) => (
-        <Line key={`estribo-${i}`} points={retanguloEstribo.map(([x, , z]) => [x, y, z])} color={cor} lineWidth={2} />
+        <group key={`estribo-${i}`} position={[0, y, 0]}>
+          <Line points={lacoEstribo.map(([u, v]) => [u, 0, v] as [number, number, number])} color={cor} lineWidth={2} />
+        </group>
       ))}
     </group>
   );
@@ -159,13 +178,7 @@ export function ArmaduraVigaMesh({ geometria, armadura, cor }: VigaProps) {
   const qtdEstribos = Math.max(1, Math.floor((geometria.comprimento - 2 * cobM) / (armadura.estribo.espacamento / 100)) + 1);
   const posEstribos = posicoesEquidistantes(qtdEstribos, comp);
   const alturaEstribo = geometria.altura - 2 * cobM;
-  const retanguloEstribo: [number, number][] = [
-    [-w / 2, -alturaEstribo / 2],
-    [w / 2, -alturaEstribo / 2],
-    [w / 2, alturaEstribo / 2],
-    [-w / 2, alturaEstribo / 2],
-    [-w / 2, -alturaEstribo / 2],
-  ];
+  const lacoEstribo = pontosEstriboComGancho(w, alturaEstribo);
 
   return (
     <group>
@@ -184,7 +197,7 @@ export function ArmaduraVigaMesh({ geometria, armadura, cor }: VigaProps) {
       {posEstribos.map((x, i) => (
         <Line
           key={`estribo-${i}`}
-          points={retanguloEstribo.map(([z, y]) => [x, y + geometria.altura / 2, z])}
+          points={lacoEstribo.map(([z, y]) => [x, y + geometria.altura / 2, z] as [number, number, number])}
           color={cor}
           lineWidth={2}
         />
