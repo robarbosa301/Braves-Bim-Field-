@@ -172,6 +172,36 @@ export const FURNITURE_FAMILIES = {
       { shape: "canopy", dx: 0.3, dy: 0.15, r: 0.42, baseY: 2.65, color: "#4A7C3F" },
     ],
   },
+  // ---- Banheiro ----
+  vaso_sanitario: {
+    label: "Vaso sanitário", category: "Banheiro", wM: 0.4, dM: 0.65, hM: 0.4,
+    parts: [
+      { shape: "box", dx: 0, dy: -0.28, w: 0.38, d: 0.18, h: 0.38, baseY: 0, color: "#F2F0EA" },
+      { shape: "cyl", dx: 0, dy: 0.1, r: 0.19, h: 0.4, baseY: 0, color: "#F2F0EA" },
+      // The seat/lid split line — same thin-seam trick the wardrobe/sofa
+      // use, just here it's what actually reads a round bowl as a TOILET
+      // instead of a sink or a stool from directly above.
+      { shape: "box", dx: 0, dy: 0.02, w: 0.3, d: 0.02, h: 0.015, baseY: 0.4, color: "#C9C4B8" },
+    ],
+  },
+  pia_banheiro: {
+    label: "Pia de banheiro", category: "Banheiro", wM: 0.6, dM: 0.45, hM: 0.85,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.6, d: 0.45, h: 0.78, baseY: 0, color: "#D9D4C8" },
+      { shape: "cyl", dx: 0, dy: -0.02, r: 0.17, h: 0.07, baseY: 0.78, color: "#F2F0EA" },
+    ],
+  },
+  box_chuveiro: {
+    label: "Box de chuveiro", category: "Banheiro", wM: 0.9, dM: 0.9, hM: 2.0,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.9, d: 0.9, h: 0.03, baseY: 0, color: "#DCE6EA" },
+      { shape: "cyl", dx: 0, dy: 0, r: 0.05, h: 0.01, baseY: 0.03, color: "#8C8C86" },
+      // The glass panel on the open side (the other two sides sit flush
+      // against the room's own walls, same convention a real box-de-vidro
+      // plan symbol uses — one thin line marking just the door/panel run).
+      { shape: "box", dx: 0, dy: 0.45, w: 0.9, d: 0.02, h: 1.9, baseY: 0, color: "#BFD9E0" },
+    ],
+  },
 };
 // Display order for the catalog picker — grouped by category (header rows
 // in the 2D tool panel key off each family's own `category` field, in the
@@ -180,6 +210,7 @@ export const FURNITURE_LIST = [
   "cama_casal", "cama_solteiro", "guarda_roupa",
   "sofa", "mesa_jantar",
   "bancada_cozinha",
+  "vaso_sanitario", "pia_banheiro", "box_chuveiro",
   "piscina", "banco", "mesa_externa",
   "vaso_planta", "planta_alta", "planta_baixa", "palmeira",
 ];
