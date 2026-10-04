@@ -439,6 +439,32 @@ function buildChainSegs(run, elements, scale) {
   }
   return { ux, uy, len, segs };
 }
+// How far a run's own end (a centerline-to-centerline corner, where this
+// run meets whatever wall closes the building's corner there) needs to
+// stretch outward to reach the true OUTSIDE corner — half the thickness of
+// whichever wall meets it there at something other than a shallow angle (a
+// wall continuing nearly the same direction is this run's own continuation,
+// already folded in by mergeCollinearWallRuns, not a corner). Without this,
+// the exterior chain/total stopped exactly at the centerline intersection —
+// short of the real outside footprint by each end wall's own half-thickness,
+// which on a thin partition landed close enough to the room's OWN interior
+// clear-span (nearestParallelWallDims' face-a-face dimension) to read as
+// the same number twice instead of two numbers that should differ by the
+// wall's thickness.
+function orthogonalCornerExtensionPx(px, py, ux, uy, candidateWalls, scale) {
+  const TOL = GRID * 0.3;
+  let best = 0;
+  for (const w of candidateWalls) {
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, wlen = Math.hypot(dx, dy) || 1;
+    const wux = dx / wlen, wuy = dy / wlen;
+    if (Math.abs(ux * wuy - uy * wux) < 0.3) continue; // nearly parallel to this run — its own continuation, not a corner
+    const touches = Math.hypot(w.x1 - px, w.y1 - py) < TOL || Math.hypot(w.x2 - px, w.y2 - py) < TOL;
+    if (!touches) continue;
+    const halfT = (wallThicknessM(w) / 2 / scale) * GRID;
+    if (halfT > best) best = halfT;
+  }
+  return best;
+}
 // The two automatic dimension rows a real construction drawing always
 // carries around a building's own perimeter — nearestParallelWallDims only
 // ever measures BETWEEN two facing walls (a room's own span), never a
@@ -449,16 +475,33 @@ function buildChainSegs(run, elements, scale) {
 // "overall" dimension spanning the whole run.
 function exteriorPerimeterChains(elements, scale) {
   const rooms = elements.filter(e => e.type === "room");
-  const exteriorWalls = elements.filter(e => e.type === "wall").filter(w => isWallExteriorLocal(w, rooms, scale));
+  const allWalls = elements.filter(e => e.type === "wall");
+  const exteriorWalls = allWalls.filter(w => isWallExteriorLocal(w, rooms, scale));
   if (!exteriorWalls.length) return [];
   const runs = mergeCollinearWallRuns(exteriorWalls);
   return runs.map(run => {
     const built = buildChainSegs(run, elements, scale);
     if (!built) return null;
-    const { ux, uy, len, segs } = built;
+    const { ux, uy, segs } = built;
     const halfThickPx = (wallThicknessM(run) / 2 / scale) * GRID;
     const { nx, ny } = outwardNormalForRun(run, elements);
-    return { id: run.id, tag: run.tag, x1: run.x1, y1: run.y1, ux, uy, nx, ny, halfThickPx, len, segs };
+    // Stretch each end out to the true outside corner — prefer another
+    // EXTERIOR wall closing the corner there (the normal case, continuing
+    // the building's own perimeter); fall back to any wall at all only
+    // when none of the exterior ones touch that point (a lone perimeter
+    // wall ending at a standalone partition stub).
+    const extStart = orthogonalCornerExtensionPx(run.x1, run.y1, ux, uy, exteriorWalls, scale)
+      || orthogonalCornerExtensionPx(run.x1, run.y1, ux, uy, allWalls, scale);
+    const extEnd = orthogonalCornerExtensionPx(run.x2, run.y2, ux, uy, exteriorWalls, scale)
+      || orthogonalCornerExtensionPx(run.x2, run.y2, ux, uy, allWalls, scale);
+    const x1 = run.x1 - ux * extStart, y1 = run.y1 - uy * extStart;
+    const len = built.len + extStart + extEnd;
+    const extSegs = segs.map(s => ({ ...s, a: s.a + extStart, b: s.b + extStart }));
+    if (extSegs.length) {
+      extSegs[0] = { ...extSegs[0], a: 0 };
+      extSegs[extSegs.length - 1] = { ...extSegs[extSegs.length - 1], b: len };
+    }
+    return { id: run.id, tag: run.tag, x1, y1, ux, uy, nx, ny, halfThickPx, len, segs: extSegs };
   }).filter(Boolean);
 }
 // The interior counterpart of exteriorPerimeterChains — a "face interna"
