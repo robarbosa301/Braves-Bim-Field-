@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Tablet, Smartphone, Building2, ArrowUpRight, RefreshCw, LogIn, LogOut } from "lucide-react";
+import { Tablet, Smartphone, Building2, ArrowUpRight, RefreshCw, LogIn, LogOut, Trash2 } from "lucide-react";
 import { C, mono, heading } from "./theme.js";
 import { genCode, composeAddress } from "./utils.js";
-import { idbGet, idbSet, getUserProjects, addUserProject, listAllCloudProjects } from "./storage.js";
+import { idbGet, idbSet, getUserProjects, addUserProject, listAllCloudProjects, deleteCloudProject, removeUserProject } from "./storage.js";
 import { firebaseEnabled } from "./firebase.js";
 import { signInWithGoogle, signOutUser, watchAuthState, consumeRedirectResult } from "./auth.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
@@ -119,20 +119,41 @@ export default function JoinScreen({ onJoin }) {
   }, [building.cep]);
   const [savedProjects, setSavedProjects] = useState([]);
   const [showAllProjects, setShowAllProjects] = useState(false);
-  // "Meus Projetos" (above) only ever knows about a project this exact
-  // device created/joined, or — once logged in — one this exact account
-  // created/joined. A project opened only from a device that's since been
-  // wiped, or from before login existed, falls out of both and becomes
-  // unreachable without its code. This pulls the full, unscoped list
-  // straight from Firestore instead, as a separate "find it" escape hatch.
-  const [cloudProjects, setCloudProjects] = useState(null);
-  const [loadingCloud, setLoadingCloud] = useState(false);
+  const [loadingCloud, setLoadingCloud] = useState(true);
+  // Tap-to-arm, tap-again-to-confirm delete — the project's own code, or
+  // null when nothing's armed. A real confirm dialog would work too, but
+  // this stays inline with the card instead of popping something over the
+  // whole screen for what's otherwise a single, low-ceremony list.
+  const [confirmDeleteCode, setConfirmDeleteCode] = useState(null);
   const [user, setUser] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     idbGet("projects-index").then(list => setSavedProjects(list || []));
+  }, []);
+
+  // "Meus Projetos" used to only ever know about a project this exact
+  // device created/joined, or — once logged in — one this exact account
+  // created/joined. A project opened only from a device that's since been
+  // wiped, or from before login existed, fell out of both and became
+  // unreachable without its code — the data was still sitting in Firestore
+  // (whose read rules are already wide open — see firestore.rules), just
+  // with nothing left pointing at it. Pulling the full, unscoped list on
+  // every visit here means every levantamento ever made shows up on its
+  // own, with no button to go find it and no code to remember.
+  useEffect(() => {
+    listAllCloudProjects().then(cloudList => {
+      setLoadingCloud(false);
+      if (!cloudList.length) return;
+      setSavedProjects(local => {
+        const byCode = new Map(local.map(p => [p.code, p]));
+        cloudList.forEach(p => byCode.set(p.code, { ...byCode.get(p.code), ...p }));
+        const merged = [...byCode.values()];
+        idbSet("projects-index", merged);
+        return merged;
+      });
+    });
   }, []);
 
   // Login is entirely optional — every device keeps working off its own
@@ -165,11 +186,21 @@ export default function JoinScreen({ onJoin }) {
     setCode(finalCode);
     setStep("building");
   }
-  async function loadCloudProjects() {
-    setLoadingCloud(true);
-    const list = await listAllCloudProjects();
-    setCloudProjects(list);
-    setLoadingCloud(false);
+  // Permanently removes a levantamento from the cloud (and from every list
+  // this screen can itself see) — for an old test/throwaway project the
+  // person doesn't want cluttering "Meus Projetos" anymore. First tap on
+  // the trash icon arms it (confirmDeleteCode), second tap on the SAME
+  // project's icon actually deletes; tapping anything else disarms it.
+  async function handleDeleteProject(code) {
+    if (confirmDeleteCode !== code) { setConfirmDeleteCode(code); return; }
+    setConfirmDeleteCode(null);
+    await deleteCloudProject(code);
+    if (user) await removeUserProject(user.uid, code);
+    setSavedProjects(local => {
+      const next = local.filter(p => p.code !== code);
+      idbSet("projects-index", next);
+      return next;
+    });
   }
   async function handleJoinExisting(codeOverride) {
     setBusy(true);
@@ -339,10 +370,12 @@ export default function JoinScreen({ onJoin }) {
             <>
               <input value={code} onChange={e => setCode(e.target.value)} placeholder="Código do projeto (ex: 7K2P)"
                 className="w-full mb-3 px-3 py-2.5 rounded-xl text-sm uppercase" style={{ ...mono, background: C.panel, color: C.chalk, border: `1px solid ${C.line}` }} />
-              {savedProjects.length > 0 && (
+              {savedProjects.length > 0 ? (
                 <div className="mb-3">
                   <div className="flex items-center justify-between mb-1.5">
-                    <div className="text-[10px]" style={{ color: C.mute, letterSpacing: "0.06em" }}>OU ESCOLHA UM LEVANTAMENTO SALVO NESTE APARELHO</div>
+                    <div className="text-[10px]" style={{ color: C.mute, letterSpacing: "0.06em" }}>
+                      SEUS LEVANTAMENTOS{loadingCloud ? " — buscando mais na nuvem…" : ""}
+                    </div>
                     {savedProjects.length > 2 && (
                       <button onClick={() => setShowAllProjects(v => !v)} className="text-[10px] font-semibold shrink-0 ml-2" style={{ color: C.gold }}>
                         {showAllProjects ? "Ver menos" : `Todos (${savedProjects.length})`}
@@ -357,55 +390,31 @@ export default function JoinScreen({ onJoin }) {
                     // project's full geometry from IndexedDB just to draw one.
                     <div className="grid grid-cols-2 gap-2 max-h-96 overflow-y-auto">
                       {savedProjects.map(p => (
-                        <button key={p.code} onClick={() => handleJoinExisting(p.code)}
-                          className="text-left p-2.5 rounded-xl flex flex-col gap-1.5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                          <div className="w-full aspect-square rounded-lg flex items-center justify-center" style={{ background: C.panelAlt }}>
-                            <Building2 size={26} color={C.gold} />
-                          </div>
-                          <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
-                          <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"}</div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px]" style={{ color: C.mute }}>{p.roomsCount || 0} amb.</span>
-                            <span className="text-[10px]" style={{ ...mono, color: C.gold }}>{p.code}</span>
-                          </div>
-                        </button>
+                        <div key={p.code} className="relative">
+                          <button onClick={() => handleJoinExisting(p.code)}
+                            className="w-full text-left p-2.5 rounded-xl flex flex-col gap-1.5" style={{ background: C.panel, border: `1px solid ${confirmDeleteCode === p.code ? C.bad : C.line}` }}>
+                            <div className="w-full aspect-square rounded-lg flex items-center justify-center" style={{ background: C.panelAlt }}>
+                              <Building2 size={26} color={C.gold} />
+                            </div>
+                            <div className="text-xs truncate pr-5" style={{ color: C.chalk }}>{p.name || "Sem nome"}</div>
+                            <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"}</div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px]" style={{ color: C.mute }}>{p.roomsCount || 0} amb.</span>
+                              <span className="text-[10px]" style={{ ...mono, color: C.gold }}>{p.code}</span>
+                            </div>
+                          </button>
+                          <button onClick={() => handleDeleteProject(p.code)} title="Apagar este levantamento da nuvem"
+                            className="absolute top-1.5 right-1.5 p-1 rounded-md" style={{ background: confirmDeleteCode === p.code ? C.bad : "rgba(0,0,0,0.35)" }}>
+                            <Trash2 size={11} color={confirmDeleteCode === p.code ? "#141311" : C.mute} />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-h-52 overflow-y-auto">
                       {savedProjects.map(p => (
-                        <button key={p.code} onClick={() => handleJoinExisting(p.code)}
-                          className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
-                          <Building2 size={15} color={C.gold} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name}</div>
-                            <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"} · {p.roomsCount || 0} ambiente(s)</div>
-                          </div>
-                          <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="mb-3">
-                {cloudProjects === null ? (
-                  <button onClick={loadCloudProjects} disabled={loadingCloud}
-                    className="w-full text-[11px] font-semibold text-center py-2 rounded-lg" style={{ color: C.gold, background: C.goldTint, border: `1px solid ${C.gold}`, opacity: loadingCloud ? 0.6 : 1 }}>
-                    {loadingCloud ? "Buscando na nuvem…" : "Não achou? Ver todos os projetos salvos na nuvem"}
-                  </button>
-                ) : (
-                  <>
-                    <div className="text-[10px] mb-1.5" style={{ color: C.mute, letterSpacing: "0.06em" }}>
-                      TODOS OS PROJETOS NA NUVEM ({cloudProjects.length}) — PODE INCLUIR LEVANTAMENTOS FEITOS EM OUTRO APARELHO
-                    </div>
-                    {cloudProjects.length === 0 ? (
-                      <div className="text-[11px] text-center py-3" style={{ color: C.mute }}>Nenhum projeto encontrado na nuvem.</div>
-                    ) : (
-                      <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                        {cloudProjects.map(p => (
-                          <button key={p.code} onClick={() => handleJoinExisting(p.code)}
-                            className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                        <div key={p.code} className="w-full flex items-center gap-2 rounded-xl" style={{ background: C.panel, border: `1px solid ${confirmDeleteCode === p.code ? C.bad : C.line}` }}>
+                          <button onClick={() => handleJoinExisting(p.code)} className="flex-1 min-w-0 text-left p-2.5 flex items-center gap-2">
                             <Building2 size={15} color={C.gold} />
                             <div className="flex-1 min-w-0">
                               <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name || "Sem nome"}</div>
@@ -413,12 +422,21 @@ export default function JoinScreen({ onJoin }) {
                             </div>
                             <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
                           </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                          <button onClick={() => handleDeleteProject(p.code)} title="Apagar este levantamento da nuvem" className="shrink-0 p-2 mr-1 rounded-lg"
+                            style={{ background: confirmDeleteCode === p.code ? C.bad : "transparent" }}>
+                            <Trash2 size={13} color={confirmDeleteCode === p.code ? "#141311" : C.mute} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {confirmDeleteCode && (
+                    <div className="text-[10px] mt-1.5" style={{ color: C.bad }}>Toque de novo na lixeira pra confirmar — apaga esse levantamento da nuvem pra sempre.</div>
+                  )}
+                </div>
+              ) : loadingCloud ? (
+                <div className="text-[11px] text-center py-3 mb-3" style={{ color: C.mute }}>Buscando seus levantamentos…</div>
+              ) : null}
             </>
           )}
           <button onClick={mode === "create" ? goToBuilding : () => handleJoinExisting()} disabled={busy || (mode === "join" && !code.trim())}

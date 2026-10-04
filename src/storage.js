@@ -80,6 +80,25 @@ export async function syncProjectMeta(code, meta) {
   } catch (e) { return false; }
 }
 
+// Permanently removes a project from the cloud — its real data
+// (bim-project:<code>:data), its metadata mirror (projects/<code>, the
+// same doc syncProjectMeta writes), and any stale presence heartbeats, so
+// an old test/throwaway levantamento found via listAllCloudProjects can
+// actually be cleared out instead of sitting there forever with nothing
+// but its own code able to reach it. Does NOT touch this device's local
+// copy (idb) or any other account's own user-projects list pointing at
+// it — those are cleaned up by the caller for the ones it can see.
+export async function deleteCloudProject(code) {
+  if (!firebaseEnabled || !code) return false;
+  try {
+    await deleteDoc(doc(collection(db, "kv"), `bim-project:${code}:data`));
+    await deleteDoc(doc(collection(db, "projects"), code));
+    const presenceKeys = await safeList(`bim-project:${code}:presence:`, true);
+    await Promise.all(presenceKeys.map(k => deleteDoc(doc(collection(db, "kv"), k))));
+    return true;
+  } catch (e) { return false; }
+}
+
 // A logged-in user's own project list — same "kv" collection every other
 // shared value already goes through (no new Firestore rule needed), just
 // keyed by uid instead of project code. This is what makes "Meus Projetos"
@@ -96,6 +115,11 @@ export async function addUserProject(uid, meta) {
   const list = await getUserProjects(uid);
   const next = [meta, ...list.filter(p => p.code !== meta.code)].slice(0, 200);
   await safeSet(`user-projects:${uid}`, JSON.stringify(next), true);
+}
+export async function removeUserProject(uid, code) {
+  if (!uid || !code) return;
+  const list = await getUserProjects(uid);
+  await safeSet(`user-projects:${uid}`, JSON.stringify(list.filter(p => p.code !== code)), true);
 }
 
 // Every project this app has ever created or opened — not scoped to this
