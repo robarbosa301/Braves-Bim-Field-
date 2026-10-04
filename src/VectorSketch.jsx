@@ -11,6 +11,7 @@ import { toNum, uid } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM, FONT_FAMILIES, fontFamilyCss } from "./constants.js";
 import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, resyncVbAspect, wrapTextLines, rotatePoint } from "./geometry.js";
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
+import { FURNITURE_FAMILIES, FURNITURE_LIST } from "./furniture.js";
 
 // Split out of App.jsx — this is the Croqui (2D sketch) editor, the
 // single largest component in the app. Its own private geometry helpers
@@ -1092,6 +1093,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const [polygon, setPolygon] = useState([]);
   const [terrenoW, setTerrenoW] = useState("10");
   const [terrenoD, setTerrenoD] = useState("20");
+  const [furnitureFamily, setFurnitureFamily] = useState(null);
   const [ambienteAuto, setAmbienteAuto] = useState(true);
   const [lastPolygonAdd, setLastPolygonAdd] = useState(1);
   const [autoRoomMsg, setAutoRoomMsg] = useState("");
@@ -1816,6 +1818,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     return { x: fixedPt.x + Math.cos(nearest) * d, y: fixedPt.y + Math.sin(nearest) * d };
   }
   function findAt(p) {
+    // Checked first — furniture sits visually on top of everything else,
+    // and (unlike a door/window's small fixed point) can be a meter-plus
+    // across, so a tap anywhere inside its own rotated footprint must hit
+    // it, not just within a few px of its exact origin point.
+    const furniture = elements.filter(e => e.type === "furniture");
+    for (const el of furniture) {
+      const fam = FURNITURE_FAMILIES[el.familyId];
+      if (!fam) continue;
+      const rad = -((el.rotation || 0) * Math.PI) / 180;
+      const dx = p.x - el.x, dy = p.y - el.y;
+      // Un-rotate the tap into the furniture's own local frame instead of
+      // rotating the footprint — same result, one point instead of four.
+      const lx = dx * Math.cos(rad) - dy * Math.sin(rad), ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+      const halfWPx = (fam.wM / 2 / scale) * GRID, halfDPx = (fam.dM / 2 / scale) * GRID;
+      if (Math.abs(lx) <= halfWPx && Math.abs(ly) <= halfDPx) return el;
+    }
     const dw = elements.filter(e => e.type === "door" || e.type === "window" || e.type === "luminaria");
     let best = null, bestD = Infinity;
     dw.forEach(e => { const d = dist(p, { x: e.x, y: e.y }); if (d < bestD) { bestD = d; best = e; } });
@@ -1883,6 +1901,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     }
     if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
       return { minX: el.x, maxX: el.x, minY: el.y, maxY: el.y };
+    }
+    if (el.type === "furniture") {
+      const fam = FURNITURE_FAMILIES[el.familyId];
+      const r = fam ? (Math.max(fam.wM, fam.dM) / 2 / scale) * GRID : 0;
+      return { minX: el.x - r, maxX: el.x + r, minY: el.y - r, maxY: el.y + r };
     }
     if (el.type === "room" || el.type === "floor" || el.type === "terreno") {
       const xs = el.points.map(p => p.x), ys = el.points.map(p => p.y);
@@ -2248,6 +2271,21 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       }
       setLastPolygonAdd(1);
       setPolygon([...polygon, { x: snap(rawP.x), y: snap(rawP.y) }]);
+      return;
+    }
+
+    if (tool === "mobilia") {
+      // A real, saved element (position + rotation + family), not a
+      // computed preview — the catalog panel below picks the family first;
+      // every tap after that drops one more instance of it, so furnishing
+      // a room with several chairs doesn't mean re-opening the catalog
+      // each time. Free placement (no wall/grid snap) — furniture rarely
+      // sits exactly on the drawing's grid.
+      if (!furnitureFamily) return;
+      const count = elements.filter(x => x.type === "furniture").length;
+      const el = { id: uid(), type: "furniture", familyId: furnitureFamily, x: rawP.x, y: rawP.y, rotation: 0, tag: `MOB-${count + 1}` };
+      commitElements([...elements, el]);
+      setSelectedId(el.id);
       return;
     }
 
@@ -3021,6 +3059,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     isDraggingRef.current = true;
     setDragSession({ kind: "terreno-vertex", id: el.id, vIdx: idx });
   }
+  // Free placement, same idea as beginDragOpening but not clamped to any
+  // wall — furniture sits wherever the room layout calls for it.
+  function beginDragFurnitureMove(el, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    if (multiSelectMode) { toggleSelectionMember(el.id); return; }
+    pushHistory();
+    isDraggingRef.current = true;
+    setSelectedId(el.id);
+    setDragSession({ kind: "furniture-move", id: el.id });
+  }
   function onCanvasPointerMove(e) {
     onLabelDragMove(e);
     onDimLabelDragMove(e);
@@ -3087,6 +3137,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; area += a.x * b.y - b.x * a.y; }
         return { ...el, points: pts, area: +((Math.abs(area / 2) / (GRID * GRID)) * scale * scale).toFixed(2) };
       }));
+    } else if (dragSession.kind === "furniture-move") {
+      commitElements(elements.map(el => el.id === dragSession.id ? { ...el, x: p.x, y: p.y } : el));
     }
   }
   function onCanvasPointerUp() {
@@ -3374,6 +3426,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "porta", label: "Porta", Icon: DoorClosed },
     { id: "janela", label: "Janela", Icon: WindowIcon },
     { id: "escada", label: "Escada", Icon: StairsIcon },
+    { id: "mobilia", label: "Mobília", Icon: Sofa },
     { id: "cortar", label: "Cortar parede", Icon: Scissors },
     { id: "estender", label: "Estender parede", Icon: ArrowLeftRight },
     { id: "alinhar", label: "Alinhar paredes", Icon: AlignCenterVertical },
@@ -3695,6 +3748,29 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, opacity: polygon.length < 3 ? 0.4 : 1 }}>Fechar terreno</button>
             </div>
           )}
+        </div>
+      )}
+
+      {tool === "mobilia" && planMode === "piso" && (
+        <div className="flex flex-col gap-1.5 mb-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {FURNITURE_LIST.map(fid => {
+              const fam = FURNITURE_FAMILIES[fid];
+              const active = furnitureFamily === fid;
+              return (
+                <button key={fid} onClick={() => setFurnitureFamily(fid)}
+                  className="px-2 py-1 rounded text-[11px]"
+                  style={{ ...heading, fontWeight: 600, background: active ? C.gold : C.panelAlt, color: active ? "#141311" : C.mute, border: `1px solid ${active ? C.gold : C.line}` }}>
+                  {fam.label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-[10px]" style={{ color: C.mute }}>
+            {furnitureFamily
+              ? `Toque no croqui pra posicionar "${FURNITURE_FAMILIES[furnitureFamily].label}" — pode tocar várias vezes pra colocar mais de um.`
+              : "Escolha uma família acima, depois toque no croqui pra posicionar."}
+          </span>
         </div>
       )}
 
@@ -4568,6 +4644,30 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             </g>
           );
         })}
+        {/* Mobília — a real placed element (family + x/y + rotation), not a
+            computed preview: the whole group is translated/rotated by a
+            single SVG transform, so every part (box/cylinder, in meters,
+            local to the family's own origin — see furniture.js) just needs
+            its own flat, unrotated rect/circle in that local frame. */}
+        {planMode === "piso" && elements.filter(el => el.type === "furniture" && phaseVisible(el)).map(el => {
+          const fam = FURNITURE_FAMILIES[el.familyId];
+          if (!fam) return null;
+          const isSel = selectedId === el.id;
+          const mToPx = m => (m / scale) * GRID;
+          return (
+            <g key={el.id} transform={`translate(${el.x},${el.y}) rotate(${el.rotation || 0})`}
+              onMouseDown={e => beginDragFurnitureMove(el, e)} onTouchStart={e => beginDragFurnitureMove(el, e)}
+              style={{ cursor: tool === "selecionar" ? "move" : "default" }}>
+              {fam.parts.map((p, i) => p.shape === "box" ? (
+                <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx="1"
+                  fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
+              ) : (
+                <circle key={i} cx={mToPx(p.dx)} cy={mToPx(p.dy)} r={mToPx(p.r)}
+                  fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
+              ))}
+            </g>
+          );
+        })}
         {planMode === "forro" && elements.filter(el => el.type === "luminaria").map(el => {
           const dims = tool === "selecionar" ? luminariaDimensions(el) : null;
           return (
@@ -4650,7 +4750,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-medium" style={{ color: C.gold }}>
-              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "terreno" ? "Terreno" : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${cotaModeLabel(selected)}` : "Luminária"}
+              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "terreno" ? "Terreno" : selected.type === "furniture" ? (FURNITURE_FAMILIES[selected.familyId]?.label || "Mobília") : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${cotaModeLabel(selected)}` : "Luminária"}
             </span>
             <button onClick={() => setSelectedId(null)}><X size={14} color={C.gold} /></button>
           </div>
@@ -4800,6 +4900,18 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               <div>Arraste a linha para mover; arraste um dos círculos nos cantos para ajustar cada vértice (terreno irregular).</div>
             </div>
           )}
+          {selected.type === "furniture" && (() => {
+            const fam = FURNITURE_FAMILIES[selected.familyId];
+            return (
+              <div className="space-y-1.5 text-[11px]">
+                <div style={{ color: C.mute }}>{fam ? `${fam.wM.toFixed(2)} × ${fam.dM.toFixed(2)} m` : ""} · arraste para mover</div>
+                <button onClick={() => patchSelected({ rotation: ((selected.rotation || 0) + 45) % 360 })}
+                  className="flex items-center gap-1 px-2 py-1 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }}>
+                  <RotateCcw size={12} /> Girar 45°
+                </button>
+              </div>
+            );
+          })()}
           {selected.type === "stair" && (
             <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
               <span style={{ color: C.mute }}>Sobe até:</span>

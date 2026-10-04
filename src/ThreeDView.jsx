@@ -4,6 +4,7 @@ import { C, matchesPhaseView } from "./theme.js";
 import { toNum, wallNetAreaM2 } from "./utils.js";
 import { pointInPolygon, polygonAreaXZ } from "./geometry.js";
 import { wallThicknessM, FLOOR_TYPES, DOOR_MATERIAL_MIX, WINDOW_MATERIAL_MIX } from "./constants.js";
+import { FURNITURE_FAMILIES } from "./furniture.js";
 
 // Split out of App.jsx and lazy-loaded (see the React.lazy import there) so
 // three.js — a large dependency only ever needed once someone opens the 3D
@@ -743,6 +744,31 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
           const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), new THREE.MeshStandardMaterial({ color: 0xF2F1ED, emissive: 0xE5E3DD, emissiveIntensity: 0.8 }));
           mesh.position.set(lm.x, elev + levelWallHeight - 0.12, lm.y);
           scene.add(mesh);
+        });
+
+        // Mobília — a real placed element (Croqui's own Mobília tool), not
+        // the auto-placed "Mobiliada" style preview below: same shared
+        // FURNITURE_FAMILIES catalog the 2D plan draws from, so a bed
+        // placed and rotated in the Croqui shows up here in that EXACT
+        // position/orientation. One Group per instance, rotated/positioned
+        // once — every part just sits at its own flat local offset and
+        // inherits the group's transform, same idea the 2D SVG <g
+        // transform> does.
+        (lvl.furniture || []).forEach(f => {
+          const fam = FURNITURE_FAMILIES[f.familyId];
+          if (!fam) return;
+          const group = new THREE.Group();
+          group.position.set(f.x, elev, f.y);
+          group.rotation.y = (toNum(f.rotation, 0) * Math.PI) / 180;
+          fam.parts.forEach(p => {
+            const mesh = p.shape === "box"
+              ? new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.75 }))
+              : new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r, p.h, 16), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.7 }));
+            mesh.position.set(p.dx, p.baseY + p.h / 2, p.dy);
+            mesh.castShadow = true; mesh.receiveShadow = true;
+            group.add(mesh);
+          });
+          scene.add(group);
         });
 
         if (levelWalls.length) {

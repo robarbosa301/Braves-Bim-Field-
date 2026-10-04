@@ -322,6 +322,21 @@ describe("levelToMeters", () => {
     expect(m.terrenos[0].area).toBe(200);
     expect(m.terrenos[0].points[2]).toEqual({ x: 10, y: 20 }); // 400px/20*0.5=10m, 800px/20*0.5=20m
   });
+
+  it("converts a placed furniture instance (family id + position + rotation) to meters", () => {
+    const level = {
+      sketchScale: 0.5,
+      sketchElements: [
+        { type: "furniture", id: "f1", tag: "MOB-1", familyId: "cama_casal", x: 100, y: 200, rotation: 45 },
+      ],
+    };
+    const m = levelToMeters(level);
+    expect(m.furniture).toHaveLength(1);
+    expect(m.furniture[0].familyId).toBe("cama_casal");
+    expect(m.furniture[0].rotation).toBe(45);
+    expect(m.furniture[0].x).toBeCloseTo(2.5, 6); // 100px/20*0.5
+    expect(m.furniture[0].y).toBeCloseTo(5, 6); // 200px/20*0.5
+  });
 });
 
 describe("buildLevantamentoSchema", () => {
@@ -360,6 +375,17 @@ describe("buildLevantamentoSchema", () => {
     const schema = buildLevantamentoSchema({ code: "7K2P", buildingInfo: { name: "Casa Teste" }, rooms: [], levels: [level], roofs: [] });
     expect(schema.niveis[0].terrenos).toHaveLength(1);
     expect(schema.niveis[0].terrenos[0].area_m2).toBe(200);
+  });
+
+  it("includes placed furniture in the exported level, for the Revit add-in to read", () => {
+    const level = {
+      id: "lvl1", name: "Térreo", elevation: 0, sketchScale: 0.5,
+      sketchElements: [{ type: "furniture", id: "f1", tag: "MOB-1", familyId: "sofa", x: 100, y: 200, rotation: 90 }],
+    };
+    const schema = buildLevantamentoSchema({ code: "7K2P", buildingInfo: { name: "Casa Teste" }, rooms: [], levels: [level], roofs: [] });
+    expect(schema.niveis[0].mobiliario).toHaveLength(1);
+    expect(schema.niveis[0].mobiliario[0].familia_id).toBe("sofa");
+    expect(schema.niveis[0].mobiliario[0].rotacao_graus).toBe(90);
   });
 
   it("tolerates missing optional collections", () => {

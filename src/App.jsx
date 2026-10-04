@@ -416,6 +416,11 @@ function floorZoneToM(f, toM) { return { id: f.id, points: f.points.map(p => ({ 
 // The lot/site boundary (Croqui's own Terreno tool) — just a polygon and
 // its area, same shape as a floor zone, no finish of its own.
 function terrenoToM(t, toM) { return { id: t.id, points: t.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: t.area }; }
+// A placed furniture instance (Croqui's own Mobília tool) — just its
+// family id, position and rotation; every part's real size/shape comes
+// from the shared FURNITURE_FAMILIES catalog (furniture.js), the same one
+// both the 2D plan and the 3D view build from, so this stays tiny.
+function furnitureToM(f, toM) { return { id: f.id, tag: f.tag || "", familyId: f.familyId, x: toM(f.x), y: toM(f.y), rotation: toNum(f.rotation, 0) }; }
 
 // A roof has no drawn shape of its own (see addRoof/computeRoofPlanes) —
 // its geometry is auto-generated from whichever level it's assigned to's
@@ -531,6 +536,7 @@ export function levelToMeters(level) {
     rooms: els.filter(e => e.type === "room").map(r => roomToM(r, toM)),
     floorZones: els.filter(e => e.type === "floor").map(f => floorZoneToM(f, toM)),
     terrenos: els.filter(e => e.type === "terreno").map(t => terrenoToM(t, toM)),
+    furniture: els.filter(e => e.type === "furniture").map(f => furnitureToM(f, toM)),
     // Same dimension/tag colors the Croqui's "Cores e tamanhos de texto"
     // panel already applies to the 2D plan and the Elevação — carried
     // through here so the 3D view's own on-element dimensions (drawn when
@@ -609,6 +615,7 @@ export function levelToMetersForRoom(level, room) {
     luminarias: els.filter(e => e.type === "luminaria" && inPoly(e.x, e.y)).map(l => luminariaToM(l, toM)),
     rooms: [roomToM(poly, toM)],
     floorZones: els.filter(e => e.type === "floor" && inPoly(polygonCentroid(e.points).x, polygonCentroid(e.points).y)).map(f => floorZoneToM(f, toM)),
+    furniture: els.filter(e => e.type === "furniture" && inPoly(e.x, e.y)).map(f => furnitureToM(f, toM)),
     dimColor: level.dimColor || "#4A4A46",
     doorDimColor: level.doorDimColor || "#4A4A46",
     windowDimColor: level.windowDimColor || "#4A4A46",
@@ -651,6 +658,7 @@ export function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roo
           pontos: r.points, acabamento_piso: r.floorFinish, cor_piso: r.floorColor, acabamento_forro: r.ceilingFinish,
         })),
         terrenos: m.terrenos.map(t => ({ id: t.id, pontos: t.points, area_m2: t.area })),
+        mobiliario: m.furniture.map(f => ({ id: f.id, tag: f.tag, familia_id: f.familyId, x: f.x, y: f.y, rotacao_graus: f.rotation })),
       };
     }),
     coberturas: roofs || [],
