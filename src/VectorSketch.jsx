@@ -924,6 +924,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // above/below, which isn't in this level's own elements/wallsById.
   const [alignRef, setAlignRef] = useState(null);
   const [alignMsg, setAlignMsg] = useState("");
+  // "Unir canto": same two-tap pattern as Estender/Alinhar — tap the first
+  // wall, then the second, and both get trimmed/extended to meet exactly
+  // at their true intersection (trimWallsToCorner). The selected-wall
+  // panel's own "Aparar/unir canto com parede próxima" button does the
+  // same thing in one tap, but only appears when findCornerWall's own
+  // distance window (a fixed pixel range, same regardless of this level's
+  // drawing scale) happens to find a candidate automatically — a wall
+  // whose real gap sits just outside that window has NO way to be joined
+  // at all through that button, not even a disabled state or a message,
+  // it simply never appears. This tool is the reliable fallback: the
+  // person picks both walls themselves, so no auto-detection window is
+  // involved at all.
+  const [cornerRef, setCornerRef] = useState(null);
+  const [cornerMsg, setCornerMsg] = useState("");
   // "Cota" (manual dimension): a sub-mode picker (face a face / eixo a eixo
   // / face externa / espessura / porta-janela) plus, for the two-wall
   // modes, the first wall tapped while waiting for the second — the same
@@ -1788,6 +1802,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       setAlignRef(null);
       const err = alignWallTo(hit, ref);
       setAlignMsg(err || "");
+      return;
+    }
+
+    if (tool === "unircanto") {
+      const hit = findAt(p);
+      if (!hit || hit.type !== "wall") return;
+      if (!cornerRef) { setCornerRef(hit); setCornerMsg(""); return; }
+      if (hit.id === cornerRef.id) { setCornerRef(null); return; }
+      const a = cornerRef;
+      setCornerRef(null);
+      const trimmed = trimWallsToCorner(a, hit);
+      if (!trimmed) { setCornerMsg("Essas duas paredes são paralelas — não têm um canto em comum pra unir."); return; }
+      const newA = { ...a, ...trimmed.a, length: pxToMeters(dist({ x: trimmed.a.x1, y: trimmed.a.y1 }, { x: trimmed.a.x2, y: trimmed.a.y2 })) };
+      const newB = { ...hit, ...trimmed.b, length: pxToMeters(dist({ x: trimmed.b.x1, y: trimmed.b.y1 }, { x: trimmed.b.x2, y: trimmed.b.y2 })) };
+      commitElements(elements.map(e => (e.id === newA.id ? newA : e.id === newB.id ? newB : e)));
+      setCornerMsg("");
       return;
     }
 
@@ -2997,6 +3027,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     { id: "cortar", label: "Cortar parede", Icon: Scissors },
     { id: "estender", label: "Estender parede", Icon: ArrowLeftRight },
     { id: "alinhar", label: "Alinhar paredes", Icon: AlignCenterVertical },
+    { id: "unircanto", label: "Unir canto de paredes", Icon: CornerUpRight },
     { id: "cota", label: "Cota", Icon: Ruler },
     { id: "apagar", label: "Apagar", Icon: Eraser },
   ];
@@ -3047,7 +3078,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const activeColor = id === "apagar" ? C.bad : C.gold;
           return (
             <span key={id} className="contents">
-              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); setCotaPendingWallId(null); }} title={label}
+              <button onClick={() => { setTool(id); setPending(null); setEditingWallLen(null); setEditingParallelDim(null); setExtendSourceId(null); setExtendMsg(""); setAlignRef(null); setAlignMsg(""); setCornerRef(null); setCornerMsg(""); setCotaPendingWallId(null); }} title={label}
                 className="flex items-center justify-center p-2 rounded"
                 style={{ background: active ? (id === "apagar" ? "rgba(193,84,63,0.16)" : C.goldTint) : C.panelAlt, color: active ? activeColor : C.mute, border: `1px solid ${active ? activeColor : C.line}` }}>
                 <Icon size={16} />
@@ -3279,6 +3310,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       {tool === "alinhar" && planMode === "piso" && (
         <div className="mb-2 text-[10px]" style={{ color: alignMsg ? C.bad : C.mute }}>
           {alignMsg || (alignRef ? "Agora toque na parede que deve se mover para alinhar." : "Toque na parede de referência (a que fica parada — pode ser de outro nível, se estiver com \"ver nível\" ligado).")}
+        </div>
+      )}
+
+      {tool === "unircanto" && planMode === "piso" && (
+        <div className="mb-2 text-[10px]" style={{ color: cornerMsg ? C.bad : C.mute }}>
+          {cornerMsg || (cornerRef ? "Agora toque na outra parede do canto." : "Toque na primeira parede do canto que quer unir.")}
         </div>
       )}
 
@@ -3593,9 +3630,9 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         {elements.filter(el => el.type === "wall" && phaseVisible(el)).map(el => (
           <g key={el.id} opacity={planMode === "forro" ? 0.35 : 1}>
             <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-              stroke={extendSourceId === el.id || alignRef?.id === el.id || cotaPendingWallId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
-              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRef?.id === el.id || cotaPendingWallId === el.id ? 6 : 4} strokeLinecap="square"
-              strokeDasharray={extendSourceId === el.id || alignRef?.id === el.id || cotaPendingWallId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
+              stroke={extendSourceId === el.id || alignRef?.id === el.id || cornerRef?.id === el.id || cotaPendingWallId === el.id ? C.gold : selectedId === el.id ? "#726F68" : phaseStyleColor(el) || "#1B1E1A"}
+              strokeWidth={selectedId === el.id || extendSourceId === el.id || alignRef?.id === el.id || cornerRef?.id === el.id || cotaPendingWallId === el.id ? 6 : 4} strokeLinecap="square"
+              strokeDasharray={extendSourceId === el.id || alignRef?.id === el.id || cornerRef?.id === el.id || cotaPendingWallId === el.id ? "8,4" : phaseStyleColor(el) ? "7,5" : undefined}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }} onMouseDown={e => beginDragWallMove(el, e)} onTouchStart={e => beginDragWallMove(el, e)} />
             {/* Every wall used to carry its own bare length label — floating
                 text with no leader/tick line, right in the middle of the
