@@ -707,7 +707,19 @@ function snapRoomToWallFaces(loop, walls, tolerance) {
     for (const w of walls) {
       const wx = w.x2 - w.x1, wy = w.y2 - w.y1, wlen = Math.hypot(wx, wy) || 1;
       const wux = wx / wlen, wuy = wy / wlen;
-      if (Math.abs(eux * wuy - euy * wux) > 0.03) continue; // not parallel to this wall
+      // This edge comes from the raster trace above, not from the wall
+      // itself — even after RDP smoothing, a short wall's own edge can
+      // keep a couple degrees of staircase noise (a real case: a 2m-long
+      // wall's raster edge came out ~1.9° off true vertical, just past the
+      // old 0.03 ~= 1.7° cutoff here) and silently fail to match ANY wall
+      // at all, leaving that edge's face-line null — which is what let the
+      // room polygon's own corner there drift off onto the unsnapped raw
+      // raster point instead of the wall's real face, visibly slanting
+      // that one edge while every other, less noisy edge in the same room
+      // snapped perfectly fine. 0.08 (~4.6°) comfortably absorbs that
+      // raster noise while still rejecting a wall at any real, deliberate
+      // angle (even a shallow 15° one sits at ~0.26, well outside it).
+      if (Math.abs(eux * wuy - euy * wux) > 0.08) continue; // not parallel to this wall
       const proj = projectPointOnSegment(mid, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
       const nx = -wuy, ny = wux;
       const signedDist = (mid.x - proj.x) * nx + (mid.y - proj.y) * ny;
