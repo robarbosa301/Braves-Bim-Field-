@@ -2113,7 +2113,7 @@ export default function PranchetaBIM() {
                   onChange={(els, sc) => updateLevelSketch(croquiLevel.id, els, sc)}
                   onMeta={(patch) => updateLevelMeta(croquiLevel.id, patch)}
                   onNameRoom={(elId, name) => nameRoomPolygon(croquiLevel.id, elId, name)}
-                  phaseView={phaseView2D} roofOverlays={croquiRoofOverlays}
+                  phaseView={phaseView2D} roofOverlays={croquiRoofOverlays} renderStyle={view3dStyle} onRenderStyleChange={setView3dStyle}
                   exportMode={pdfExporting} onOpenThreeD={() => setCroquiViewMode("3d")} />
               )}
               {croquiViewMode === "2d" && !croquiLevel && <div className="text-center text-sm py-10" style={{ color: C.mute }}>Crie um nível na aba Elementos → Níveis para começar a desenhar.</div>}

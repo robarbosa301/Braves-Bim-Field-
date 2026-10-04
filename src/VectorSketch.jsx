@@ -4,6 +4,7 @@ import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
   Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat, CheckSquare, Hand, Wand2,
+  PenTool, Sun, Sofa,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -30,6 +31,104 @@ const FLOOR_COLOR_2D = {
   "Porcelanato": "#E4E1D8", "Cerâmica": "#D8CFC0", "Contrapiso aparente": "#C9C4B8",
   "Madeira/Laminado": "#B08A5C", "Vinílico": "#C9C2B4", "Korodur": "#8C9A93", "Deck": "#9C7A52", "A definir": "#B9B6AE",
 };
+// Which (if any) SVG <pattern> ("Humanizada"/"Mobiliada" only, see the room
+// fill below) reads as a believable top-down finish for each floor family —
+// grid lines for anything tiled, plank lines for anything wood, a fine
+// speckle otherwise. Matches the same grouping ThreeDView's own
+// getWallTexture uses for its procedural canvas textures, just in SVG.
+function floorPatternId(finish, levelId) {
+  if (finish === "Porcelanato" || finish === "Cerâmica" || finish === "Revestimento cerâmico") return `floor-tile-${levelId}`;
+  if (finish === "Madeira/Laminado" || finish === "Deck") return `floor-wood-${levelId}`;
+  if (finish === "Vinílico" || finish === "Korodur" || finish === "Contrapiso aparente") return `floor-speckle-${levelId}`;
+  return null;
+}
+// ---- "Mobiliada" Croqui: the 2D top-down counterpart of ThreeDView's own
+// buildRoomFurniture — same room-name detection, same rough footprints
+// (scaled from meters via this level's own px-per-meter), just drawn as
+// flat plan symbols (rect/circle) instead of 3D boxes. Kept as its own,
+// independent read of the room name rather than sharing code with
+// ThreeDView (this file never imports from there, same reasoning
+// wallSpanForRoomLocal above already documents for App.jsx) — an
+// approximation for a client walkthrough plan, not real furniture layout.
+function normalizeRoomName2D(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function roomFurniturePieces2D(room, scale) {
+  const mToPx = m => (m / scale) * GRID;
+  const pts = room.points;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  pts.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+  const wM = ((maxX - minX) / GRID) * scale, hM = ((maxY - minY) / GRID) * scale;
+  if (wM < 1.3 || hM < 1.3) return [];
+  const nm = normalizeRoomName2D(room.name);
+  const margin = mToPx(0.12);
+  const backY = minY + margin;
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const pieces = [];
+  const rect = (xC, yC, wMtr, hMtr, fill) => pieces.push({ shape: "rect", x: xC - mToPx(wMtr) / 2, y: yC - mToPx(hMtr) / 2, w: mToPx(wMtr), h: mToPx(hMtr), fill });
+  const circ = (xC, yC, rMtr, fill) => pieces.push({ shape: "circle", cx: xC, cy: yC, r: mToPx(rMtr), fill });
+
+  if (/banheiro|\bwc\b|lavabo/.test(nm)) {
+    const vanityW = Math.min(0.9, wM - 0.5);
+    if (vanityW < 0.3) return pieces;
+    rect(minX + margin + mToPx(vanityW) / 2, backY + mToPx(0.225), vanityW, 0.45, "#E8E6E0");
+    if (wM > 1.6) {
+      const cornerX = maxX - margin - mToPx(0.2);
+      rect(cornerX, backY + mToPx(0.25), 0.4, 0.5, "#E8E6E0");
+      circ(cornerX, backY + mToPx(0.42), 0.14, "#D7D3C8");
+    }
+    return pieces;
+  }
+  if (/\bjantar\b/.test(nm)) {
+    const tw = Math.min(1.5, wM - 0.8), td = Math.min(0.9, hM - 0.8);
+    if (tw < 0.6 || td < 0.5) return pieces;
+    rect(cx, cy, tw, td, "#C9A876");
+    [[0, 0.75], [0, -0.75], [1, 0], [-1, 0]].forEach(([dx, dz]) => {
+      if ((dx !== 0 && td < 0.7) || (dz !== 0 && tw < 0.9)) return;
+      circ(cx + mToPx(dx * (tw / 2 + 0.3)), cy + mToPx(dz * (td / 2 + 0.3)), 0.16, "#8C8478");
+    });
+    return pieces;
+  }
+  if (/cozinha/.test(nm)) {
+    const counterLen = Math.min(wM - 0.3, 2.6);
+    if (counterLen < 0.4) return pieces;
+    rect(minX + margin + mToPx(counterLen) / 2, backY + mToPx(0.3), counterLen, 0.6, "#D9D4C8");
+    if (hM > 2.2) {
+      const islandLen = Math.min(1.4, wM - 0.8);
+      rect(cx, maxY - margin - mToPx(0.5), islandLen, 0.7, "#D9D4C8");
+    }
+    return pieces;
+  }
+  if (/escritorio|escrit[oó]rio|home office/.test(nm)) {
+    const deskW = Math.min(1.3, wM - 0.5);
+    if (deskW < 0.4) return pieces;
+    rect(minX + margin + mToPx(deskW) / 2, backY + mToPx(0.3), deskW, 0.6, "#C9A876");
+    rect(minX + margin + mToPx(deskW) / 2, backY + mToPx(0.75), 0.45, 0.45, "#6E7C8C");
+    return pieces;
+  }
+  if (/quarto|dormit[oó]rio|su[ií]te/.test(nm)) {
+    const bedW = wM > 2.4 ? 1.6 : Math.min(1.4, wM - 0.6);
+    const bedLen = Math.min(2.0, hM - 0.6);
+    if (bedW < 0.8 || bedLen < 1.4) return pieces;
+    const bedCy = backY + mToPx(bedLen) / 2;
+    rect(cx, bedCy, bedW, bedLen, "#EAE5D8");
+    rect(cx - mToPx(bedW) / 2 + mToPx(0.16), backY + mToPx(0.12), 0.3, 0.2, "#F2F0EA");
+    rect(cx + mToPx(bedW) / 2 - mToPx(0.16), backY + mToPx(0.12), 0.3, 0.2, "#F2F0EA");
+    if (wM - bedW > 0.7) {
+      rect(cx - mToPx(bedW) / 2 - mToPx(0.25), backY + mToPx(0.3), 0.35, 0.35, "#8A6A47");
+      rect(cx + mToPx(bedW) / 2 + mToPx(0.25), backY + mToPx(0.3), 0.35, 0.35, "#8A6A47");
+    }
+    return pieces;
+  }
+  if (/\bsala\b|living|estar/.test(nm)) {
+    const sofaLen = Math.min(2.0, wM - 0.6);
+    if (sofaLen < 1.0) return pieces;
+    rect(minX + margin + mToPx(sofaLen) / 2, backY + mToPx(0.3), sofaLen, 0.6, "#6E7C8C");
+    if (hM > 2.0) rect(cx, cy + mToPx(0.3), Math.min(0.9, sofaLen * 0.5), 0.5, "#8A6A47");
+    return pieces;
+  }
+  return pieces;
+}
 // lucide-react has no "stairs" icon — a small hand-drawn one, same stroke
 // style (currentColor, round caps/joins) as the rest so it blends in.
 function StairsIcon({ size = 16, color = "currentColor" }) {
@@ -951,7 +1050,7 @@ function trimWallsToCorner(a, b) {
   };
 }
 
-export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD, phaseView = "tudo", roofOverlays = [] }) {
+export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta, onNameRoom, onMergeWalls, onLinkStairLevel, exportMode = false, onOpenThreeD, phaseView = "tudo", roofOverlays = [], renderStyle = "executiva", onRenderStyleChange }) {
   const svgRef = useRef(null);
   const toolbarRef = useRef(null);
   const belowCanvasRef = useRef(null);
@@ -3296,6 +3395,27 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               style={{ background: showTextSettings ? C.goldTint : C.panelAlt, border: `1px solid ${showTextSettings ? C.gold : C.line}`, color: showTextSettings ? C.gold : C.chalk }}>
               <Type size={13} /> Cores/fontes
             </button>
+            {onRenderStyleChange && (
+              // Same three styles the 3D tab switches between — sharing
+              // the one piece of state (App.jsx's view3dStyle) so picking
+              // "Mobiliada" here or in 3D shows the same thing in both.
+              // "Executiva" leaves the Croqui exactly as it always
+              // rendered; the other two color each room by its own real
+              // floor finish and (Mobiliada) add auto-placed furniture.
+              <div className="flex gap-0.5 rounded p-0.5" style={{ background: C.panelAlt }}>
+                {[
+                  { id: "executiva", label: "Executiva", Icon: PenTool },
+                  { id: "humanizada", label: "Humanizada", Icon: Sun },
+                  { id: "mobiliada", label: "Mobiliada", Icon: Sofa },
+                ].map(({ id, label, Icon }) => (
+                  <button key={id} onClick={() => onRenderStyleChange(id)}
+                    className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px]"
+                    style={{ fontWeight: 600, background: renderStyle === id ? C.gold : "transparent", color: renderStyle === id ? "#141311" : C.mute }}>
+                    <Icon size={11} /> {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {belowLevel && (
               <label className="flex items-center gap-1"><input type="checkbox" checked={showBelow} onChange={e => setShowBelow(e.target.checked)} /> ver {belowLevel.name}</label>
             )}
@@ -3646,6 +3766,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           <pattern id={`hatch-construir-${level.id}`} width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
             <line x1="0" y1="0" x2="0" y2="7" stroke={C.good} strokeWidth="2" opacity="0.55" />
           </pattern>
+          {/* "Humanizada"/"Mobiliada" only — a believable top-down finish
+              texture layered over each room's own flat floor color (see
+              roomFill below), instead of every ambiente reading as the
+              same uniform tint regardless of its actual acabamento. */}
+          <pattern id={`floor-tile-${level.id}`} width={GRID * 1.6} height={GRID * 1.6} patternUnits="userSpaceOnUse">
+            <rect width={GRID * 1.6} height={GRID * 1.6} fill="none" stroke="rgba(0,0,0,0.14)" strokeWidth="1" />
+          </pattern>
+          <pattern id={`floor-wood-${level.id}`} width={GRID * 0.9} height={GRID * 0.35} patternUnits="userSpaceOnUse">
+            <line x1="0" y1={GRID * 0.35} x2={GRID * 0.9} y2={GRID * 0.35} stroke="rgba(0,0,0,0.16)" strokeWidth="1" />
+          </pattern>
+          <pattern id={`floor-speckle-${level.id}`} width="6" height="6" patternUnits="userSpaceOnUse">
+            <circle cx="3" cy="3" r="0.6" fill="rgba(0,0,0,0.1)" />
+          </pattern>
         </defs>
         {/* Everything the sheet actually contains lives inside this one
             group so a three-finger twist (see onTouchMoveCanvas) can spin
@@ -3735,10 +3868,29 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           // reusing the Piso tool's own material palette here makes each
           // room read as its actual floor, the way a professional plan
           // colors rooms by finish instead of leaving them all blank.
-          const roomFill = FLOOR_COLOR_2D[el.floorFinish] || FLOOR_COLOR_2D["A definir"];
+          // "Humanizada"/"Mobiliada" go a step further: the room's own
+          // CUSTOM floorColor (same swatch the Piso tool already honors,
+          // previously ignored here) wins when set, at a stronger opacity,
+          // plus a tile/plank/speckle texture layered on top — "Executiva"
+          // keeps exactly today's flat family-color tint, zero change for
+          // anyone not opting in.
+          const humanizedFloor = renderStyle === "humanizada" || renderStyle === "mobiliada";
+          const roomFill = humanizedFloor
+            ? (el.floorColor || FLOOR_COLOR_2D[el.floorFinish] || FLOOR_COLOR_2D["A definir"])
+            : (FLOOR_COLOR_2D[el.floorFinish] || FLOOR_COLOR_2D["A definir"]);
+          const roomFillOpacity = humanizedFloor ? 0.85 : 0.55;
+          const roomPatternId = humanizedFloor && !roomHatch ? floorPatternId(el.floorFinish, level.id) : null;
+          const furniturePieces = renderStyle === "mobiliada" ? roomFurniturePieces2D(el, scale) : [];
           return (
             <g key={el.id}>
-              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={roomHatch || roomFill} fillOpacity={roomHatch ? 1 : 0.55} stroke={isSel ? "#726F68" : roomOutline} strokeWidth={isSel ? 2.5 : 1.5} />
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={roomHatch || roomFill} fillOpacity={roomHatch ? 1 : roomFillOpacity} stroke={isSel ? "#726F68" : roomOutline} strokeWidth={isSel ? 2.5 : 1.5} />
+              {roomPatternId && (
+                <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={`url(#${roomPatternId})`} style={{ pointerEvents: "none" }} />
+              )}
+              {furniturePieces.map((pc, i) => pc.shape === "rect"
+                ? <rect key={i} x={pc.x} y={pc.y} width={pc.w} height={pc.h} rx={2} fill={pc.fill} stroke="#5B5650" strokeWidth="0.75" style={{ pointerEvents: "none" }} />
+                : <circle key={i} cx={pc.cx} cy={pc.cy} r={pc.r} fill={pc.fill} stroke="#5B5650" strokeWidth="0.75" style={{ pointerEvents: "none" }} />
+              )}
               {/* "Final" recomputes rooms fresh on every render (see
                   finalRooms above) — its shapes are a read-only projection,
                   not something stored to drag/rename; a click here just
