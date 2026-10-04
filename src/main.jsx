@@ -58,8 +58,16 @@ function UpdateBanner() {
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 99999,
-      display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-      padding: "10px 14px", background: "#D9B35B", color: "#141311",
+      display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 10,
+      // The PWA installed on the home screen (apple-mobile-web-app-capable
+      // + status-bar-style "black-translucent" in index.html) draws its
+      // content full-screen UNDER the iOS status bar by design — without
+      // this, a plain `top: 0` banner lands right behind the clock/battery
+      // icons instead of below them, same spot but invisible/half-covered.
+      // env() resolves to 0 in an ordinary browser tab (which already has
+      // its own chrome above this), so this is a no-op there.
+      paddingTop: "calc(env(safe-area-inset-top) + 10px)", paddingBottom: 10, paddingLeft: 14, paddingRight: 14,
+      background: "#D9B35B", color: "#141311",
       fontFamily: "sans-serif", fontSize: 13, fontWeight: 600,
       boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
     }}>
