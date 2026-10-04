@@ -461,6 +461,57 @@ function roofPlaneSettings(roof) {
 function roofBaseElevation(roof, footprint) {
   return footprint.baseElevation + toNum(roof.elevationOffsetM, 0);
 }
+// Whether a calha should show on THIS wall's own Elevação — same "does a
+// calha-bearing low edge of some roof over this level actually run along
+// this wall" question the 3D view's own gutter mesh answers per água (see
+// ThreeDView's roof-building effect), just checked here in plan meters
+// against the wall's own line instead of per-triangle in three.js. A roof
+// never targets more than one level by name, so only the level this wall
+// actually belongs to can ever match.
+function wallGutterInfo(level, wall, levelRoofs) {
+  if (!levelRoofs?.length) return null;
+  const s = toNum(level.sketchScale, 0.5);
+  const toM = (px) => (px / GRID) * s;
+  const wx1 = toM(wall.x1), wy1 = toM(wall.y1), wx2 = toM(wall.x2), wy2 = toM(wall.y2);
+  const dx = wx2 - wx1, dy = wy2 - wy1, wlen = Math.hypot(dx, dy) || 1;
+  const ux = dx / wlen, uy = dy / wlen, nx = -uy, ny = ux;
+  const footprint = roofFootprintFromLevel(level);
+  if (!footprint) return null;
+  for (const roof of levelRoofs) {
+    const baseElevation = roofBaseElevation(roof, footprint);
+    const settings = roofPlaneSettings(roof);
+    const { planes } = computeRoofPlanes(settings, footprint, baseElevation);
+    // How far the roof's own low edge actually sits from THIS wall's
+    // centerline: its own half-thickness, PLUS however far the roof's
+    // footprint already grew past every wall's outer face to begin with
+    // (roofFootprintFromLevel — the thickest perimeter wall's own half-
+    // thickness, not necessarily this one, hence the extra slack), PLUS
+    // the beiral/recuo itself. A small fixed tolerance here missed every
+    // beiral-projected eave entirely, since 40cm of overhang alone dwarfs
+    // the few-cm slack a plain corner needs.
+    const tolM = wallThicknessM(wall) / 2 + 0.3 + Math.abs(settings.overhangM) + 0.2;
+    for (let aguaIndex = 0; aguaIndex < planes.length; aguaIndex++) {
+      const calhaM = toNum((roof.aguas || [])[aguaIndex]?.calha, 0);
+      if (calhaM <= 0) continue;
+      const plane = planes[aguaIndex];
+      for (let i = 0; i < plane.length; i++) {
+        const a = plane[i], b = plane[(i + 1) % plane.length];
+        // Only a LOW edge (where the plane actually meets the eave height)
+        // ever carries a calha — a rake/gable climbing away from there
+        // gets rufo flashing instead, never a gutter.
+        if (Math.abs(a.y - baseElevation) > 0.02 || Math.abs(b.y - baseElevation) > 0.02) continue;
+        const ex = b.x - a.x, ez = b.z - a.z, elen = Math.hypot(ex, ez) || 1;
+        const eux = ex / elen, euz = ez / elen;
+        if (Math.abs(eux * ux + euz * uy) < 0.98) continue; // not parallel to this wall
+        const midx = (a.x + b.x) / 2, midz = (a.z + b.z) / 2;
+        const perp = (midx - wx1) * nx + (midz - wy1) * ny;
+        if (Math.abs(perp) > tolM) continue; // not running along this wall's own line
+        return { calhaM, offsetAboveWallTopM: baseElevation - (toNum(level.elevation, 0) + toNum(wall.height, 2.8)) };
+      }
+    }
+  }
+  return null;
+}
 
 export function levelToMeters(level) {
   const s = toNum(level.sketchScale, 0.5);
@@ -2103,7 +2154,8 @@ export default function PranchetaBIM() {
                                   pendingPointM={elevCotaPending?.levelId === lvl.id && elevCotaPending?.wallId === sw.id ? elevCotaPending : null}
                                   onElevCotaTap={(xM, yM) => handleElevCotaTap(lvl.id, sw.id, xM, yM)}
                                   selectedCotaId={elevSelectedCota?.levelId === lvl.id && elevSelectedCota?.wallId === sw.id ? elevSelectedCota.id : null}
-                                  onSelectCota={id => setElevSelectedCota({ levelId: lvl.id, wallId: sw.id, id })} />
+                                  onSelectCota={id => setElevSelectedCota({ levelId: lvl.id, wallId: sw.id, id })}
+                                  gutter={wallGutterInfo(lvl, sw, roofs.filter(r => r.level === lvl.name))} />
                               ))}
                             </div>
                           </div>
@@ -2128,7 +2180,8 @@ export default function PranchetaBIM() {
                             pendingPointM={elevCotaPending?.levelId === croquiLevel.id && elevCotaPending?.wallId === w.id ? elevCotaPending : null}
                             onElevCotaTap={(xM, yM) => handleElevCotaTap(croquiLevel.id, w.id, xM, yM)}
                             selectedCotaId={elevSelectedCota?.levelId === croquiLevel.id && elevSelectedCota?.wallId === w.id ? elevSelectedCota.id : null}
-                            onSelectCota={id => setElevSelectedCota({ levelId: croquiLevel.id, wallId: w.id, id })} />
+                            onSelectCota={id => setElevSelectedCota({ levelId: croquiLevel.id, wallId: w.id, id })}
+                            gutter={wallGutterInfo(croquiLevel, w, roofs.filter(r => r.level === croquiLevel.name))} />
                         </div>
                       );
                     })}

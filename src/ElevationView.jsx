@@ -36,7 +36,13 @@ const TAG_LINE_GAP = 10;
 // selectedCotaId/onSelectCota carry which manual cota (if any) is picked —
 // a plain tap (no drag) on one selects it, same gesture that already
 // distinguishes a tap from a drag everywhere else in this app.
-export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle, onDragBegin, elevTool = "selecionar", pendingPointM, onElevCotaTap, selectedCotaId, onSelectCota }) {
+// gutter (from App.jsx's wallGutterInfo) is {calhaM, offsetAboveWallTopM}
+// when some roof over this level has a calha-bearing low edge running
+// along this exact wall, null otherwise — drawn as a thin bar across the
+// wall's own top, at whatever height that roof's eave actually sits
+// relative to THIS wall (not always flush with its top: a platibanda
+// wall commonly rises past it, an ordinary beiral wall usually doesn't).
+export default function ElevationView({ level, wallId, spanStartM, spanEndM, onPatchOpening, onPatchDimStyle, onDragBegin, elevTool = "selecionar", pendingPointM, onElevCotaTap, selectedCotaId, onSelectCota, gutter }) {
   const elements = level.sketchElements || [];
   const wall = elements.find(e => e.id === wallId && e.type === "wall");
   const svgRef = useRef(null);
@@ -92,7 +98,13 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
   const lengthPx = lengthM * PX_PER_M, heightPx = heightM * PX_PER_M;
   const wallX = MARGIN_LEFT, wallTopY = MARGIN_TOP, wallBottomY = MARGIN_TOP + heightPx;
   const viewW = wallX + lengthPx + MARGIN_RIGHT + 20;
-  const viewH = wallBottomY + MARGIN_BOTTOM;
+  // A platibanda's own calha can sit above this wall's top (the parapet
+  // rises past the roof's own eave) — the view's own top edge has to grow
+  // to fit it instead of just clipping it off, while the wall itself stays
+  // anchored at MARGIN_TOP same as always.
+  const gutterY = gutter ? wallBottomY - (heightM + toNum(gutter.offsetAboveWallTopM, 0)) * PX_PER_M : null;
+  const viewYMin = gutterY !== null ? Math.min(0, gutterY - 14) : 0;
+  const viewH = wallBottomY + MARGIN_BOTTOM - viewYMin;
 
   // Same corner-to-opening / opening-to-opening gap chain wallDimensions
   // computes in the plan, just along this one wall and in meters directly
@@ -196,13 +208,25 @@ export default function ElevationView({ level, wallId, spanStartM, spanEndM, onP
   const dragEnabled = elevTool !== "cota";
   return (
     <div className="rounded-lg overflow-hidden" style={{ background: "#DCDCD8" }}>
-      <svg ref={svgRef} viewBox={`0 0 ${viewW} ${viewH}`} width="100%"
+      <svg ref={svgRef} viewBox={`0 ${viewYMin} ${viewW} ${viewH}`} width="100%"
         style={{ display: "block", touchAction: dragState ? "none" : undefined, cursor: elevTool === "cota" ? "crosshair" : undefined }} fontFamily={fontFamily}
         onClick={handleSvgClick}
         onMouseMove={onSvgMove} onMouseUp={endDrag} onMouseLeave={endDrag}
         onTouchMove={onSvgMove} onTouchEnd={endDrag} onTouchCancel={endDrag}>
         <rect x={wallX} y={wallTopY} width={lengthPx} height={heightPx} fill="#EDEAE2" stroke="#1B1E1A" strokeWidth="2" />
         <line x1={wallX - 14} y1={wallBottomY} x2={wallX + lengthPx + 14} y2={wallBottomY} stroke="#1B1E1A" strokeWidth="2" />
+
+        {gutter && (
+          // A short, thick gray bar across the wall's own top, at whatever
+          // height this roof's eave actually sits relative to THIS wall —
+          // the same gray the 3D view's own gutter mesh uses — plus its
+          // own calha length so it reads as real quantitativo data, not a
+          // decoration.
+          <g pointerEvents="none">
+            <rect x={wallX - 6} y={gutterY - 3} width={lengthPx + 12} height="6" fill="#707070" stroke="#1B1E1A" strokeWidth="0.75" />
+            <text x={wallX + lengthPx + 10} y={gutterY + 3} fontSize={tagFontSize} fill={tagColor} textAnchor="start">Calha {gutter.calhaM.toFixed(1)}m</text>
+          </g>
+        )}
 
         {pendingPointM && (
           <circle cx={wallX + pendingPointM.xM * PX_PER_M} cy={wallBottomY - pendingPointM.yM * PX_PER_M} r="4"
