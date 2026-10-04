@@ -202,15 +202,86 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0, dy: 0.45, w: 0.9, d: 0.02, h: 1.9, baseY: 0, color: "#BFD9E0" },
     ],
   },
+  // ---- Cozinha (continuação) ----
+  geladeira: {
+    label: "Geladeira", category: "Cozinha", wM: 0.7, dM: 0.7, hM: 1.8,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.7, d: 0.7, h: 1.8, baseY: 0, color: "#F2F0EA" },
+      { shape: "box", dx: 0, dy: 0, w: 0.02, d: 0.7, h: 1.8, baseY: 0, color: "#C9C4B8" },
+    ],
+  },
+  fogao: {
+    label: "Fogão", category: "Cozinha", wM: 0.6, dM: 0.6, hM: 0.9,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.6, d: 0.6, h: 0.9, baseY: 0, color: "#D9D4C8" },
+      { shape: "cyl", dx: -0.14, dy: -0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
+      { shape: "cyl", dx: 0.14, dy: -0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
+      { shape: "cyl", dx: -0.14, dy: 0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
+      { shape: "cyl", dx: 0.14, dy: 0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
+    ],
+  },
+  // ---- Área de serviço ----
+  maquina_lavar: {
+    label: "Máquina de lavar", category: "Área de serviço", wM: 0.6, dM: 0.6, hM: 0.85,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.6, d: 0.6, h: 0.85, baseY: 0, color: "#F2F0EA" },
+      { shape: "cyl", dx: 0, dy: 0, r: 0.2, h: 0.01, baseY: 0.85, color: "#C9C4B8" },
+    ],
+  },
+  tanque_lavanderia: {
+    label: "Tanque", category: "Área de serviço", wM: 0.5, dM: 0.45, hM: 0.85,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.5, d: 0.45, h: 0.78, baseY: 0, color: "#D9D4C8" },
+      { shape: "box", dx: 0, dy: -0.02, w: 0.4, d: 0.3, h: 0.07, baseY: 0.78, color: "#F2F0EA" },
+    ],
+  },
+  // ---- Garagem ----
+  carro: {
+    label: "Carro", category: "Garagem", wM: 1.8, dM: 4.5, hM: 1.4,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 1.8, d: 4.5, h: 1.4, baseY: 0, color: "#8C8C96" },
+      { shape: "box", dx: 0, dy: -0.9, w: 1.55, d: 1.7, h: 0.02, baseY: 1.4, color: "#DCE6EA" },
+      { shape: "box", dx: -0.9, dy: -1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
+      { shape: "box", dx: 0.9, dy: -1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
+      { shape: "box", dx: -0.9, dy: 1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
+      { shape: "box", dx: 0.9, dy: 1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
+    ],
+  },
+  moto: {
+    label: "Moto", category: "Garagem", wM: 0.5, dM: 2.0, hM: 1.1,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.35, d: 1.3, h: 0.5, baseY: 0, color: "#4A5568" },
+      { shape: "cyl", dx: 0, dy: -0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
+      { shape: "cyl", dx: 0, dy: 0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
+    ],
+  },
+  bicicleta: {
+    label: "Bicicleta", category: "Garagem", wM: 0.3, dM: 1.2, hM: 1.0,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 0.08, d: 1.0, h: 0.3, baseY: 0, color: "#3A3834" },
+      { shape: "cyl", dx: 0, dy: -0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
+      { shape: "cyl", dx: 0, dy: 0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
+    ],
+  },
+  // ---- Sala (continuação) ----
+  painel_tv: {
+    label: "Painel de TV", category: "Sala", wM: 1.8, dM: 0.45, hM: 1.1,
+    parts: [
+      { shape: "box", dx: 0, dy: 0.08, w: 1.8, d: 0.4, h: 0.45, baseY: 0, color: "#8A6A47" },
+      { shape: "box", dx: 0, dy: -0.12, w: 1.1, d: 0.06, h: 0.65, baseY: 0.45, color: "#1A1A1A" },
+    ],
+  },
 };
 // Display order for the catalog picker — grouped by category (header rows
 // in the 2D tool panel key off each family's own `category` field, in the
 // order their first member appears here).
 export const FURNITURE_LIST = [
   "cama_casal", "cama_solteiro", "guarda_roupa",
-  "sofa", "mesa_jantar",
-  "bancada_cozinha",
+  "sofa", "mesa_jantar", "painel_tv",
+  "bancada_cozinha", "geladeira", "fogao",
   "vaso_sanitario", "pia_banheiro", "box_chuveiro",
+  "maquina_lavar", "tanque_lavanderia",
   "piscina", "banco", "mesa_externa",
   "vaso_planta", "planta_alta", "planta_baixa", "palmeira",
+  "carro", "moto", "bicicleta",
 ];
