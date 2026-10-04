@@ -357,11 +357,21 @@ function isWallExteriorLocal(wall, rooms, scale) {
   const overallStart = Math.min(...spans.map(s => s.startPx));
   const overallEnd = Math.max(...spans.map(s => s.endPx));
   const points = Array.from(new Set([overallStart, overallEnd, ...spans.flatMap(s => [s.startPx, s.endPx])])).sort((a, b) => a - b);
+  // A span's own coverage gets a little slack on each side (about one
+  // partition's worth of thickness) before counting a gap as "only one
+  // room here" — right where a perpendicular partition T-junctions into
+  // this wall, the two rooms on either side of that partition each stop
+  // their own span a hair short of each other (their polygons trace around
+  // the partition's own footprint, not along this wall's face, for that
+  // sliver), leaving a gap barely wider than the partition itself even
+  // though this wall is interior the entire way through. Without the
+  // slack, that one sliver alone flipped the WHOLE wall to "exterior".
+  const BRIDGE = GRID * 0.5;
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i + 1];
     if (b - a < 1) continue;
     const mid = (a + b) / 2;
-    const coverCount = spans.filter(s => mid >= s.startPx && mid <= s.endPx).length;
+    const coverCount = spans.filter(s => mid >= s.startPx - BRIDGE && mid <= s.endPx + BRIDGE).length;
     if (coverCount <= 1) return true;
   }
   return false;
