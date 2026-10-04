@@ -4,18 +4,47 @@
 // proportions, same part list) that shows up in 3D and in the exported
 // JSON, instead of two independently-drawn approximations drifting apart.
 //
-// Each family is a flat list of box/cylinder/sphere "parts" in METERS,
-// local to the instance's own origin and rotation: dx runs along the
-// family's own width axis, dy along its own depth axis (dy<0 = the
+// Each family is a flat list of box/cylinder/sphere/canopy "parts" in
+// METERS, local to the instance's own origin and rotation: dx runs along
+// the family's own width axis, dy along its own depth axis (dy<0 = the
 // family's own "back"/headboard/backrest side, by convention — arbitrary
 // but consistent), and baseY is each part's own height off the floor (its
-// BOTTOM, for box/cyl; a sphere's own baseY+r is its center, since a
-// sphere has no flat bottom face to measure from). A placed element then
+// BOTTOM, for box/cyl; a sphere/canopy's own baseY+r is its CENTER, since
+// neither has a flat bottom face to measure from). A placed element then
 // only needs to store {familyId, x, y, rotation} — every part's real-world
 // position/size is derived from here, both for the 2D top-down footprint
-// (w × d, or 2r × 2r — a sphere reads exactly like a cylinder from
-// straight above, so 2D draws both the same way) and the 3D mesh (box,
-// cylinder, or sphere).
+// and the 3D mesh.
+//
+// "canopy" is a 2D-only distinction from "sphere" — same single sphere in
+// 3D (a cluster of tiny spheres would cost more geometry than it's worth
+// at plant scale), but drawn as CANOPY_CLUSTER's fixed "fluffy cloud" of
+// overlapping circles in the 2D plan instead of one flat circle, reading
+// as an actual tree/shrub symbol the way a real architectural plan draws
+// landscaping, not a geometric dot.
+export const CANOPY_CLUSTER = [
+  { dx: 0, dy: 0, rf: 0.62 },
+  { dx: -0.45, dy: -0.35, rf: 0.42 },
+  { dx: 0.42, dy: -0.4, rf: 0.4 },
+  { dx: -0.4, dy: 0.38, rf: 0.38 },
+  { dx: 0.38, dy: 0.4, rf: 0.4 },
+  { dx: 0.05, dy: -0.58, rf: 0.3 },
+];
+
+// A dining/outdoor chair as its own little plan symbol (seat + a thinner
+// backrest panel on the side FACING AWAY from the table) instead of a
+// bare circle — "dir" is the unit vector pointing from the table center
+// out through the chair (where its backrest sits), "axis" picks which
+// side of the seat that panel spans (the seat's own width or depth).
+function chairParts(dx, dy, dir, axis, color) {
+  const back = axis === "x"
+    ? { shape: "box", dx: dx + dir[0] * 0.19, dy, w: 0.36, d: 0.05, h: 0.43, baseY: 0.4, color }
+    : { shape: "box", dx, dy: dy + dir[1] * 0.19, w: 0.05, d: 0.36, h: 0.43, baseY: 0.4, color };
+  return [
+    { shape: "box", dx, dy, w: 0.36, d: 0.36, h: 0.4, baseY: 0, color },
+    back,
+  ];
+}
+
 export const FURNITURE_FAMILIES = {
   cama_casal: {
     label: "Cama de casal", category: "Dormitório", wM: 1.4, dM: 2.0, hM: 0.55,
@@ -40,6 +69,10 @@ export const FURNITURE_FAMILIES = {
     label: "Guarda-roupa", category: "Dormitório", wM: 1.6, dM: 0.6, hM: 2.1,
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 1.6, d: 0.6, h: 2.1, baseY: 0, color: "#D9D4C8" },
+      // Door-panel seams — two thin darker strips reading as the gaps
+      // between a 3-door wardrobe's own panels, instead of one blank slab.
+      { shape: "box", dx: -0.27, dy: 0, w: 0.02, d: 0.6, h: 2.1, baseY: 0, color: "#8C8880" },
+      { shape: "box", dx: 0.27, dy: 0, w: 0.02, d: 0.6, h: 2.1, baseY: 0, color: "#8C8880" },
     ],
   },
   sofa: {
@@ -49,6 +82,10 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0, dy: -0.35, w: 2.0, d: 0.15, h: 0.65, baseY: 0, color: "#6E7C8C" },
       { shape: "box", dx: -0.925, dy: 0, w: 0.15, d: 0.85, h: 0.55, baseY: 0, color: "#5E6C7C" },
       { shape: "box", dx: 0.925, dy: 0, w: 0.15, d: 0.85, h: 0.55, baseY: 0, color: "#5E6C7C" },
+      // Cushion seams — splits the seat into 3 cushions, same read as a
+      // real 3-seat sofa plan symbol instead of one solid cushion block.
+      { shape: "box", dx: -0.33, dy: 0.15, w: 0.02, d: 0.53, h: 0.39, baseY: 0.005, color: "#5E6C7C" },
+      { shape: "box", dx: 0.33, dy: 0.15, w: 0.02, d: 0.53, h: 0.39, baseY: 0.005, color: "#5E6C7C" },
     ],
   },
   mesa_jantar: {
@@ -59,10 +96,10 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0.65, dy: -0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
       { shape: "box", dx: -0.65, dy: 0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
       { shape: "box", dx: 0.65, dy: 0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
-      { shape: "cyl", dx: 0, dy: -0.75, r: 0.18, h: 0.45, baseY: 0, color: "#8C8478" },
-      { shape: "cyl", dx: 0, dy: 0.75, r: 0.18, h: 0.45, baseY: 0, color: "#8C8478" },
-      { shape: "cyl", dx: -1.05, dy: 0, r: 0.18, h: 0.45, baseY: 0, color: "#8C8478" },
-      { shape: "cyl", dx: 1.05, dy: 0, r: 0.18, h: 0.45, baseY: 0, color: "#8C8478" },
+      ...chairParts(0, -0.75, [0, -1], "x", "#8C8478"),
+      ...chairParts(0, 0.75, [0, 1], "x", "#8C8478"),
+      ...chairParts(-1.05, 0, [-1, 0], "y", "#8C8478"),
+      ...chairParts(1.05, 0, [1, 0], "y", "#8C8478"),
     ],
   },
   bancada_cozinha: {
@@ -70,6 +107,14 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 2.0, d: 0.6, h: 0.9, baseY: 0, color: "#F2F0EA" },
       { shape: "box", dx: 0, dy: 0.01, w: 2.0, d: 0.62, h: 0.04, baseY: 0.9, color: "#D9D4C8" },
+      // Sink basin (inset rectangle) on one end, cooktop burners (4 small
+      // circles) on the other — the same two fixtures a real kitchen-plan
+      // symbol always marks on a run of bancada, instead of a blank slab.
+      { shape: "box", dx: -0.65, dy: 0, w: 0.5, d: 0.38, h: 0.015, baseY: 0.94, color: "#B9B6AE" },
+      { shape: "cyl", dx: 0.42, dy: -0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
+      { shape: "cyl", dx: 0.7, dy: -0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
+      { shape: "cyl", dx: 0.42, dy: 0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
+      { shape: "cyl", dx: 0.7, dy: 0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
     ],
   },
   // ---- Área externa ----
@@ -92,10 +137,10 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.6, h: 0.05, baseY: 0.7, color: "#E8E4DA" },
       { shape: "cyl", dx: 0, dy: 0, r: 0.08, h: 0.7, baseY: 0, color: "#8C8C86" },
-      { shape: "cyl", dx: 0, dy: -0.85, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
-      { shape: "cyl", dx: 0, dy: 0.85, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
-      { shape: "cyl", dx: -0.85, dy: 0, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
-      { shape: "cyl", dx: 0.85, dy: 0, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
+      ...chairParts(0, -0.85, [0, -1], "x", "#D9D4C8"),
+      ...chairParts(0, 0.85, [0, 1], "x", "#D9D4C8"),
+      ...chairParts(-0.85, 0, [-1, 0], "y", "#D9D4C8"),
+      ...chairParts(0.85, 0, [1, 0], "y", "#D9D4C8"),
     ],
   },
   // ---- Paisagismo ----
@@ -103,28 +148,28 @@ export const FURNITURE_FAMILIES = {
     label: "Vaso de planta", category: "Paisagismo", wM: 0.5, dM: 0.5, hM: 0.8,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.16, h: 0.25, baseY: 0, color: "#B5623A" },
-      { shape: "sphere", dx: 0, dy: 0, r: 0.26, baseY: 0.25, color: "#4A7C3F" },
+      { shape: "canopy", dx: 0, dy: 0, r: 0.26, baseY: 0.25, color: "#4A7C3F" },
     ],
   },
   planta_alta: {
     label: "Planta alta", category: "Paisagismo", wM: 0.8, dM: 0.8, hM: 1.1,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.2, h: 0.3, baseY: 0, color: "#B5623A" },
-      { shape: "sphere", dx: 0, dy: 0, r: 0.4, baseY: 0.3, color: "#3C6E38" },
+      { shape: "canopy", dx: 0, dy: 0, r: 0.4, baseY: 0.3, color: "#3C6E38" },
     ],
   },
   planta_baixa: {
     label: "Planta baixa", category: "Paisagismo", wM: 0.5, dM: 0.5, hM: 0.5,
     parts: [
-      { shape: "sphere", dx: 0, dy: 0, r: 0.25, baseY: 0, color: "#5A8C4E" },
+      { shape: "canopy", dx: 0, dy: 0, r: 0.25, baseY: 0, color: "#5A8C4E" },
     ],
   },
   palmeira: {
     label: "Palmeira", category: "Paisagismo", wM: 1.6, dM: 1.6, hM: 3.2,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.1, h: 2.2, baseY: 0, color: "#8A6A47" },
-      { shape: "sphere", dx: 0, dy: 0, r: 0.7, baseY: 2.3, color: "#3C6E38" },
-      { shape: "sphere", dx: 0.3, dy: 0.15, r: 0.42, baseY: 2.65, color: "#4A7C3F" },
+      { shape: "canopy", dx: 0, dy: 0, r: 0.7, baseY: 2.3, color: "#3C6E38" },
+      { shape: "canopy", dx: 0.3, dy: 0.15, r: 0.42, baseY: 2.65, color: "#4A7C3F" },
     ],
   },
 };

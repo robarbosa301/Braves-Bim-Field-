@@ -11,7 +11,7 @@ import { toNum, uid } from "./utils.js";
 import { WALL_TYPES, DOOR_TYPES, WINDOW_TYPES, FLOOR_TYPES, CEILING_TYPES, wallThicknessM, FONT_FAMILIES, fontFamilyCss } from "./constants.js";
 import { GRID, snap, dist, projectPointOnSegment, pointInPolygon, polygonCentroid, fitViewBoxToElements, resyncVbAspect, wrapTextLines, rotatePoint } from "./geometry.js";
 import { NumField, TypeSelect, ConditionSelect, PhaseToggles } from "./ElementRows.jsx";
-import { FURNITURE_FAMILIES, FURNITURE_LIST } from "./furniture.js";
+import { FURNITURE_FAMILIES, FURNITURE_LIST, CANOPY_CLUSTER } from "./furniture.js";
 
 // Split out of App.jsx — this is the Croqui (2D sketch) editor, the
 // single largest component in the app. Its own private geometry helpers
@@ -4673,13 +4673,28 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             <g key={el.id} transform={`translate(${el.x},${el.y}) rotate(${el.rotation || 0})`}
               onMouseDown={e => beginDragFurnitureMove(el, e)} onTouchStart={e => beginDragFurnitureMove(el, e)}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }}>
-              {fam.parts.map((p, i) => p.shape === "box" ? (
-                <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx="1"
-                  fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
-              ) : (
-                <circle key={i} cx={mToPx(p.dx)} cy={mToPx(p.dy)} r={mToPx(p.r)}
-                  fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
-              ))}
+              {fam.parts.map((p, i) => {
+                if (p.shape === "box") return (
+                  <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx="1"
+                    fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
+                );
+                // A "canopy" part (tree/shrub foliage) draws as the same
+                // fixed cluster of overlapping circles every time — an
+                // actual organic tree-plan symbol instead of one flat
+                // circle, matching how a real landscaped plan draws it.
+                if (p.shape === "canopy") return (
+                  <g key={i}>
+                    {CANOPY_CLUSTER.map((c, j) => (
+                      <circle key={j} cx={mToPx(p.dx + c.dx * p.r)} cy={mToPx(p.dy + c.dy * p.r)} r={mToPx(c.rf * p.r)}
+                        fill={p.color} opacity="0.92" stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1 : 0.45} />
+                    ))}
+                  </g>
+                );
+                return (
+                  <circle key={i} cx={mToPx(p.dx)} cy={mToPx(p.dy)} r={mToPx(p.r)}
+                    fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
+                );
+              })}
             </g>
           );
         })}

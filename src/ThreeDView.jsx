@@ -765,9 +765,12 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             if (p.shape === "box") {
               mesh = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.75 }));
               mesh.position.set(p.dx, p.baseY + p.h / 2, p.dy);
-            } else if (p.shape === "sphere") {
-              // No flat bottom to measure from like box/cyl — baseY+r is
-              // this one's own CENTER instead (foliage/canopy parts).
+            } else if (p.shape === "sphere" || p.shape === "canopy") {
+              // "canopy" is a 2D-only distinction (an organic cluster of
+              // circles in the plan, see furniture.js) — in 3D it's just
+              // one sphere, same as "sphere" itself. No flat bottom to
+              // measure from like box/cyl — baseY+r is this one's own
+              // CENTER instead.
               mesh = new THREE.Mesh(new THREE.SphereGeometry(p.r, 14, 10), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.85 }));
               mesh.position.set(p.dx, p.baseY + p.r, p.dy);
             } else {
