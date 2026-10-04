@@ -3543,9 +3543,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
           const roomHatch = phaseView === "demolicao" ? `url(#hatch-demolir-${level.id})`
             : phaseView === "novo" ? `url(#hatch-construir-${level.id})` : null;
           const roomOutline = phaseView === "demolicao" ? C.bad : phaseView === "novo" ? C.good : "#4A4A46";
+          // The room's own "Piso" field already picks a real finish
+          // (Porcelanato, Madeira/Laminado, etc.) but used to fill every
+          // ambiente with the same near-invisible gray tint regardless —
+          // reusing the Piso tool's own material palette here makes each
+          // room read as its actual floor, the way a professional plan
+          // colors rooms by finish instead of leaving them all blank.
+          const roomFill = FLOOR_COLOR_2D[el.floorFinish] || FLOOR_COLOR_2D["A definir"];
           return (
             <g key={el.id}>
-              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={roomHatch || "rgba(0,0,0,0.06)"} stroke={isSel ? "#726F68" : roomOutline} strokeWidth={isSel ? 2.5 : 1.5} />
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill={roomHatch || roomFill} fillOpacity={roomHatch ? 1 : 0.55} stroke={isSel ? "#726F68" : roomOutline} strokeWidth={isSel ? 2.5 : 1.5} />
               {/* "Final" recomputes rooms fresh on every render (see
                   finalRooms above) — its shapes are a read-only projection,
                   not something stored to drag/rename; a click here just
