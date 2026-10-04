@@ -598,3 +598,114 @@ button:disabled {
   font-size: 0.78rem;
   margin-top: 10px;
 }
+
+/* Barra de abas (celular/tablet) — escondida em telas largas, vira a navegação principal em
+   telas estreitas (ver media query abaixo). */
+.bottom-tabs {
+  display: none;
+}
+
+/* Celular e tablet em pé (iPad incluso): o layout de 3 colunas não cabe — cada painel vira uma
+   tela cheia, alternada por uma barra de abas embaixo, do jeito que um app de verdade funciona. */
+@media (max-width: 900px) {
+  .app {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .obra-nome {
+    width: 100%;
+    font-size: 1.05rem;
+  }
+
+  .topbar-right {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    gap: 10px;
+  }
+
+  .toggle-isolado {
+    min-height: 38px;
+    padding: 6px 12px;
+  }
+
+  .layer-toggle {
+    gap: 12px;
+  }
+
+  .layer-toggle label {
+    padding: 4px 0;
+    font-size: 0.82rem;
+  }
+
+  .layer-toggle input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+  }
+
+  .body {
+    display: block;
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: none;
+    border: none !important;
+  }
+
+  .screen.screen--ativa {
+    display: block;
+  }
+
+  .bottom-tabs {
+    display: flex;
+    flex-shrink: 0;
+    background: #1c1f24;
+    border-top: 1px solid #2b2f36;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  }
+
+  .bottom-tabs button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: transparent;
+    color: #8a919c;
+    border-radius: 10px;
+    padding: 6px 4px;
+    font-size: 0.68rem;
+    min-height: 52px;
+  }
+
+  .bottom-tabs button svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .bottom-tabs button.ativa {
+    color: #7fa6f5;
+    background: #2f6fed22;
+  }
+
+  .bottom-tabs button:hover {
+    background: #262a31;
+  }
+
+  .bottom-tabs button.ativa:hover {
+    background: #2f6fed33;
+  }
+}

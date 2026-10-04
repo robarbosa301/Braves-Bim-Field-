@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Abre em `http://localhost:5173`. Funciona em qualquer navegador moderno, incluindo tablet no canteiro (é uma SPA responsiva; ainda não é um PWA instalável — ver roadmap).
+Abre em `http://localhost:5173`. Layout **estilo aplicativo**, adaptado pro aparelho: em celular e tablet em pé (abaixo de 900px de largura) vira telas cheias alternadas por uma barra de abas embaixo (Lista / Obra 3D / Detalhes), com botões grandes pro dedo; em tablet deitado e desktop (900px+) mostra as 3 colunas (lista, 3D, detalhes) lado a lado ao mesmo tempo. Também é **instalável** — em "Adicionar à Tela de Início" (iOS/Safari) ou "Instalar app" (Android/Chrome) abre em tela cheia, com ícone próprio, sem a barra do navegador.
 
 `npm run build` gera o build de produção em `dist/` (pode ser hospedado em qualquer servidor estático).
 
@@ -75,7 +75,11 @@ Todas as constantes acima (densidades, folgas, regra de fôrma) estão isoladas 
 ## Estrutura do código
 
 ```
+public/
+  manifest.json              manifesto PWA (ícone, nome, cor, modo standalone)
+  icon-192.png, icon-512.png, apple-touch-icon.png   ícones do app (gerados, não editar à mão)
 src/
+  App.tsx                    layout raiz — telas/abas em celular/tablet, 3 colunas em telas largas
   types.ts                  modelo de dados (elementos, traço, armadura, etapas)
   lib/
     concrete.ts              cálculo de fôrma e de materiais do concreto
@@ -107,7 +111,7 @@ src/
 1. **Mais elementos estruturais**: pilares (elevação completa, não só o arranque), vigas de piso, lajes — reusando o mesmo padrão de camadas/quantitativos/execução já criado para fundações, e estendendo o importador de IFC para os pavimentos superiores.
 2. **Importação de IFC — refinar**: melhorar a extração de posição/orientação 3D para prismas com perfil rotacionado (o caso que hoje pode gerar desalinhamento visual entre elementos conectados), e testar contra exports de outros softwares (Revit, ArchiCAD, TQS) além do Eberick.
 3. **Importação de PDF (planta baixa)**: leitura de plantas em PDF é um problema difícil (não é OCR simples — depende de vetores/CAD ou digitalização assistida). Provavelmente exige um passo de "digitalização" onde o usuário marca os elementos sobre a planta, ou integração com um formato intermediário (DXF/DWG) além do PDF puro. Com IFC cobrindo a extração estrutural, o PDF fica mais como referência visual (imagem de fundo) do que fonte de geometria.
-4. **Backend + multiusuário**: hoje os dados vivem só no navegador de quem está usando. Para controlar obra de verdade (várias pessoas, campo x escritório) é necessário um servidor com banco de dados, autenticação e sincronização — e então o app pode virar PWA instalável/offline-first para uso em campo sem sinal.
+4. **Backend + multiusuário**: hoje os dados vivem só no navegador de quem está usando. Para controlar obra de verdade (várias pessoas, campo x escritório) é necessário um servidor com banco de dados, autenticação e sincronização. O app já é instalável (PWA, ícone próprio, tela cheia — ver seção acima), mas ainda não funciona **offline**: precisa de rede pra carregar a primeira vez (sem service worker ainda), importante pra uso em campo sem sinal.
 5. **Evidências de execução**: foto/anexo por etapa, geolocalização, assinatura de quem executou/conferiu.
 6. **5D completo**: hoje o app já cobre o "5D" no sentido de quantidade+execução; falta ligar isso a custo (orçamento por elemento, preço unitário de material/mão de obra) e a cronograma (linha do tempo prevista x realizada, curva S).
 7. **Relatórios**: exportar quantitativos e status de execução (PDF/planilha) por elemento, por etapa ou da obra inteira.
