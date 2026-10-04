@@ -1,5 +1,9 @@
 {
   "appId": "com.braves.bimfield",
   "appName": "Braves BIM Field",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "url": "https://robarbosa301.github.io/Braves-Bim-Field-/",
+    "cleartext": false
+  }
 }
