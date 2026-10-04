@@ -54,6 +54,9 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: -0.33, dy: -0.78, w: 0.32, d: 0.24, h: 0.12, baseY: 0.52, color: "#F2F0EA" },
       { shape: "box", dx: 0.33, dy: -0.78, w: 0.32, d: 0.24, h: 0.12, baseY: 0.52, color: "#F2F0EA" },
       { shape: "box", dx: 0, dy: -1.0, w: 1.46, d: 0.06, h: 0.55, baseY: 0, color: "#9C8468" },
+      // Folded-back duvet edge at the foot of the bed — the one detail that
+      // reads "made bed" instead of a flat upholstered slab from above.
+      { shape: "box", dx: 0, dy: 0.86, w: 1.34, d: 0.22, h: 0.04, baseY: 0.52, color: "#DCD4BE" },
     ],
   },
   cama_solteiro: {
@@ -63,6 +66,7 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0, dy: 0.04, w: 0.89, d: 1.8, h: 0.2, baseY: 0.32, color: "#EAE5D8" },
       { shape: "box", dx: 0, dy: -0.73, w: 0.5, d: 0.26, h: 0.12, baseY: 0.52, color: "#F2F0EA" },
       { shape: "box", dx: 0, dy: -0.95, w: 1.0, d: 0.06, h: 0.55, baseY: 0, color: "#9C8468" },
+      { shape: "box", dx: 0, dy: 0.78, w: 0.83, d: 0.2, h: 0.04, baseY: 0.52, color: "#DCD4BE" },
     ],
   },
   guarda_roupa: {
@@ -73,6 +77,10 @@ export const FURNITURE_FAMILIES = {
       // between a 3-door wardrobe's own panels, instead of one blank slab.
       { shape: "box", dx: -0.27, dy: 0, w: 0.02, d: 0.6, h: 2.1, baseY: 0, color: "#8C8880" },
       { shape: "box", dx: 0.27, dy: 0, w: 0.02, d: 0.6, h: 2.1, baseY: 0, color: "#8C8880" },
+      // Door handles — small vertical pulls on the two inner doors, next to
+      // the seams, so the panels read as openable doors, not a solid block.
+      { shape: "box", dx: -0.2, dy: 0.31, w: 0.03, d: 0.03, h: 0.18, baseY: 1.0, color: "#4A4A46" },
+      { shape: "box", dx: 0.2, dy: 0.31, w: 0.03, d: 0.03, h: 0.18, baseY: 1.0, color: "#4A4A46" },
     ],
   },
   sofa: {
@@ -86,6 +94,9 @@ export const FURNITURE_FAMILIES = {
       // real 3-seat sofa plan symbol instead of one solid cushion block.
       { shape: "box", dx: -0.33, dy: 0.15, w: 0.02, d: 0.53, h: 0.39, baseY: 0.005, color: "#5E6C7C" },
       { shape: "box", dx: 0.33, dy: 0.15, w: 0.02, d: 0.53, h: 0.39, baseY: 0.005, color: "#5E6C7C" },
+      // Throw pillows propped in the corners against the backrest.
+      { shape: "box", dx: -0.65, dy: -0.2, w: 0.3, d: 0.26, h: 0.3, baseY: 0.4, color: "#B08968" },
+      { shape: "box", dx: 0.65, dy: -0.2, w: 0.3, d: 0.26, h: 0.3, baseY: 0.4, color: "#B08968" },
     ],
   },
   mesa_jantar: {
@@ -96,6 +107,9 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0.65, dy: -0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
       { shape: "box", dx: -0.65, dy: 0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
       { shape: "box", dx: 0.65, dy: 0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
+      // Centerpiece bowl — the small detail that keeps the tabletop from
+      // reading as a bare board between place settings.
+      { shape: "cyl", dx: 0, dy: 0, r: 0.12, h: 0.06, baseY: 0.75, color: "#8C9C7C" },
       ...chairParts(0, -0.75, [0, -1], "x", "#8C8478"),
       ...chairParts(0, 0.75, [0, 1], "x", "#8C8478"),
       ...chairParts(-1.05, 0, [-1, 0], "y", "#8C8478"),
@@ -115,6 +129,10 @@ export const FURNITURE_FAMILIES = {
       { shape: "cyl", dx: 0.7, dy: -0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
       { shape: "cyl", dx: 0.42, dy: 0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
       { shape: "cyl", dx: 0.7, dy: 0.12, r: 0.07, h: 0.01, baseY: 0.945, color: "#3A3834" },
+      // Cabinet-door seams under the counter, same wardrobe convention —
+      // splits the base run into 3 doors instead of one blind panel.
+      { shape: "box", dx: -0.33, dy: 0, w: 0.02, d: 0.6, h: 0.9, baseY: 0, color: "#C9C4B8" },
+      { shape: "box", dx: 0.33, dy: 0, w: 0.02, d: 0.6, h: 0.9, baseY: 0, color: "#C9C4B8" },
     ],
   },
   // ---- Área externa ----
@@ -123,6 +141,10 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 4.0, d: 8.0, h: 0.06, baseY: 0, color: "#C9C4B8" },
       { shape: "box", dx: 0, dy: 0, w: 3.5, d: 7.5, h: 1.3, baseY: -1.3, color: "#4A9CB0" },
+      // Access ladder rails in one corner — reads as a real pool, not a
+      // water-filled rectangle.
+      { shape: "cyl", dx: -1.55, dy: -3.55, r: 0.02, h: 0.5, baseY: 0, color: "#C9C4B8" },
+      { shape: "cyl", dx: -1.35, dy: -3.55, r: 0.02, h: 0.5, baseY: 0, color: "#C9C4B8" },
     ],
   },
   banco: {
@@ -130,6 +152,9 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0.08, w: 1.2, d: 0.4, h: 0.45, baseY: 0, color: "#8A6A47" },
       { shape: "box", dx: 0, dy: -0.17, w: 1.2, d: 0.06, h: 0.35, baseY: 0.45, color: "#8A6A47" },
+      // Armrests at both ends.
+      { shape: "box", dx: -0.57, dy: 0, w: 0.04, d: 0.4, h: 0.22, baseY: 0.45, color: "#8A6A47" },
+      { shape: "box", dx: 0.57, dy: 0, w: 0.04, d: 0.4, h: 0.22, baseY: 0.45, color: "#8A6A47" },
     ],
   },
   mesa_externa: {
@@ -137,6 +162,7 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.6, h: 0.05, baseY: 0.7, color: "#E8E4DA" },
       { shape: "cyl", dx: 0, dy: 0, r: 0.08, h: 0.7, baseY: 0, color: "#8C8C86" },
+      { shape: "cyl", dx: 0, dy: 0, r: 0.035, h: 0.04, baseY: 0.75, color: "#8C8C86" },
       ...chairParts(0, -0.85, [0, -1], "x", "#D9D4C8"),
       ...chairParts(0, 0.85, [0, 1], "x", "#D9D4C8"),
       ...chairParts(-0.85, 0, [-1, 0], "y", "#D9D4C8"),
@@ -148,6 +174,8 @@ export const FURNITURE_FAMILIES = {
     label: "Vaso de planta", category: "Paisagismo", wM: 0.5, dM: 0.5, hM: 0.8,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.16, h: 0.25, baseY: 0, color: "#B5623A" },
+      // Lighter rim ring at the pot's lip.
+      { shape: "cyl", dx: 0, dy: 0, r: 0.17, h: 0.025, baseY: 0.225, color: "#C9733E" },
       { shape: "canopy", dx: 0, dy: 0, r: 0.26, baseY: 0.25, color: "#4A7C3F" },
     ],
   },
@@ -155,6 +183,7 @@ export const FURNITURE_FAMILIES = {
     label: "Planta alta", category: "Paisagismo", wM: 0.8, dM: 0.8, hM: 1.1,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.2, h: 0.3, baseY: 0, color: "#B5623A" },
+      { shape: "cyl", dx: 0, dy: 0, r: 0.21, h: 0.03, baseY: 0.27, color: "#C9733E" },
       { shape: "canopy", dx: 0, dy: 0, r: 0.4, baseY: 0.3, color: "#3C6E38" },
     ],
   },
@@ -162,12 +191,18 @@ export const FURNITURE_FAMILIES = {
     label: "Planta baixa", category: "Paisagismo", wM: 0.5, dM: 0.5, hM: 0.5,
     parts: [
       { shape: "canopy", dx: 0, dy: 0, r: 0.25, baseY: 0, color: "#5A8C4E" },
+      // A second, smaller offset clump so it reads as a fuller shrub
+      // instead of one perfectly round bush.
+      { shape: "canopy", dx: 0.12, dy: 0.09, r: 0.16, baseY: 0, color: "#6B9C5E" },
     ],
   },
   palmeira: {
     label: "Palmeira", category: "Paisagismo", wM: 1.6, dM: 1.6, hM: 3.2,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.1, h: 2.2, baseY: 0, color: "#8A6A47" },
+      // Bark rings along the trunk.
+      { shape: "cyl", dx: 0, dy: 0, r: 0.105, h: 0.05, baseY: 0.65, color: "#6E5438" },
+      { shape: "cyl", dx: 0, dy: 0, r: 0.105, h: 0.05, baseY: 1.35, color: "#6E5438" },
       { shape: "canopy", dx: 0, dy: 0, r: 0.7, baseY: 2.3, color: "#3C6E38" },
       { shape: "canopy", dx: 0.3, dy: 0.15, r: 0.42, baseY: 2.65, color: "#4A7C3F" },
     ],
@@ -182,6 +217,8 @@ export const FURNITURE_FAMILIES = {
       // use, just here it's what actually reads a round bowl as a TOILET
       // instead of a sink or a stool from directly above.
       { shape: "box", dx: 0, dy: 0.02, w: 0.3, d: 0.02, h: 0.015, baseY: 0.4, color: "#C9C4B8" },
+      // Flush lever on the tank.
+      { shape: "box", dx: 0.14, dy: -0.32, w: 0.05, d: 0.025, h: 0.03, baseY: 0.3, color: "#C9C4B8" },
     ],
   },
   pia_banheiro: {
@@ -189,6 +226,9 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 0.6, d: 0.45, h: 0.78, baseY: 0, color: "#D9D4C8" },
       { shape: "cyl", dx: 0, dy: -0.02, r: 0.17, h: 0.07, baseY: 0.78, color: "#F2F0EA" },
+      // Faucet and a cabinet-door seam under the basin.
+      { shape: "cyl", dx: 0, dy: -0.16, r: 0.015, h: 0.12, baseY: 0.85, color: "#8C8C86" },
+      { shape: "box", dx: 0, dy: 0, w: 0.02, d: 0.45, h: 0.78, baseY: 0, color: "#C9C4B8" },
     ],
   },
   box_chuveiro: {
@@ -200,6 +240,9 @@ export const FURNITURE_FAMILIES = {
       // against the room's own walls, same convention a real box-de-vidro
       // plan symbol uses — one thin line marking just the door/panel run).
       { shape: "box", dx: 0, dy: 0.45, w: 0.9, d: 0.02, h: 1.9, baseY: 0, color: "#BFD9E0" },
+      // Shower head on the back wall, and a handle on the glass panel.
+      { shape: "cyl", dx: -0.3, dy: -0.43, r: 0.04, h: 0.04, baseY: 1.9, color: "#8C8C86" },
+      { shape: "box", dx: 0.35, dy: 0.46, w: 0.03, d: 0.02, h: 0.15, baseY: 1.0, color: "#8C8C86" },
     ],
   },
   // ---- Cozinha (continuação) ----
@@ -208,6 +251,9 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 0.7, d: 0.7, h: 1.8, baseY: 0, color: "#F2F0EA" },
       { shape: "box", dx: 0, dy: 0, w: 0.02, d: 0.7, h: 1.8, baseY: 0, color: "#C9C4B8" },
+      // Door handles on both sides of the center seam.
+      { shape: "box", dx: -0.08, dy: 0.36, w: 0.025, d: 0.025, h: 0.9, baseY: 0.45, color: "#8C8C86" },
+      { shape: "box", dx: 0.08, dy: 0.36, w: 0.025, d: 0.025, h: 0.9, baseY: 0.45, color: "#8C8C86" },
     ],
   },
   fogao: {
@@ -218,6 +264,12 @@ export const FURNITURE_FAMILIES = {
       { shape: "cyl", dx: 0.14, dy: -0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
       { shape: "cyl", dx: -0.14, dy: 0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
       { shape: "cyl", dx: 0.14, dy: 0.14, r: 0.08, h: 0.01, baseY: 0.9, color: "#3A3834" },
+      // Control knobs and the oven-door seam on the front face.
+      { shape: "cyl", dx: -0.2, dy: 0.31, r: 0.025, h: 0.02, baseY: 0.75, color: "#4A4A46" },
+      { shape: "cyl", dx: -0.07, dy: 0.31, r: 0.025, h: 0.02, baseY: 0.75, color: "#4A4A46" },
+      { shape: "cyl", dx: 0.07, dy: 0.31, r: 0.025, h: 0.02, baseY: 0.75, color: "#4A4A46" },
+      { shape: "cyl", dx: 0.2, dy: 0.31, r: 0.025, h: 0.02, baseY: 0.75, color: "#4A4A46" },
+      { shape: "box", dx: 0, dy: 0.305, w: 0.5, d: 0.01, h: 0.02, baseY: 0.3, color: "#8C8880" },
     ],
   },
   // ---- Área de serviço ----
@@ -226,6 +278,9 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 0.6, d: 0.6, h: 0.85, baseY: 0, color: "#F2F0EA" },
       { shape: "cyl", dx: 0, dy: 0, r: 0.2, h: 0.01, baseY: 0.85, color: "#C9C4B8" },
+      // Control panel strip and knob.
+      { shape: "box", dx: 0, dy: -0.26, w: 0.55, d: 0.06, h: 0.015, baseY: 0.85, color: "#D9D4C8" },
+      { shape: "cyl", dx: 0.22, dy: -0.26, r: 0.025, h: 0.02, baseY: 0.865, color: "#8C8C86" },
     ],
   },
   tanque_lavanderia: {
@@ -233,6 +288,8 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 0.5, d: 0.45, h: 0.78, baseY: 0, color: "#D9D4C8" },
       { shape: "box", dx: 0, dy: -0.02, w: 0.4, d: 0.3, h: 0.07, baseY: 0.78, color: "#F2F0EA" },
+      // Faucet.
+      { shape: "cyl", dx: 0, dy: -0.1, r: 0.015, h: 0.1, baseY: 0.85, color: "#8C8C86" },
     ],
   },
   // ---- Garagem ----
@@ -245,6 +302,13 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0.9, dy: -1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
       { shape: "box", dx: -0.9, dy: 1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
       { shape: "box", dx: 0.9, dy: 1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
+      // Side mirrors, headlights and taillights.
+      { shape: "box", dx: -0.95, dy: -0.75, w: 0.06, d: 0.12, h: 0.06, baseY: 0.95, color: "#6E6E78" },
+      { shape: "box", dx: 0.95, dy: -0.75, w: 0.06, d: 0.12, h: 0.06, baseY: 0.95, color: "#6E6E78" },
+      { shape: "box", dx: -0.55, dy: -2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.4, color: "#E8E4DA" },
+      { shape: "box", dx: 0.55, dy: -2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.4, color: "#E8E4DA" },
+      { shape: "box", dx: -0.55, dy: 2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.5, color: "#B5423A" },
+      { shape: "box", dx: 0.55, dy: 2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.5, color: "#B5423A" },
     ],
   },
   moto: {
@@ -253,6 +317,9 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0, dy: 0, w: 0.35, d: 1.3, h: 0.5, baseY: 0, color: "#4A5568" },
       { shape: "cyl", dx: 0, dy: -0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
       { shape: "cyl", dx: 0, dy: 0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
+      // Handlebar and seat.
+      { shape: "box", dx: 0, dy: -0.78, w: 0.45, d: 0.04, h: 0.04, baseY: 0.95, color: "#232220" },
+      { shape: "box", dx: 0, dy: 0.1, w: 0.3, d: 0.4, h: 0.08, baseY: 0.5, color: "#232220" },
     ],
   },
   bicicleta: {
@@ -261,6 +328,9 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0, dy: 0, w: 0.08, d: 1.0, h: 0.3, baseY: 0, color: "#3A3834" },
       { shape: "cyl", dx: 0, dy: -0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
       { shape: "cyl", dx: 0, dy: 0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
+      // Handlebar and seat.
+      { shape: "box", dx: 0, dy: -0.5, w: 0.4, d: 0.03, h: 0.03, baseY: 0.85, color: "#3A3834" },
+      { shape: "box", dx: 0, dy: 0.38, w: 0.1, d: 0.22, h: 0.03, baseY: 0.78, color: "#232220" },
     ],
   },
   // ---- Sala (continuação) ----
@@ -269,6 +339,8 @@ export const FURNITURE_FAMILIES = {
     parts: [
       { shape: "box", dx: 0, dy: 0.08, w: 1.8, d: 0.4, h: 0.45, baseY: 0, color: "#8A6A47" },
       { shape: "box", dx: 0, dy: -0.12, w: 1.1, d: 0.06, h: 0.65, baseY: 0.45, color: "#1A1A1A" },
+      // Screen glow inset within the bezel.
+      { shape: "box", dx: 0, dy: -0.1, w: 1.02, d: 0.02, h: 0.57, baseY: 0.49, color: "#2E4057" },
     ],
   },
 };
