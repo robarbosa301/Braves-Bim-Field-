@@ -416,7 +416,7 @@ function wallRunOpenings(run, elements) {
 // for the segment that IS the opening's own width), but as `adjacentKind`,
 // so "distância até a parede"/"entre portas"-style gaps can still read in
 // that same family's color instead of the generic partial-run one.
-function buildChainSegs(run, elements, scale, cornerBreaks) {
+function buildChainSegs(run, elements, scale, thicknessZones) {
   const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
   if (len < GRID) return null;
   const ux = dx / len, uy = dy / len;
@@ -426,12 +426,12 @@ function buildChainSegs(run, elements, scale, cornerBreaks) {
   });
   const points = new Set([0, len]);
   openingSpans.forEach(s => { points.add(s.start); points.add(s.end); });
-  // Extra forced breakpoints — currently just the exterior run's own
-  // corner-wall-thickness ticks (see exteriorPerimeterChains) — always at
-  // 0/len's own immediate neighbor, so the end segment they carve off reads
-  // as its own "espessura da parede" tick instead of bleeding into the
-  // next gap/opening segment.
-  (cornerBreaks || []).forEach(p => points.add(Math.max(0, Math.min(len, p))));
+  // Extra forced breakpoints — a wall-thickness tick at each true corner
+  // AND at every T-junction along this run's own length (see
+  // exteriorPerimeterChains) — so each one carves out its own
+  // "espessura da parede" segment instead of bleeding into the next
+  // gap/opening segment.
+  (thicknessZones || []).forEach(z => { points.add(Math.max(0, Math.min(len, z.start))); points.add(Math.max(0, Math.min(len, z.end))); });
   const sorted = Array.from(points).sort((a, b) => a - b);
   const segs = [];
   for (let i = 0; i < sorted.length - 1; i++) {
@@ -441,11 +441,36 @@ function buildChainSegs(run, elements, scale, cornerBreaks) {
     if (match) { segs.push({ a, b, kind: match.kind }); continue; }
     const before = openingSpans.find(s => Math.abs(s.end - a) < 1);
     const after = openingSpans.find(s => Math.abs(s.start - b) < 1);
-    const isCorner = (cornerBreaks || []).some(p =>
-      (Math.abs(a) < 1 && Math.abs(p - b) < 1) || (Math.abs(b - len) < 1 && Math.abs(p - a) < 1));
-    segs.push({ a, b, kind: isCorner ? "corner" : "gap", adjacentKind: before?.kind || after?.kind || null });
+    const isThickness = (thicknessZones || []).some(z => Math.abs(z.start - a) < 1 && Math.abs(z.end - b) < 1);
+    segs.push({ a, b, kind: isThickness ? "corner" : "gap", adjacentKind: before?.kind || after?.kind || null });
   }
   return { ux, uy, len, segs };
+}
+// Every point along this run's own length (strictly between its two true
+// outside corners, which orthogonalCornerExtensionPx already covers) where
+// some OTHER, non-parallel wall's own endpoint meets it — an interior
+// partition forming a T-junction against this exterior run. Each one gets
+// the same "espessura da parede" tick a true corner gets, since from this
+// run's own chain reading it's exactly the same kind of event: a wall's
+// thickness interrupting an otherwise plain stretch. Walls nearly parallel
+// to the run are skipped (that's this run's own continuation, or one
+// running alongside it — never a junction against it).
+function findMidRunJunctions(run, ux, uy, len, candidateWalls, scale) {
+  const nx = -uy, ny = ux;
+  const out = [];
+  for (const w of candidateWalls) {
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, wlen = Math.hypot(dx, dy) || 1;
+    const wux = dx / wlen, wuy = dy / wlen;
+    if (Math.abs(ux * wuy - uy * wux) < 0.3) continue;
+    for (const [ex, ey] of [[w.x1, w.y1], [w.x2, w.y2]]) {
+      const t = (ex - run.x1) * ux + (ey - run.y1) * uy;
+      if (t < GRID * 0.5 || t > len - GRID * 0.5) continue; // too close to an end — already a corner
+      const perp = Math.abs((ex - run.x1) * nx + (ey - run.y1) * ny);
+      if (perp > GRID * 0.3) continue; // doesn't actually touch this run's own centerline
+      out.push({ t, halfT: (wallThicknessM(w) / 2 / scale) * GRID });
+    }
+  }
+  return out;
 }
 // How far a run's own end (a centerline-to-centerline corner, where this
 // run meets whatever wall closes the building's corner there) needs to
@@ -510,12 +535,20 @@ function exteriorPerimeterChains(elements, scale) {
     // corner (0, or len at the far end) in to that SAME corner wall's own
     // centerline (half its thickness further in, i.e. extStart/extEnd
     // again) — giving the standard "espessura / vão livre / espessura"
-    // three-tick read along one straight run, instead of the corner
-    // thickness silently bleeding into the first/last opening gap.
-    const cornerBreaks = [];
-    if (extStart > 0) cornerBreaks.push(2 * extStart);
-    if (extEnd > 0) cornerBreaks.push(len0 + extStart + extEnd - 2 * extEnd);
-    const built = buildChainSegs(extRun, elements, scale, cornerBreaks);
+    // three-tick read along one straight run. Same idea for every T-junction
+    // an interior partition makes against this run somewhere along its
+    // middle — drawn AFTER the extension so its own position (measured from
+    // the original, un-extended run.x1) gets shifted into the extended run's
+    // coordinate space by extStart, matching where buildChainSegs will
+    // actually place it.
+    const thicknessZones = [];
+    if (extStart > 0) thicknessZones.push({ start: 0, end: 2 * extStart });
+    if (extEnd > 0) thicknessZones.push({ start: len0 + extStart + extEnd - 2 * extEnd, end: len0 + extStart + extEnd });
+    findMidRunJunctions(run, ux, uy, len0, allWalls, scale).forEach(({ t, halfT }) => {
+      const tt = t + extStart;
+      thicknessZones.push({ start: tt - halfT, end: tt + halfT });
+    });
+    const built = buildChainSegs(extRun, elements, scale, thicknessZones);
     if (!built) return null;
     return { id: run.id, tag: run.tag, x1: extRun.x1, y1: extRun.y1, ux, uy, nx, ny, halfThickPx, len: built.len, segs: built.segs };
   }).filter(Boolean);
