@@ -416,7 +416,7 @@ function wallRunOpenings(run, elements) {
 // for the segment that IS the opening's own width), but as `adjacentKind`,
 // so "distância até a parede"/"entre portas"-style gaps can still read in
 // that same family's color instead of the generic partial-run one.
-function buildChainSegs(run, elements, scale) {
+function buildChainSegs(run, elements, scale, cornerBreaks) {
   const dx = run.x2 - run.x1, dy = run.y2 - run.y1, len = Math.hypot(dx, dy) || 1;
   if (len < GRID) return null;
   const ux = dx / len, uy = dy / len;
@@ -426,6 +426,12 @@ function buildChainSegs(run, elements, scale) {
   });
   const points = new Set([0, len]);
   openingSpans.forEach(s => { points.add(s.start); points.add(s.end); });
+  // Extra forced breakpoints — currently just the exterior run's own
+  // corner-wall-thickness ticks (see exteriorPerimeterChains) — always at
+  // 0/len's own immediate neighbor, so the end segment they carve off reads
+  // as its own "espessura da parede" tick instead of bleeding into the
+  // next gap/opening segment.
+  (cornerBreaks || []).forEach(p => points.add(Math.max(0, Math.min(len, p))));
   const sorted = Array.from(points).sort((a, b) => a - b);
   const segs = [];
   for (let i = 0; i < sorted.length - 1; i++) {
@@ -435,7 +441,9 @@ function buildChainSegs(run, elements, scale) {
     if (match) { segs.push({ a, b, kind: match.kind }); continue; }
     const before = openingSpans.find(s => Math.abs(s.end - a) < 1);
     const after = openingSpans.find(s => Math.abs(s.start - b) < 1);
-    segs.push({ a, b, kind: "gap", adjacentKind: before?.kind || after?.kind || null });
+    const isCorner = (cornerBreaks || []).some(p =>
+      (Math.abs(a) < 1 && Math.abs(p - b) < 1) || (Math.abs(b - len) < 1 && Math.abs(p - a) < 1));
+    segs.push({ a, b, kind: isCorner ? "corner" : "gap", adjacentKind: before?.kind || after?.kind || null });
   }
   return { ux, uy, len, segs };
 }
@@ -480,9 +488,8 @@ function exteriorPerimeterChains(elements, scale) {
   if (!exteriorWalls.length) return [];
   const runs = mergeCollinearWallRuns(exteriorWalls);
   return runs.map(run => {
-    const built = buildChainSegs(run, elements, scale);
-    if (!built) return null;
-    const { ux, uy, segs } = built;
+    const dx0 = run.x2 - run.x1, dy0 = run.y2 - run.y1, len0 = Math.hypot(dx0, dy0) || 1;
+    const ux = dx0 / len0, uy = dy0 / len0;
     const halfThickPx = (wallThicknessM(run) / 2 / scale) * GRID;
     const { nx, ny } = outwardNormalForRun(run, elements);
     // Stretch each end out to the true outside corner — prefer another
@@ -494,14 +501,23 @@ function exteriorPerimeterChains(elements, scale) {
       || orthogonalCornerExtensionPx(run.x1, run.y1, ux, uy, allWalls, scale);
     const extEnd = orthogonalCornerExtensionPx(run.x2, run.y2, ux, uy, exteriorWalls, scale)
       || orthogonalCornerExtensionPx(run.x2, run.y2, ux, uy, allWalls, scale);
-    const x1 = run.x1 - ux * extStart, y1 = run.y1 - uy * extStart;
-    const len = built.len + extStart + extEnd;
-    const extSegs = segs.map(s => ({ ...s, a: s.a + extStart, b: s.b + extStart }));
-    if (extSegs.length) {
-      extSegs[0] = { ...extSegs[0], a: 0 };
-      extSegs[extSegs.length - 1] = { ...extSegs[extSegs.length - 1], b: len };
-    }
-    return { id: run.id, tag: run.tag, x1, y1, ux, uy, nx, ny, halfThickPx, len, segs: extSegs };
+    const extRun = {
+      ...run,
+      x1: run.x1 - ux * extStart, y1: run.y1 - uy * extStart,
+      x2: run.x2 + ux * extEnd, y2: run.y2 + uy * extEnd,
+    };
+    // Each corner's own wall-thickness tick spans from the true outside
+    // corner (0, or len at the far end) in to that SAME corner wall's own
+    // centerline (half its thickness further in, i.e. extStart/extEnd
+    // again) — giving the standard "espessura / vão livre / espessura"
+    // three-tick read along one straight run, instead of the corner
+    // thickness silently bleeding into the first/last opening gap.
+    const cornerBreaks = [];
+    if (extStart > 0) cornerBreaks.push(2 * extStart);
+    if (extEnd > 0) cornerBreaks.push(len0 + extStart + extEnd - 2 * extEnd);
+    const built = buildChainSegs(extRun, elements, scale, cornerBreaks);
+    if (!built) return null;
+    return { id: run.id, tag: run.tag, x1: extRun.x1, y1: extRun.y1, ux, uy, nx, ny, halfThickPx, len: built.len, segs: built.segs };
   }).filter(Boolean);
 }
 // The interior counterpart of exteriorPerimeterChains — a "face interna"
@@ -3970,11 +3986,11 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                 // still override its own color/size on top of that default.
                 const segColorInfo = chainSegColorInfo(seg, extPartialDimColor, "extPartialDimColor");
                 const segDefaultColor = segColorInfo.color;
-                const segDefaultFontSize = seg.kind === "gap" && !seg.adjacentKind ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
+                const segDefaultFontSize = (seg.kind === "gap" || seg.kind === "corner") && !seg.adjacentKind ? Math.max(6, dimFontSize - 1.5) : doorWindowDimFontSize;
                 const segStyle = autoDimStyle(segKey);
                 const segColor = segStyle.color || segDefaultColor;
                 const segFontSize = toNum(segStyle.fontSize, segDefaultFontSize);
-                const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : seg.adjacentKind === "door" ? "vão (porta)" : seg.adjacentKind === "window" ? "vão (janela)" : "vão";
+                const kindLabel = seg.kind === "door" ? "porta" : seg.kind === "window" ? "janela" : seg.kind === "corner" ? "espessura da parede" : seg.adjacentKind === "door" ? "vão (porta)" : seg.adjacentKind === "window" ? "vão (janela)" : "vão";
                 const onTap = pick(segKey, `Cota do ${kindLabel} · ${segM.toFixed(2)} m`, segDefaultColor, segDefaultFontSize, segColorInfo.groupField);
                 return (
                   <g key={i}>
