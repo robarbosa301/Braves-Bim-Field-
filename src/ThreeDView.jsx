@@ -25,7 +25,11 @@ function getWallTexture(finish, color) {
   // would silently override that finish's own tone with whatever the
   // paint swatch happens to be set to).
   const isFloorFamily = FLOOR_TYPES.includes(finish);
-  const base = paintish ? (color || "#E8E4DA") : isFloorFamily ? (color || floorDefault) : floorDefault;
+  // A wall face's own chosen color (paintColorA/B) always wins when the
+  // user set one — including an "A definir" (undefined) finish, which
+  // used to fall straight to the generic floorDefault beige and silently
+  // ignore whatever color was actually picked for that face.
+  const base = color || (isFloorFamily ? floorDefault : "#E8E4DA");
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 128, 128);
 
@@ -89,6 +93,29 @@ function getWallTexture(finish, color) {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   _textureCache.set(key, tex);
   return tex;
+}
+
+// A simple grass texture for the ground plane under "Humanizada"/"Mobiliada"
+// — only ever built once (module-level cache, same idea as getWallTexture)
+// since it never varies per project. Just enough mottled color variation to
+// read as a lawn instead of a flat green rectangle, without needing a real
+// image asset (keeps the PWA fully offline-capable).
+let _groundTex = null;
+function getGroundTexture() {
+  if (_groundTex) return _groundTex;
+  const canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#6E9A52";
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2200; i++) {
+    const shade = Math.random() * 0.22 - 0.11;
+    ctx.fillStyle = shade > 0 ? `rgba(230,230,200,${shade})` : `rgba(20,40,10,${-shade})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  _groundTex = new THREE.CanvasTexture(canvas);
+  _groundTex.wrapS = _groundTex.wrapT = THREE.RepeatWrapping;
+  return _groundTex;
 }
 
 // A painted wall face is meant to read as one flat, uniform coat of color —
@@ -329,6 +356,12 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 400);
+      // A soft sky color instead of the default transparent/void
+      // background — "Executiva" keeps alpha (so it composites onto the
+      // app's own panel, unchanged for every existing screenshot/PDF
+      // export), but a building that's otherwise lit and shadowed like a
+      // real place still read as floating in empty space without this.
+      if (humanized) scene.background = new THREE.Color(0xBFD9EC);
       // Every wall segment mesh pushed here (plus its shared userData —
       // one entry per whole wall, not per segment, so tapping any part of
       // a wall split by a door/window still reports the same wall) is
@@ -797,6 +830,30 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
       });
 
       if (!isFinite(minX)) { minX = 0; maxX = 4; minZ = 0; maxZ = 4; }
+
+      // Ground plane — the single biggest lever for "this looks like a
+      // real place" vs. "this is a CAD model floating in the void". Sized
+      // generously past the building's own footprint (a tight-fitting
+      // patch of grass right at the walls reads as a cutout, not a site),
+      // and sat a hair below the lowest level so it never z-fights that
+      // level's own floor plane.
+      if (humanized) {
+        const groundTex = getGroundTexture().clone();
+        groundTex.needsUpdate = true;
+        const spanX = Math.max(8, maxX - minX), spanZ = Math.max(8, maxZ - minZ);
+        const pad = Math.max(spanX, spanZ) * 1.5 + 10;
+        groundTex.repeat.set((spanX + pad * 2) / 2, (spanZ + pad * 2) / 2);
+        const minElevation = Math.min(0, ...buildingLevels.map(l => toNum(l.elevation, 0)));
+        const ground = new THREE.Mesh(
+          new THREE.PlaneGeometry(spanX + pad * 2, spanZ + pad * 2),
+          new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.set((minX + maxX) / 2, minElevation - 0.03, (minZ + maxZ) / 2);
+        ground.receiveShadow = true;
+        scene.add(ground);
+      }
+
       const target = new THREE.Vector3((minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2);
       let theta = Math.PI / 4, phi = Math.PI / 3.2;
       // Distance needed to frame the whole building's bounding sphere (half
