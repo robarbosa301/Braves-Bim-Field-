@@ -293,22 +293,32 @@ export const FURNITURE_FAMILIES = {
     ],
   },
   // ---- Garagem ----
+  // A real top-view car plan symbol, not a box with blocks stuck to its
+  // corners: a rounded body silhouette (dy<0 = front, matching the mirrors/
+  // lights below), a narrower rounded cabin/greenhouse inset to read as the
+  // car's roof+glass, and the wheels sitting INSIDE the body footprint
+  // (flush with the flanks, like real wheel arches) instead of poking out
+  // past the edges — that corner-block look was the "5-year-old" tell.
   carro: {
     label: "Carro", category: "Garagem", wM: 1.8, dM: 4.5, hM: 1.4,
     parts: [
-      { shape: "box", dx: 0, dy: 0, w: 1.8, d: 4.5, h: 1.4, baseY: 0, color: "#8C8C96" },
-      { shape: "box", dx: 0, dy: -0.9, w: 1.55, d: 1.7, h: 0.02, baseY: 1.4, color: "#DCE6EA" },
-      { shape: "box", dx: -0.9, dy: -1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
-      { shape: "box", dx: 0.9, dy: -1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
-      { shape: "box", dx: -0.9, dy: 1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
-      { shape: "box", dx: 0.9, dy: 1.4, w: 0.22, d: 0.55, h: 0.32, baseY: 0, color: "#232220" },
-      // Side mirrors, headlights and taillights.
-      { shape: "box", dx: -0.95, dy: -0.75, w: 0.06, d: 0.12, h: 0.06, baseY: 0.95, color: "#6E6E78" },
-      { shape: "box", dx: 0.95, dy: -0.75, w: 0.06, d: 0.12, h: 0.06, baseY: 0.95, color: "#6E6E78" },
-      { shape: "box", dx: -0.55, dy: -2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.4, color: "#E8E4DA" },
-      { shape: "box", dx: 0.55, dy: -2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.4, color: "#E8E4DA" },
-      { shape: "box", dx: -0.55, dy: 2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.5, color: "#B5423A" },
-      { shape: "box", dx: 0.55, dy: 2.2, w: 0.3, d: 0.04, h: 0.15, baseY: 0.5, color: "#B5423A" },
+      { shape: "box", dx: 0, dy: 0, w: 1.8, d: 4.5, h: 1.4, baseY: 0, color: "#6B7280", rx: 0.4 },
+      // Cabin/greenhouse — narrower and set slightly rear-of-center, the
+      // one feature that reads "car" instead of "box" from directly above.
+      { shape: "box", dx: 0, dy: 0.15, w: 1.42, d: 2.3, h: 0.08, baseY: 1.4, color: "#262A31", rx: 0.3 },
+      // Wheels inset within the body footprint, flush with the flanks.
+      { shape: "box", dx: -0.68, dy: -1.55, w: 0.26, d: 0.6, h: 0.32, baseY: 0, color: "#1C1E22", rx: 0.08 },
+      { shape: "box", dx: 0.68, dy: -1.55, w: 0.26, d: 0.6, h: 0.32, baseY: 0, color: "#1C1E22", rx: 0.08 },
+      { shape: "box", dx: -0.68, dy: 1.55, w: 0.26, d: 0.6, h: 0.32, baseY: 0, color: "#1C1E22", rx: 0.08 },
+      { shape: "box", dx: 0.68, dy: 1.55, w: 0.26, d: 0.6, h: 0.32, baseY: 0, color: "#1C1E22", rx: 0.08 },
+      // Side mirrors — just a small flush bump, not a slab.
+      { shape: "box", dx: -0.93, dy: -0.85, w: 0.06, d: 0.16, h: 0.05, baseY: 0.95, color: "#C9CDD1", rx: 0.02 },
+      { shape: "box", dx: 0.93, dy: -0.85, w: 0.06, d: 0.16, h: 0.05, baseY: 0.95, color: "#C9CDD1", rx: 0.02 },
+      // Headlight and taillight pods, inset from the very front/rear edge.
+      { shape: "box", dx: -0.55, dy: -2.17, w: 0.3, d: 0.07, h: 0.12, baseY: 0.35, color: "#F2E4B0", rx: 0.03 },
+      { shape: "box", dx: 0.55, dy: -2.17, w: 0.3, d: 0.07, h: 0.12, baseY: 0.35, color: "#F2E4B0", rx: 0.03 },
+      { shape: "box", dx: -0.55, dy: 2.17, w: 0.3, d: 0.07, h: 0.15, baseY: 0.5, color: "#B5423A", rx: 0.03 },
+      { shape: "box", dx: 0.55, dy: 2.17, w: 0.3, d: 0.07, h: 0.15, baseY: 0.5, color: "#B5423A", rx: 0.03 },
     ],
   },
   moto: {

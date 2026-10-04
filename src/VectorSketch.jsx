@@ -4675,7 +4675,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               style={{ cursor: tool === "selecionar" ? "move" : "default" }}>
               {fam.parts.map((p, i) => {
                 if (p.shape === "box") return (
-                  <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx="1"
+                  <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx={p.rx != null ? mToPx(p.rx) : 1}
                     fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
                 );
                 // A "canopy" part (tree/shrub foliage) draws as the same
