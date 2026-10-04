@@ -5,7 +5,8 @@ import {
   ChevronRight, ChevronDown, Pencil, Layers3, Layers, RectangleHorizontal, DoorClosed,
   Smartphone, Tablet, LocateFixed, ImagePlus, Users, Copy,
   Triangle, TriangleAlert, Rotate3d, Box, Home,
-  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut, Undo2, Redo2, Ruler, MousePointer2
+  DoorOpen, Scissors, Table2, ZoomIn, ZoomOut, Undo2, Redo2, Ruler, MousePointer2,
+  PenTool, Sun, Sofa
 } from "lucide-react";
 
 import { safeGet, safeSet, safeList, safeDelete, syncProjectMeta, idbGet, idbSet } from "./storage.js";
@@ -723,6 +724,9 @@ export default function PranchetaBIM() {
   // the Sincronização tab's DADOS DO IMÓVEL panel.
   const [phaseMenuOpen2D, setPhaseMenuOpen2D] = useState(false);
   const [view3dMode, setView3dMode] = useState("casa");
+  // "Executiva" (hoje) · "Humanizada" (luz/sombra realista, sem mobília) ·
+  // "Mobiliada" (humanizada + mobília automática por nome de ambiente).
+  const [view3dStyle, setView3dStyle] = useState("executiva");
   const [view3dOpen, setView3dOpen] = useState(false);
   const [phaseView3D, setPhaseView3D] = useState("tudo");
   // Each axis is its own independent clipping plane — any combination can
@@ -2197,6 +2201,19 @@ export default function PranchetaBIM() {
 
             {croquiViewMode === "3d" && (
               <div>
+                <div className="flex gap-1 rounded p-0.5 mb-2 w-fit" style={{ background: C.panelAlt }}>
+                  {[
+                    { id: "executiva", label: "Executiva", Icon: PenTool, title: "Vista técnica atual, sem luz/sombra realista" },
+                    { id: "humanizada", label: "Humanizada", Icon: Sun, title: "Luz e sombra realistas, sem mobília" },
+                    { id: "mobiliada", label: "Mobiliada", Icon: Sofa, title: "Humanizada + mobília automática por ambiente" },
+                  ].map(({ id, label, Icon, title }) => (
+                    <button key={id} onClick={() => setView3dStyle(id)} title={title}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-[11px]"
+                      style={{ ...heading, fontWeight: 600, background: view3dStyle === id ? C.gold : "transparent", color: view3dStyle === id ? "#141311" : C.mute }}>
+                      <Icon size={11} /> {label}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex gap-1.5 mb-3 flex-wrap">
                   {view3dMode === "ambiente" && (
                     <select value={view3dRoomId || ""} onChange={e => setView3dRoomId(e.target.value)} className="text-xs px-2 py-1 rounded flex-1"
@@ -2275,7 +2292,7 @@ export default function PranchetaBIM() {
                         const geo = computeRoofPlanes(roofPlaneSettings(roof), footprint, baseElevation);
                         return { id: roof.id, name: roof.name, tileType: roof.tileType || TILE_TYPES[0], pitchDeg: toNum(roof.pitchDeg, 30), baseElevation, aguas: roof.aguas, ...geo };
                       }).filter(Boolean)}
-                      openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} exportMarker />
+                      openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} renderStyle={view3dStyle} exportMarker />
                   </Suspense>
                 )}
                 {view3dMode === "ambiente" && (() => {
@@ -2286,7 +2303,7 @@ export default function PranchetaBIM() {
                   if (!data) return <div className="text-xs p-6 text-center" style={{ color: C.mute }}>Este ambiente ainda não tem um contorno desenhado. Vá ao Croqui, use a ferramenta "Ambiente" e feche o contorno vinculando a este nome.</div>;
                   return (
                     <Suspense fallback={<div className="text-xs p-6 text-center" style={{ color: C.mute }}>Carregando visualização 3D…</div>}>
-                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} />
+                      <ThreeDView buildingLevels={[data]} elevationsById={{}} openState={view3dOpen ? "open" : "closed"} sectionCut={sectionCut} phaseView={phaseView3D} renderStyle={view3dStyle} />
                     </Suspense>
                   );
                 })()}

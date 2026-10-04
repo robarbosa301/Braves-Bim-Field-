@@ -115,8 +115,119 @@ function wallFaceMaterial(finish, color, segLen, segH) {
 // briefly selected something, then the immediate rebuild wiped it again, so
 // nothing ever stayed selected. One shared, stable empty array fixes it.
 const EMPTY_ROOFS = [];
+
+// ---- "Mobiliada" view: simple procedural furniture, auto-placed by room
+// name — not a drag-and-drop catalog, just enough low-poly stand-ins (a
+// bed, a sofa, a table) so a client walkthrough reads as a furnished home
+// instead of an empty shell. Always staged against the room polygon's own
+// bounding-box "south" edge (minY) since the sketch doesn't record which
+// wall a client would actually back furniture against — an approximation,
+// not a real interior-design placement.
+function normalizeRoomName(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function roomBoundsXY(points) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  points.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+  return { minX, maxX, minY, maxY, w: maxX - minX, h: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+function addFurnBox(group, w, h, d, color, x, y, z, rotY = 0, opts = {}) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.75, metalness: opts.metalness ?? 0 }));
+  mesh.position.set(x, y, z);
+  mesh.rotation.y = rotY;
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  group.add(mesh);
+  return mesh;
+}
+function addFurnCyl(group, radius, h, color, x, y, z, opts = {}) {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, h, 16), new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.7 }));
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  group.add(mesh);
+  return mesh;
+}
+const FURN = { wood: 0x8A6A47, fabric: 0x6E7C8C, fabric2: 0x9C8468, white: 0xF2F0EA, dark: 0x3A3834, metal: 0xB2B2AC, mattress: 0xEAE5D8 };
+
+function buildRoomFurniture(elev, r) {
+  const group = new THREE.Group();
+  const b = roomBoundsXY(r.points);
+  // Too small to stage anything without furniture poking through a wall —
+  // a closet, a shaft, a tiny lavabo.
+  if (b.w < 1.3 || b.h < 1.3) return group;
+  const nm = normalizeRoomName(r.name);
+  const margin = 0.12;
+  const backY = b.minY + margin; // the bounding-box edge furniture backs against
+
+  if (/banheiro|wc\b|lavabo/.test(nm)) {
+    const vanityW = Math.min(0.9, b.w - 0.5);
+    addFurnBox(group, vanityW, 0.85, 0.45, FURN.white, b.minX + margin + vanityW / 2, elev + 0.425, backY + 0.225, 0);
+    if (b.w > 1.6) {
+      const cornerX = b.maxX - margin - 0.2;
+      addFurnBox(group, 0.4, 0.4, 0.5, FURN.white, cornerX, elev + 0.2, backY + 0.25, 0);
+      addFurnBox(group, 0.4, 0.08, 0.38, FURN.white, cornerX, elev + 0.42, backY + 0.19, 0);
+    }
+    if (b.h > 1.8) {
+      addFurnBox(group, 0.9, 0.02, Math.min(0.9, b.h - 1.0), 0xDCE6EA, b.maxX - margin - 0.45, elev + 1.9, b.maxY - margin - 0.45, 0, { roughness: 0.15, metalness: 0.1 });
+    }
+    return group;
+  }
+  if (/\bjantar\b/.test(nm)) {
+    const tw = Math.min(1.5, b.w - 0.8), td = Math.min(0.9, b.h - 0.8);
+    if (tw < 0.6 || td < 0.5) return group;
+    addFurnBox(group, tw, 0.05, td, FURN.wood, b.cx, elev + 0.72, b.cy, 0);
+    for (let i = 0; i < 4; i++) addFurnBox(group, 0.45, 0.72, 0.03, FURN.dark, 0, elev + 0.45, 0, 0);
+    [[0, 0.75], [0, -0.75], [1, 0], [-1, 0]].forEach(([dx, dz]) => {
+      if ((dx !== 0 && td < 0.7) || (dz !== 0 && tw < 0.9)) return;
+      addFurnCyl(group, 0.18, 0.45, FURN.dark, b.cx + dx * (tw / 2 + 0.3), elev + 0.225, b.cy + dz * (td / 2 + 0.3));
+    });
+    return group;
+  }
+  if (/cozinha/.test(nm)) {
+    const counterLen = Math.min(b.w - 0.3, 2.6);
+    addFurnBox(group, counterLen, 0.9, 0.6, FURN.white, b.minX + margin + counterLen / 2, elev + 0.45, backY + 0.3, 0);
+    addFurnBox(group, counterLen, 0.04, 0.62, 0xD9D4C8, b.minX + margin + counterLen / 2, elev + 0.91, backY + 0.3, 0);
+    if (b.h > 2.2) {
+      const islandLen = Math.min(1.4, b.w - 0.8);
+      addFurnBox(group, islandLen, 0.9, 0.7, FURN.white, b.cx, elev + 0.45, b.maxY - margin - 0.5, 0);
+    }
+    return group;
+  }
+  if (/escritorio|escrit[oó]rio|home office/.test(nm)) {
+    const deskW = Math.min(1.3, b.w - 0.5);
+    addFurnBox(group, deskW, 0.04, 0.6, FURN.wood, b.minX + margin + deskW / 2, elev + 0.74, backY + 0.3, 0);
+    addFurnBox(group, 0.04, 0.72, 0.5, FURN.dark, b.minX + margin + 0.05, elev + 0.36, backY + 0.3, 0);
+    addFurnBox(group, 0.04, 0.72, 0.5, FURN.dark, b.minX + margin + deskW - 0.05, elev + 0.36, backY + 0.3, 0);
+    addFurnBox(group, 0.45, 0.45, 0.45, FURN.fabric, b.minX + margin + deskW / 2, elev + 0.23, backY + 0.75, 0);
+    return group;
+  }
+  if (/quarto|dormit[oó]rio|su[ií]te/.test(nm)) {
+    const bedW = b.w > 2.4 ? 1.6 : Math.min(1.4, b.w - 0.6);
+    const bedLen = Math.min(2.0, b.h - 0.6);
+    if (bedW < 0.8 || bedLen < 1.4) return group;
+    const bedCx = b.cx, bedBackZ = backY;
+    addFurnBox(group, bedW, 0.35, bedLen, FURN.wood, bedCx, elev + 0.175, bedBackZ + bedLen / 2, 0);
+    addFurnBox(group, bedW - 0.06, 0.2, bedLen - 0.06, FURN.mattress, bedCx, elev + 0.45, bedBackZ + bedLen / 2, 0);
+    addFurnBox(group, bedW + 0.04, 0.55, 0.06, FURN.fabric2, bedCx, elev + 0.65, bedBackZ, 0);
+    if (b.w - bedW > 0.7) {
+      addFurnBox(group, 0.35, 0.45, 0.35, FURN.wood, bedCx - bedW / 2 - 0.25, elev + 0.225, bedBackZ + 0.3, 0);
+      addFurnBox(group, 0.35, 0.45, 0.35, FURN.wood, bedCx + bedW / 2 + 0.25, elev + 0.225, bedBackZ + 0.3, 0);
+    }
+    return group;
+  }
+  if (/\bsala\b|living|estar/.test(nm)) {
+    const sofaLen = Math.min(2.0, b.w - 0.6);
+    if (sofaLen < 1.0) return group;
+    addFurnBox(group, sofaLen, 0.4, 0.45, FURN.fabric, b.minX + margin + 0.2 + sofaLen / 2 - 0.2, elev + 0.2, backY + 0.225, 0);
+    addFurnBox(group, sofaLen, 0.55, 0.12, FURN.fabric, b.minX + margin + 0.2 + sofaLen / 2 - 0.2, elev + 0.275, backY + 0.46, 0);
+    if (b.h > 2.0) {
+      addFurnBox(group, Math.min(0.9, sofaLen * 0.5), 0.38, 0.5, FURN.wood, b.cx, elev + 0.19, b.cy + 0.3, 0);
+    }
+    return group;
+  }
+  return group;
+}
 // ---- 3D viewer (raw three.js — no OrbitControls addon available) ----------
-export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMPTY_ROOFS, openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false }) {
+export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMPTY_ROOFS, openState = "closed", sectionCut, phaseView = "tudo", exportMarker = false, renderStyle = "executiva" }) {
   const mountRef = useRef(null);
   const hintRef = useRef(null);
   const [ok, setOk] = useState(true);
@@ -191,6 +302,19 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.localClippingEnabled = true;
+      // "Executiva" keeps the flat, shadowless render every existing
+      // screenshot/PDF export was tuned against (zero behavior change for
+      // anyone not opting in). "Humanizada"/"Mobiliada" turn on real-time
+      // shadows and filmic tone mapping so the same geometry reads like a
+      // lit interior instead of a technical diagram.
+      const humanized = renderStyle === "humanizada" || renderStyle === "mobiliada";
+      if (humanized) {
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+      }
       // Each axis is independent — clippingPlanes takes an array and
       // three.js clips against the intersection of all of them, so any
       // combination (X+Y, X+Z, all three, …) just works by including
@@ -210,10 +334,28 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
       // a wall split by a door/window still reports the same wall) is
       // what tap-to-select raycasts against, below.
       const selectableMeshes = [];
-      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.75);
-      dir.position.set(10, 16, 8);
-      scene.add(dir);
+      if (humanized) {
+        // Sky/ground hemisphere instead of a flat white ambient — gives
+        // surfaces a soft natural falloff (warm floor bounce, cool sky
+        // fill) that a single uniform ambient term can't, and leaves
+        // enough contrast for the sun's own cast shadows to actually read.
+        scene.add(new THREE.HemisphereLight(0xE8EEF5, 0x8C7A5E, 0.55));
+        const sun = new THREE.DirectionalLight(0xFFF4E0, 1.15);
+        sun.position.set(10, 16, 8);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        sun.shadow.camera.left = -20; sun.shadow.camera.right = 20;
+        sun.shadow.camera.top = 20; sun.shadow.camera.bottom = -20;
+        sun.shadow.camera.near = 1; sun.shadow.camera.far = 60;
+        sun.shadow.bias = -0.0015;
+        scene.add(sun);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+      } else {
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const dir = new THREE.DirectionalLight(0xffffff, 0.75);
+        dir.position.set(10, 16, 8);
+        scene.add(dir);
+      }
 
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, maxY = 1;
 
@@ -305,6 +447,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
           mesh.position.set(cx, elev + o.yBottom + o.height / 2, cz);
           mesh.rotation.y = -leafAngle;
           mesh.userData = openingInfo;
+          mesh.castShadow = true; mesh.receiveShadow = true;
           scene.add(mesh);
           selectableMeshes.push(mesh);
         }
@@ -423,6 +566,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             mesh.position.set(cx, elev + seg.yBottom + segH / 2, cz);
             mesh.rotation.y = -angle;
             mesh.userData = wallInfo;
+            mesh.castShadow = true; mesh.receiveShadow = true;
             scene.add(mesh);
             selectableMeshes.push(mesh);
           });
@@ -485,6 +629,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             const floorMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85, side: THREE.DoubleSide }));
             floorMesh.rotation.x = -Math.PI / 2;
             floorMesh.position.y = elev + 0.01;
+            floorMesh.receiveShadow = true;
             scene.add(floorMesh);
           }
 
@@ -494,6 +639,11 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
             ceilMesh.rotation.x = -Math.PI / 2;
             ceilMesh.position.y = elev + levelWallHeight - 0.01;
             scene.add(ceilMesh);
+          }
+
+          if (renderStyle === "mobiliada") {
+            const furnGroup = buildRoomFurniture(elev, r);
+            scene.add(furnGroup);
           }
         });
 
@@ -604,6 +754,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
           const pitchRad = (Math.max(0, Math.min(89, toNum(roof.pitchDeg, 30))) * Math.PI) / 180;
           const areaM2 = polygonAreaXZ(plane) / Math.cos(pitchRad);
           mesh.userData = { kind: "roof", roofId: roof.id, roofName: roof.name || "Cobertura", aguaIndex, pitchDeg: toNum(roof.pitchDeg, 30), areaM2, plane, tileType: roof.tileType };
+          mesh.castShadow = true; mesh.receiveShadow = true;
           scene.add(mesh);
           selectableMeshes.push(mesh);
           plane.forEach(p => {
@@ -1054,7 +1205,7 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
       // than leave the legend showing a wall that's no longer there.
       setSelectedWallInfo(null);
     };
-  }, [buildingLevels, roofs, openState, sectionCut, phaseView, dims]);
+  }, [buildingLevels, roofs, openState, sectionCut, phaseView, dims, renderStyle]);
 
   // The mount div stays in the tree always, even in an ok/empty/emptyPhase
   // state — the status text overlays it instead of replacing it. The
