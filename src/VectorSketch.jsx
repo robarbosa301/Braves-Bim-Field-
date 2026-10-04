@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Grid3x3, Grid2x2, X, Trash2, RotateCcw, DoorClosed, BrickWall, Pencil, Undo2, Redo2, Eraser,
   LayoutPanelTop, ZoomIn, ZoomOut, Maximize2, MousePointer2, Lightbulb, Link2, Scissors, Ruler, CornerUpRight,
-  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat, CheckSquare, Hand,
+  Expand, Shrink, Box, Type, Minus, Plus, ArrowLeftRight, SquareStack, AlignCenterVertical, Repeat, CheckSquare, Hand, Wand2,
 } from "lucide-react";
 import { C, mono, heading, phaseColor, matchesPhaseView } from "./theme.js";
 import { toNum, uid } from "./utils.js";
@@ -2126,6 +2126,41 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const newB = { ...other, ...trimmed.b, length: pxToMeters(dist({ x: trimmed.b.x1, y: trimmed.b.y1 }, { x: trimmed.b.x2, y: trimmed.b.y2 })) };
     commitElements(elements.map(e => (e.id === newA.id ? newA : e.id === newB.id ? newB : e)));
   }
+  // How far off (in degrees) a wall sits from the nearest 0/45/90° step —
+  // angleSnap (above) only nudges a NEW point onto that grid when the tap
+  // already lands close by ITS OWN pixel-distance tolerance, which on a
+  // long wall is a tight window (by design — see angleSnap's own comment:
+  // a fixed angular tolerance would make a deliberately-drawn long
+  // diagonal wall impossible to place). A real tap that misses that
+  // window on a tall/long wall is stored exactly as tapped — visibly
+  // leaning once the wall is long enough for a few degrees to read as a
+  // crooked line instead of a rounding error. This is the fix for THAT
+  // wall, after the fact: how far it currently is from true, used both to
+  // decide whether "Endireitar" is worth offering and to drive it.
+  function wallAngleDeviationDeg(wall) {
+    const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+    if (Math.hypot(dx, dy) < 1e-6) return 0;
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const nearest = Math.round(angle / step) * step;
+    return Math.abs(angle - nearest) * (180 / Math.PI);
+  }
+  // Rotates the wall's own x2/y2 end onto the nearest 0/45/90° step around
+  // its x1/y1 end, keeping the exact same length — x1/y1 stays put since
+  // it's usually the end that continues an existing chain/corner, so this
+  // never moves the end some OTHER wall already connects to (if the far
+  // end needed a corner too, "Unir canto" after this fixes that one too).
+  function straightenSelectedWall() {
+    if (!selected || selected.type !== "wall") return;
+    const dx = selected.x2 - selected.x1, dy = selected.y2 - selected.y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
+    const angle = Math.atan2(dy, dx);
+    const step = Math.PI / 4;
+    const nearest = Math.round(angle / step) * step;
+    const nx2 = selected.x1 + Math.cos(nearest) * len, ny2 = selected.y1 + Math.sin(nearest) * len;
+    commitElements(elements.map(e => e.id === selected.id ? { ...e, x2: nx2, y2: ny2 } : e));
+  }
 
   // Shared by the "Cortar parede..." distance field (splitSelectedWallAt)
   // and the tap-to-cut "cortar" tool — both just need to hand it the wall
@@ -4224,6 +4259,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               {findCornerWall(selected, elements) && (
                 <button onClick={tryTrimCorner} className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.gold, color: "#141311" }}>
                   <CornerUpRight size={12} /> Aparar/unir canto com parede próxima
+                </button>
+              )}
+              {wallAngleDeviationDeg(selected) > 0.3 && (
+                <button onClick={straightenSelectedWall} title="Essa parede está um pouco torta (não é exatamente 0°/45°/90°) — ajusta a ponta final para ficar exata, mantendo o comprimento."
+                  className="flex items-center gap-1 text-[11px] px-2 py-1.5 rounded" style={{ ...heading, fontWeight: 600, background: C.gold, color: "#141311" }}>
+                  <Wand2 size={12} /> Endireitar parede ({wallAngleDeviationDeg(selected).toFixed(1)}° torta)
                 </button>
               )}
               {!splittingWall ? (
