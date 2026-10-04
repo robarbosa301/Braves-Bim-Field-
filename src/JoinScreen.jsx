@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Tablet, Smartphone, Building2, ArrowUpRight, RefreshCw, LogIn, LogOut } from "lucide-react";
 import { C, mono, heading } from "./theme.js";
 import { genCode, composeAddress } from "./utils.js";
-import { idbGet, idbSet, getUserProjects, addUserProject } from "./storage.js";
+import { idbGet, idbSet, getUserProjects, addUserProject, listAllCloudProjects } from "./storage.js";
 import { firebaseEnabled } from "./firebase.js";
 import { signInWithGoogle, signOutUser, watchAuthState, consumeRedirectResult } from "./auth.js";
 import { SYMBOL_LOGO, METAL_BG, Watermark } from "./branding.jsx";
@@ -119,6 +119,14 @@ export default function JoinScreen({ onJoin }) {
   }, [building.cep]);
   const [savedProjects, setSavedProjects] = useState([]);
   const [showAllProjects, setShowAllProjects] = useState(false);
+  // "Meus Projetos" (above) only ever knows about a project this exact
+  // device created/joined, or — once logged in — one this exact account
+  // created/joined. A project opened only from a device that's since been
+  // wiped, or from before login existed, falls out of both and becomes
+  // unreachable without its code. This pulls the full, unscoped list
+  // straight from Firestore instead, as a separate "find it" escape hatch.
+  const [cloudProjects, setCloudProjects] = useState(null);
+  const [loadingCloud, setLoadingCloud] = useState(false);
   const [user, setUser] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -156,6 +164,12 @@ export default function JoinScreen({ onJoin }) {
     const finalCode = genCode();
     setCode(finalCode);
     setStep("building");
+  }
+  async function loadCloudProjects() {
+    setLoadingCloud(true);
+    const list = await listAllCloudProjects();
+    setCloudProjects(list);
+    setLoadingCloud(false);
   }
   async function handleJoinExisting(codeOverride) {
     setBusy(true);
@@ -374,6 +388,37 @@ export default function JoinScreen({ onJoin }) {
                   )}
                 </div>
               )}
+              <div className="mb-3">
+                {cloudProjects === null ? (
+                  <button onClick={loadCloudProjects} disabled={loadingCloud}
+                    className="w-full text-[11px] font-semibold text-center py-2 rounded-lg" style={{ color: C.gold, background: C.goldTint, border: `1px solid ${C.gold}`, opacity: loadingCloud ? 0.6 : 1 }}>
+                    {loadingCloud ? "Buscando na nuvem…" : "Não achou? Ver todos os projetos salvos na nuvem"}
+                  </button>
+                ) : (
+                  <>
+                    <div className="text-[10px] mb-1.5" style={{ color: C.mute, letterSpacing: "0.06em" }}>
+                      TODOS OS PROJETOS NA NUVEM ({cloudProjects.length}) — PODE INCLUIR LEVANTAMENTOS FEITOS EM OUTRO APARELHO
+                    </div>
+                    {cloudProjects.length === 0 ? (
+                      <div className="text-[11px] text-center py-3" style={{ color: C.mute }}>Nenhum projeto encontrado na nuvem.</div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                        {cloudProjects.map(p => (
+                          <button key={p.code} onClick={() => handleJoinExisting(p.code)}
+                            className="w-full text-left p-2.5 rounded-xl flex items-center gap-2" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                            <Building2 size={15} color={C.gold} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs truncate" style={{ color: C.chalk }}>{p.name || "Sem nome"}</div>
+                              <div className="text-[10px] truncate" style={{ color: C.mute }}>{p.address || "sem endereço"} · {p.roomsCount || 0} ambiente(s)</div>
+                            </div>
+                            <span className="text-[10px] shrink-0" style={{ ...mono, color: C.gold }}>{p.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </>
           )}
           <button onClick={mode === "create" ? goToBuilding : () => handleJoinExisting()} disabled={busy || (mode === "join" && !code.trim())}

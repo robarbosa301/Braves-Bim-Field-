@@ -1,7 +1,8 @@
 import {
-  collection, doc, getDoc, setDoc, deleteDoc, getDocs, query, where, documentId, serverTimestamp,
+  collection, doc, getDoc, setDoc, deleteDoc, getDocs, query, where, documentId, serverTimestamp, orderBy, limit,
 } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase.js";
+import { composeAddress } from "./utils.js";
 
 // Drop-in replacement for the Claude Artifact runtime's window.storage API:
 // shared=true goes to Firestore (synced across devices), shared=false stays
@@ -95,6 +96,52 @@ export async function addUserProject(uid, meta) {
   const list = await getUserProjects(uid);
   const next = [meta, ...list.filter(p => p.code !== meta.code)].slice(0, 200);
   await safeSet(`user-projects:${uid}`, JSON.stringify(next), true);
+}
+
+// Every project this app has ever created or opened — not scoped to this
+// device (projects-index, App.jsx) or to a logged-in account
+// (getUserProjects above), both of which only ever learn about a project
+// the FIRST time it's created/joined from that exact device/account. A
+// project from before either existed, or opened only from a device that's
+// since been wiped, has no way back into either list — its data is still
+// sitting in Firestore, just with nothing pointing at it anymore except a
+// 4-character code nobody remembers. Firestore's own read rules are
+// already wide open here (see firestore.rules — no login model to scope
+// reads to), so this is a straight, unscoped list of what's actually there.
+export async function listAllCloudProjects() {
+  if (!firebaseEnabled) return [];
+  try {
+    const metaSnap = await getDocs(query(collection(db, "projects"), orderBy("updatedAt", "desc"), limit(300)));
+    const byCode = new Map(metaSnap.docs.map(d => [d.id, { code: d.id, ...d.data() }]));
+
+    // Belt-and-suspenders: a project's own bim-project:<code>:data write
+    // (its real survey data) has existed since the sync feature itself was
+    // built, older than the "projects" metadata mirror above — so a
+    // project whose metadata write never landed (an old version of the
+    // app, a failed write) still turns up here, with its name/counts read
+    // straight out of that data instead of being permanently unreachable.
+    const dataSnap = await getDocs(query(
+      collection(db, "kv"),
+      where(documentId(), ">=", "bim-project:"),
+      where(documentId(), "<", "bim-project:"),
+    ));
+    dataSnap.docs.forEach(d => {
+      const m = /^bim-project:(.+):data$/.exec(d.id);
+      if (!m || byCode.has(m[1])) return;
+      try {
+        const parsed = JSON.parse(d.data().value);
+        byCode.set(m[1], {
+          code: m[1],
+          name: parsed.buildingInfo?.name || "Sem nome",
+          address: composeAddress(parsed.buildingInfo || {}),
+          roomsCount: (parsed.rooms || []).length,
+          levelsCount: (parsed.levels || []).length,
+        });
+      } catch (e) { /* unparseable/legacy entry — skip it */ }
+    });
+
+    return [...byCode.values()];
+  } catch (e) { return []; }
 }
 
 // ---- local device cache (IndexedDB) ----------------------------------------
