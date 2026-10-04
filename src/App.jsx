@@ -413,6 +413,9 @@ function roomToM(r, toM) { return { id: r.id, roomId: r.roomId || null, points: 
 // tool) — same shape as a room polygon, just with a floor family instead
 // of a name/ceiling.
 function floorZoneToM(f, toM) { return { id: f.id, points: f.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: f.area, floorType: f.floorType, floorColor: f.floorColor }; }
+// The lot/site boundary (Croqui's own Terreno tool) — just a polygon and
+// its area, same shape as a floor zone, no finish of its own.
+function terrenoToM(t, toM) { return { id: t.id, points: t.points.map(p => ({ x: toM(p.x), y: toM(p.y) })), area: t.area }; }
 
 // A roof has no drawn shape of its own (see addRoof/computeRoofPlanes) —
 // its geometry is auto-generated from whichever level it's assigned to's
@@ -527,6 +530,7 @@ export function levelToMeters(level) {
     luminarias: els.filter(e => e.type === "luminaria").map(l => luminariaToM(l, toM)),
     rooms: els.filter(e => e.type === "room").map(r => roomToM(r, toM)),
     floorZones: els.filter(e => e.type === "floor").map(f => floorZoneToM(f, toM)),
+    terrenos: els.filter(e => e.type === "terreno").map(t => terrenoToM(t, toM)),
     // Same dimension/tag colors the Croqui's "Cores e tamanhos de texto"
     // panel already applies to the 2D plan and the Elevação — carried
     // through here so the 3D view's own on-element dimensions (drawn when
@@ -646,6 +650,7 @@ export function buildLevantamentoSchema({ code, buildingInfo, rooms, levels, roo
           id: r.id, ambiente_id: r.roomId, nome: r.name, area_m2: r.area,
           pontos: r.points, acabamento_piso: r.floorFinish, cor_piso: r.floorColor, acabamento_forro: r.ceilingFinish,
         })),
+        terrenos: m.terrenos.map(t => ({ id: t.id, pontos: t.points, area_m2: t.area })),
       };
     }),
     coberturas: roofs || [],

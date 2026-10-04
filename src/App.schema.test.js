@@ -309,6 +309,19 @@ describe("levelToMeters", () => {
     expect(m.doors).toHaveLength(1);
     expect(m.windows).toHaveLength(0);
   });
+
+  it("converts a terreno (lot boundary) polygon to meters, independent of rooms/walls", () => {
+    const level = {
+      sketchScale: 0.5,
+      sketchElements: [
+        { type: "terreno", id: "t1", area: 200, points: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 800 }, { x: 0, y: 800 }] },
+      ],
+    };
+    const m = levelToMeters(level);
+    expect(m.terrenos).toHaveLength(1);
+    expect(m.terrenos[0].area).toBe(200);
+    expect(m.terrenos[0].points[2]).toEqual({ x: 10, y: 20 }); // 400px/20*0.5=10m, 800px/20*0.5=20m
+  });
 });
 
 describe("buildLevantamentoSchema", () => {
@@ -337,6 +350,16 @@ describe("buildLevantamentoSchema", () => {
     expect(schema.niveis[0].paredes[0].demolir).toBe(true);
     expect(schema.ambientes).toHaveLength(1);
     expect(schema.ambientes[0].area_m2).toBe(12.5);
+  });
+
+  it("includes the terreno (lot boundary) in the exported level, for the Revit add-in to read", () => {
+    const level = {
+      id: "lvl1", name: "Térreo", elevation: 0, sketchScale: 0.5,
+      sketchElements: [{ type: "terreno", id: "t1", area: 200, points: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 800 }, { x: 0, y: 800 }] }],
+    };
+    const schema = buildLevantamentoSchema({ code: "7K2P", buildingInfo: { name: "Casa Teste" }, rooms: [], levels: [level], roofs: [] });
+    expect(schema.niveis[0].terrenos).toHaveLength(1);
+    expect(schema.niveis[0].terrenos[0].area_m2).toBe(200);
   });
 
   it("tolerates missing optional collections", () => {

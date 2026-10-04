@@ -153,6 +153,18 @@ function WindowIcon({ size = 16, color = "currentColor" }) {
   );
 }
 
+// Neither lucide-react icon set has a "site/lot boundary" glyph — a dashed
+// property-line rectangle with a small corner survey marker reads
+// unambiguously as "terreno" instead of just another plain square.
+function TerrenoIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1" strokeDasharray="3 2.2" />
+      <circle cx="3.5" cy="3.5" r="1.4" fill={color} stroke="none" />
+    </svg>
+  );
+}
+
 // A physical wall run split into several elements (a door/window cutting
 // it, or just drawn as separate segments) otherwise makes each piece find
 // its own nearest facing wall independently in nearestParallelWallDims
@@ -1078,6 +1090,8 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   // left exactly as the tap-chain logic in handleTap expects it.
   const [gestureAnchor, setGestureAnchor] = useState(null);
   const [polygon, setPolygon] = useState([]);
+  const [terrenoW, setTerrenoW] = useState("10");
+  const [terrenoD, setTerrenoD] = useState("20");
   const [ambienteAuto, setAmbienteAuto] = useState(true);
   const [lastPolygonAdd, setLastPolygonAdd] = useState(1);
   const [autoRoomMsg, setAutoRoomMsg] = useState("");
@@ -1838,6 +1852,14 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const roomPolys = elements.filter(e => e.type === "room");
     const hitRoom = roomPolys.find(r => pointInPolygon(p, r.points));
     if (hitRoom) return hitRoom;
+    // Checked dead last — a terreno has no fill and is normally much
+    // bigger than anything drawn inside it, so a tap anywhere a wall/
+    // room/piso/cota already claimed must never be stolen by it. Only
+    // the open yard area (inside the lot line, outside everything else)
+    // ever resolves here.
+    const terrenos = elements.filter(e => e.type === "terreno");
+    const hitTerreno = terrenos.find(t => pointInPolygon(p, t.points));
+    if (hitTerreno) return hitTerreno;
     return null;
   }
   // Like findAt, but only ever matches a wall from the ghost level(s)
@@ -1862,7 +1884,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
       return { minX: el.x, maxX: el.x, minY: el.y, maxY: el.y };
     }
-    if (el.type === "room" || el.type === "floor") {
+    if (el.type === "room" || el.type === "floor" || el.type === "terreno") {
       const xs = el.points.map(p => p.x), ys = el.points.map(p => p.y);
       return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
     }
@@ -2213,6 +2235,22 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       return;
     }
 
+    if (tool === "terreno") {
+      // Independent of any wall — a lot boundary is normally drawn BEFORE
+      // the building itself, so there's nothing to snap onto yet. Just a
+      // plain grid-snapped corner-by-corner trace, same "Fechar terreno"
+      // flow room/piso already use (see closePolygon below), plus the
+      // quick width×depth rectangle shortcut in the instructions panel for
+      // the common "I already know it's 10×20" case.
+      if (polygon.length === 0) {
+        const hitExisting = elements.find(e => e.type === "terreno" && pointInPolygon(p, e.points));
+        if (hitExisting) { setSelectedId(hitExisting.id); setTool("selecionar"); return; }
+      }
+      setLastPolygonAdd(1);
+      setPolygon([...polygon, { x: snap(rawP.x), y: snap(rawP.y) }]);
+      return;
+    }
+
     if (tool === "porta" || tool === "janela") {
       const hit = nearestWall(p);
       if (!hit) return;
@@ -2249,12 +2287,36 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     area = Math.abs(area / 2);
     const areaM2 = +((area / (GRID * GRID)) * scale * scale).toFixed(2);
     const isPiso = tool === "piso";
-    const el = isPiso
+    const isTerreno = tool === "terreno";
+    const el = isTerreno
+      ? { id: uid(), type: "terreno", points: polygon, area: areaM2 }
+      : isPiso
       ? { id: uid(), type: "floor", points: polygon, area: areaM2, floorType: FLOOR_TYPES[0], floorColor: "#B08A5C" }
       : { id: uid(), type: "room", points: polygon, area: areaM2, roomId: null, floorFinish: "A definir", floorColor: "#D9D4C8", ceilingFinish: "A definir" };
     commitElements([...elements, el]);
     setPolygon([]);
-    if (isPiso) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(`Ambiente ${elements.filter(e => e.type === "room").length + 1}`); }
+    if (isPiso || isTerreno) { setSelectedId(el.id); } else { setNamingId(el.id); setNamingValue(`Ambiente ${elements.filter(e => e.type === "room").length + 1}`); }
+    setTool("selecionar");
+  }
+  // The "já sei as medidas" fast path — type width×depth (meters) and get
+  // an instant rectangle instead of tapping four corners. Centered on
+  // whatever the canvas is currently showing (the viewBox's own center) so
+  // it lands somewhere visible no matter how far the user has panned —
+  // dragging it into its real position afterward (see the terreno-move
+  // drag handling below) is the normal next step either way.
+  function createTerrenoRect(wM, dM) {
+    const w = toNum(wM, 0), d = toNum(dM, 0);
+    if (w <= 0 || d <= 0) return;
+    const wPx = (w / scale) * GRID, dPx = (d / scale) * GRID;
+    const cx = vb ? vb.x + vb.w / 2 : 300, cy = vb ? vb.y + vb.h / 2 : 300;
+    const pts = [
+      { x: cx - wPx / 2, y: cy - dPx / 2 }, { x: cx + wPx / 2, y: cy - dPx / 2 },
+      { x: cx + wPx / 2, y: cy + dPx / 2 }, { x: cx - wPx / 2, y: cy + dPx / 2 },
+    ];
+    const el = { id: uid(), type: "terreno", points: pts, area: +(w * d).toFixed(2) };
+    commitElements([...elements, el]);
+    setPolygon([]);
+    setSelectedId(el.id);
     setTool("selecionar");
   }
 
@@ -2934,6 +2996,31 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     setSelectedId(el.id);
     setDragSession({ kind: "opening", id: el.id, wallId: el.wallId });
   }
+  // Moves the WHOLE lot boundary — the usual next step right after
+  // "Criar retângulo" drops it at the view's center, since the real spot
+  // on the property almost never lines up with wherever that happened to
+  // land.
+  function beginDragTerrenoMove(el, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    if (multiSelectMode) { toggleSelectionMember(el.id); return; }
+    pushHistory();
+    isDraggingRef.current = true;
+    setSelectedId(el.id);
+    setDragSession({ kind: "terreno-move", id: el.id, startPointer: svgPointRaw(e), origPoints: el.points });
+  }
+  // One corner at a time — a real lot is rarely a perfect rectangle, so
+  // the quick-rectangle shortcut is meant to be nudged into the actual
+  // shape afterward rather than redrawn from scratch.
+  function beginDragTerrenoVertex(el, idx, e) {
+    if (tool !== "selecionar") return;
+    if (e.touches && e.touches.length > 1) return;
+    e.stopPropagation(); e.preventDefault();
+    pushHistory();
+    isDraggingRef.current = true;
+    setDragSession({ kind: "terreno-vertex", id: el.id, vIdx: idx });
+  }
   function onCanvasPointerMove(e) {
     onLabelDragMove(e);
     onDimLabelDragMove(e);
@@ -2986,6 +3073,20 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       if (!w) return;
       const proj = projectPointOnSegment(p, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
       commitElements(elements.map(el => el.id === dragSession.id ? { ...el, x: proj.x, y: proj.y } : el));
+    } else if (dragSession.kind === "terreno-move") {
+      const dx = snap(p.x - dragSession.startPointer.x), dy = snap(p.y - dragSession.startPointer.y);
+      commitElements(elements.map(el => el.id === dragSession.id
+        ? { ...el, points: dragSession.origPoints.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) }
+        : el));
+    } else if (dragSession.kind === "terreno-vertex") {
+      const sp = { x: snap(p.x), y: snap(p.y) };
+      commitElements(elements.map(el => {
+        if (el.id !== dragSession.id) return el;
+        const pts = el.points.map((pt, i) => i === dragSession.vIdx ? sp : pt);
+        let area = 0;
+        for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; area += a.x * b.y - b.x * a.y; }
+        return { ...el, points: pts, area: +((Math.abs(area / 2) / (GRID * GRID)) * scale * scale).toFixed(2) };
+      }));
     }
   }
   function onCanvasPointerUp() {
@@ -3266,6 +3367,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
   const PISO_TOOLS = [
     { id: "selecionar", label: "Selecionar", Icon: MousePointer2 },
     { id: "pan", label: "Pan", Icon: Hand },
+    { id: "terreno", label: "Terreno", Icon: TerrenoIcon },
     { id: "parede", label: "Parede", Icon: BrickWall },
     { id: "ambiente", label: "Ambiente", Icon: LayoutPanelTop },
     { id: "piso", label: "Piso", Icon: SquareStack },
@@ -3570,6 +3672,32 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       )}
 
+      {tool === "terreno" && planMode === "piso" && (
+        <div className="flex flex-col gap-1.5 mb-2">
+          {polygon.length === 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]" style={{ color: C.mute }}>
+              <span>Já sei as medidas:</span>
+              <input type="number" value={terrenoW} onChange={e => setTerrenoW(e.target.value)} placeholder="largura"
+                className="w-16 px-1.5 py-1 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+              <span>×</span>
+              <input type="number" value={terrenoD} onChange={e => setTerrenoD(e.target.value)} placeholder="profundidade"
+                className="w-16 px-1.5 py-1 rounded" style={{ background: C.panelAlt, color: C.chalk, border: `1px solid ${C.line}` }} />
+              <span>m</span>
+              <button onClick={() => createTerrenoRect(terrenoW, terrenoD)}
+                className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold }}>Criar retângulo</button>
+              <span>— ou toque no croqui pra marcar cada canto na mão (terreno irregular).</span>
+            </div>
+          )}
+          {polygon.length > 0 && (
+            <div className="flex items-center gap-2 text-[11px]" style={{ color: C.mute }}>
+              <span>{polygon.length} ponto(s) marcados</span>
+              <button onClick={closePolygon} disabled={polygon.length < 3}
+                className="px-2 py-1 rounded" style={{ ...heading, fontWeight: 600, background: C.goldTint, color: C.gold, opacity: polygon.length < 3 ? 0.4 : 1 }}>Fechar terreno</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {tool === "estender" && planMode === "piso" && (
         <div className="mb-2 text-[10px]" style={{ color: extendMsg ? C.bad : C.mute }}>
           {extendMsg || (extendSourceId ? "Agora toque na parede que ela deve alcançar." : "Toque na parede que quer esticar ou encolher.")}
@@ -3795,6 +3923,43 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
             — the PDF is meant to read as a clean executive drawing, not a
             screenshot of the editor's own drafting aid. */}
         <rect x={viewBox.x - viewBox.w} y={viewBox.y - viewBox.h} width={viewBox.w * 3} height={viewBox.h * 3} fill={exportMode ? "#FFFFFF" : (showGrid ? `url(#grid-${level.id})` : "#DCDCD8")} />
+
+        {/* The lot boundary — drawn first (behind everything, including
+            the grid-area background above) in the standard property-line
+            convention: no fill, a long-dash/short-dash stroke, each edge's
+            own length labeled right on it. Never counted as a "room" or
+            folded into any area total — it's a site reference, not
+            floor area. */}
+        {planMode === "piso" && elements.filter(el => el.type === "terreno" && phaseVisible(el)).map(el => {
+          const isSel = selectedId === el.id;
+          const centroid = polygonCentroid(el.points);
+          return (
+            <g key={el.id}>
+              <polygon points={el.points.map(p => `${p.x},${p.y}`).join(" ")} fill="none"
+                stroke={isSel ? "#3E7CA6" : "#8C8477"} strokeWidth={isSel ? 2 : 1.5} strokeDasharray="9,3,2,3"
+                onMouseDown={e => beginDragTerrenoMove(el, e)} onTouchStart={e => beginDragTerrenoMove(el, e)}
+                style={{ cursor: tool === "selecionar" ? "move" : "default" }} />
+              {el.points.map((pt, i) => {
+                const next = el.points[(i + 1) % el.points.length];
+                const midX = (pt.x + next.x) / 2, midY = (pt.y + next.y) / 2;
+                const lenM = (Math.hypot(next.x - pt.x, next.y - pt.y) / GRID) * scale;
+                return (
+                  <text key={i} x={midX} y={midY - 5} fontSize="9" fontWeight="600" fill="#8C8477" textAnchor="middle" style={{ pointerEvents: "none" }}>
+                    {lenM.toFixed(2)} m
+                  </text>
+                );
+              })}
+              <text x={centroid.x} y={centroid.y} fontSize="10" fontWeight="700" fill="#8C8477" textAnchor="middle" style={{ pointerEvents: "none" }}>
+                Terreno · {el.area} m²
+              </text>
+              {isSel && tool === "selecionar" && el.points.map((pt, i) => (
+                <circle key={i} cx={pt.x} cy={pt.y} r="6" fill="#3E7CA6" stroke="#fff" strokeWidth="1.5"
+                  onMouseDown={e => beginDragTerrenoVertex(el, i, e)} onTouchStart={e => beginDragTerrenoVertex(el, i, e)}
+                  style={{ cursor: "grab" }} />
+              ))}
+            </g>
+          );
+        })}
 
         {showBelow && ghostLevel(belowLevel, "#8A8880")}
         {showAbove && ghostLevel(aboveLevel, "#4A4A46")}
@@ -4485,7 +4650,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         <div className="mt-2 p-2.5 rounded-lg" style={{ background: C.goldTint, border: `1px solid ${C.gold}` }}>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[11px] font-medium" style={{ color: C.gold }}>
-              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${cotaModeLabel(selected)}` : "Luminária"}
+              {selected.type === "wall" ? `Parede ${selected.tag}` : selected.type === "door" ? `Porta ${selected.tag}` : selected.type === "window" ? `Janela ${selected.tag}` : selected.type === "room" ? `Ambiente: ${selected.name || "sem nome"}` : selected.type === "floor" ? `Piso · ${selected.floorType}` : selected.type === "terreno" ? "Terreno" : selected.type === "stair" ? `Escada ${selected.tag}` : selected.type === "cota" ? `Cota · ${cotaModeLabel(selected)}` : "Luminária"}
             </span>
             <button onClick={() => setSelectedId(null)}><X size={14} color={C.gold} /></button>
           </div>
@@ -4627,6 +4792,12 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
                   className="w-6 h-6 rounded" style={{ border: `1px solid ${C.line}`, background: "transparent" }} />
                 <span style={{ color: C.mute }}>{selected.area} m²</span>
               </div>
+            </div>
+          )}
+          {selected.type === "terreno" && (
+            <div className="space-y-1 text-[11px]" style={{ color: C.mute }}>
+              <div>Área do lote: {selected.area} m²</div>
+              <div>Arraste a linha para mover; arraste um dos círculos nos cantos para ajustar cada vértice (terreno irregular).</div>
             </div>
           )}
           {selected.type === "stair" && (

@@ -56,7 +56,7 @@ export function fitViewBoxToElements(elements, w, h) {
     } else if (el.type === "door" || el.type === "window" || el.type === "luminaria") {
       minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x);
       minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y);
-    } else if (el.type === "room") {
+    } else if (el.type === "room" || el.type === "terreno") {
       el.points.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
     }
   });
