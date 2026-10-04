@@ -158,6 +158,95 @@ function posicaoMundo(model: StepModel, objectPlacementId: number, centroBaseLoc
   return { x: x / 100, y: z / 100, z: y / 100 }; // IFC é Z-up; app usa Y-up (three.js)
 }
 
+function dist3(a: [number, number, number], b: [number, number, number]): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+interface CandidatoTag {
+  id: number;
+  tagUnico: string;
+  pos: [number, number, number];
+}
+
+/**
+ * Um baldrame corrido passando por vários pilares vira, no IFC, um IfcBeam POR VÃO — mas o
+ * Eberick repete o mesmo nome/tag (ex. "V12") em todos os vãos dessa viga corrida, já que pro
+ * projetista é "a mesma viga". Sem desambiguar, cada vão viraria um BimElement próprio com a tag
+ * colidindo — e pior, a armadura (agrupada por tag) seria atribuída por INTEIRO a cada vão,
+ * multiplicando o aço real por quantos vãos existirem. Essa função detecta tags repetidas dentro
+ * do mesmo tipo de entidade (sapata/pilar/viga são tipos diferentes — "P3" como sapata e "P3"
+ * como pilar não colide, é o mesmo elemento visto por dois lados) e gera uma tag única por vão
+ * (`"V12 (trecho 1)"`, `"V12 (trecho 2)"`, ...), ordenada pela posição no mundo pra ficar estável.
+ * Devolve tanto o mapa entidade→tag única (pra nomear o BimElement) quanto, por tag original, os
+ * candidatos com sua posição (pra reatribuir cada barra de armadura ao vão fisicamente mais
+ * próximo dela, em vez de duplicar o grupo inteiro em todos os vãos).
+ */
+function construirTagsUnicas(
+  model: StepModel,
+  idsNoPavimento: Set<number>,
+  placementCache: Map<number, Transform>,
+): { tagPorEntidade: Map<number, string>; candidatosPorTagOriginal: Map<string, CandidatoTag[]> } {
+  const porChave = new Map<string, number[]>(); // "TIPO::tagOriginal" -> [entityIds]
+  for (const id of idsNoPavimento) {
+    const tipo = getType(model, id);
+    if (tipo !== 'IFCFOOTING' && tipo !== 'IFCCOLUMN' && tipo !== 'IFCBEAM') continue;
+    const args = getArgs(model, id);
+    if (!args) continue;
+    const tagOriginal = asStr(args[2]) ?? `#${id}`;
+    const chave = `${tipo}::${tagOriginal}`;
+    const lista = porChave.get(chave) ?? [];
+    lista.push(id);
+    porChave.set(chave, lista);
+  }
+
+  const tagPorEntidade = new Map<number, string>();
+  const candidatosPorTagOriginal = new Map<string, CandidatoTag[]>();
+
+  for (const [chave, ids] of porChave) {
+    const tagOriginal = chave.slice(chave.indexOf('::') + 2);
+    if (ids.length === 1) {
+      tagPorEntidade.set(ids[0], tagOriginal);
+      continue;
+    }
+    const comPos = ids.map((id) => {
+      const args = getArgs(model, id)!;
+      const placementId = asRefId(args[5]);
+      const pos: [number, number, number] =
+        placementId !== undefined ? applyTransform(resolvePlacement(model, placementId, placementCache), [0, 0, 0]) : [0, 0, 0];
+      return { id, pos };
+    });
+    comPos.sort((a, b) => a.pos[0] - b.pos[0] || a.pos[1] - b.pos[1] || a.pos[2] - b.pos[2]);
+    const candidatos: CandidatoTag[] = comPos.map((e, i) => ({ id: e.id, pos: e.pos, tagUnico: `${tagOriginal} (trecho ${i + 1})` }));
+    for (const c of candidatos) tagPorEntidade.set(c.id, c.tagUnico);
+    candidatosPorTagOriginal.set(tagOriginal, candidatos);
+  }
+
+  return { tagPorEntidade, candidatosPorTagOriginal };
+}
+
+/**
+ * Reatribui cada barra ao vão fisicamente mais próximo quando a tag dela colide entre vários
+ * elementos do mesmo tipo (ver `construirTagsUnicas`) — muta `barra.tag` in-place pro resto do
+ * pipeline (agrupamento por tag) funcionar sem mudança. Barras sem posição conhecida ou cuja tag
+ * não colide ficam como estão.
+ */
+function reatribuirBarrasColidindo(barras: BarraInfo[], candidatosPorTagOriginal: Map<string, CandidatoTag[]>): void {
+  for (const b of barras) {
+    const candidatos = candidatosPorTagOriginal.get(b.tag);
+    if (!candidatos || candidatos.length <= 1 || !b.posMundoCm) continue;
+    let melhor = candidatos[0];
+    let melhorDist = Infinity;
+    for (const c of candidatos) {
+      const d = dist3(c.pos, b.posMundoCm);
+      if (d < melhorDist) {
+        melhorDist = d;
+        melhor = c;
+      }
+    }
+    b.tag = melhor.tagUnico;
+  }
+}
+
 export interface ResultadoImportacao {
   elementos: BimElement[];
   avisos: string[];
@@ -178,6 +267,10 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
   const placementCache = new Map<number, Transform>();
   const comprimentoCache = new Map<number, number>();
 
+  // 0) Desambigua tags repetidas (ex. baldrame corrido com um IfcBeam por vão, todos com o mesmo
+  // nome no Eberick) — ver construirTagsUnicas.
+  const { tagPorEntidade, candidatosPorTagOriginal } = construirTagsUnicas(model, idsNoPavimento, placementCache);
+
   // 1) Coleta e agrupa toda a armadura do pavimento
   const barras: BarraInfo[] = [];
   for (const id of idsNoPavimento) {
@@ -185,6 +278,10 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
     const b = parseReinforcingBar(model, id, comprimentoCache, placementCache);
     if (b) barras.push(b);
   }
+  // Quando a tag de uma barra colide entre vários vãos (ex. "V12" em 6 IfcBeam diferentes), joga
+  // cada barra pro vão fisicamente mais próximo — sem isso, o grupo de armadura inteiro (de todos
+  // os vãos somados) seria atribuído a CADA vão, multiplicando o aço real pela quantidade de vãos.
+  reatribuirBarrasColidindo(barras, candidatosPorTagOriginal);
   const gruposArmadura = agruparBarras(barras);
 
   const elementos: BimElement[] = [];
@@ -195,7 +292,9 @@ export function importarIfc(texto: string, storeyIdEscolhido?: number): Resultad
     const args = getArgs(model, id);
     if (!args) continue;
 
-    const tag = asStr(args[2]) ?? `#${id}`;
+    // Usa a tag desambiguada quando esta entidade compartilha o nome original com outras do
+    // mesmo tipo (ex. vãos de um baldrame corrido) — ver construirTagsUnicas.
+    const tag = tagPorEntidade.get(id) ?? asStr(args[2]) ?? `#${id}`;
     const objectPlacementId = asRefId(args[5]);
     const representationId = asRefId(args[6]);
     if (objectPlacementId === undefined || representationId === undefined) {

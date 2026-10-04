@@ -84,11 +84,12 @@ export interface BarraInfo {
   categoria: string;
   diametroMm: number;
   comprimentoCm: number;
-  /** Posição Z (mundo, cm, eixo vertical do IFC) da origem do placement da barra — usada só pra
-   * medir espaçamento REAL entre barras de um mesmo grupo (ex. estribos de um pilar), já que o
-   * IFC não exporta "espaçamento" como propriedade. Só faz sentido pra elementos verticais
-   * (pilares): pra vigas, a distribuição é horizontal, não em Z. */
-  zMundoCm?: number;
+  /** Posição (mundo, cm, XYZ do IFC) da origem do placement da barra — usada pra medir
+   * espaçamento real entre barras de um mesmo grupo (componente Z, o eixo vertical do IFC, pra
+   * pilares) e pra atribuir cada barra ao elemento físico mais próximo quando várias entidades
+   * do IFC compartilham a mesma tag (ex. um baldrame corrido em vários vãos, onde o Eberick
+   * exporta um IfcBeam por vão mas repete o mesmo nome em todos). */
+  posMundoCm?: [number, number, number];
 }
 
 /** Separa "P1 - Estribo" em { tag: "P1", categoria: "Estribo" }. */
@@ -114,16 +115,16 @@ export function parseReinforcingBar(
   const { tag, categoria } = separarNome(nome);
   const comprimentoCm = resolverComprimentoBarraCm(model, representationId, comprimentoCache);
 
-  let zMundoCm: number | undefined;
+  let posMundoCm: [number, number, number] | undefined;
   if (placementCache) {
     const objectPlacementId = asRefId(args[5]);
     if (objectPlacementId !== undefined) {
       const world = resolvePlacement(model, objectPlacementId, placementCache);
-      zMundoCm = applyTransform(world, [0, 0, 0])[2];
+      posMundoCm = applyTransform(world, [0, 0, 0]);
     }
   }
 
-  return { tag, categoria, diametroMm: diametroCm * 10, comprimentoCm, zMundoCm };
+  return { tag, categoria, diametroMm: diametroCm * 10, comprimentoCm, posMundoCm };
 }
 
 /**
@@ -133,7 +134,7 @@ export function parseReinforcingBar(
  * estão distribuídas). Só confiável pra grupos com 2+ barras com posição conhecida.
  */
 export function espacamentoRealCm(barras: BarraInfo[]): number | undefined {
-  const zs = barras.map((b) => b.zMundoCm).filter((z): z is number => z !== undefined);
+  const zs = barras.map((b) => b.posMundoCm?.[2]).filter((z): z is number => z !== undefined);
   if (zs.length < 2) return undefined;
   zs.sort((a, b) => a - b);
   const span = zs[zs.length - 1] - zs[0];
