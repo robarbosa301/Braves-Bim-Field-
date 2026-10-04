@@ -15,6 +15,20 @@ Abre em `http://localhost:5173`. Layout **estilo aplicativo**, adaptado pro apar
 
 `npm run build` gera o build de produção em `dist/` (pode ser hospedado em qualquer servidor estático).
 
+## Publicado — acessar pelo celular/iPad
+
+O app é publicado automaticamente no **GitHub Pages** a cada push no branch `claude/optimistic-ride-a4n6g4` (`.github/workflows/deploy.yml` — builda e publica sozinho, não precisa rodar nada manualmente depois de um push). O link fica em:
+
+```
+https://<seu-usuário-do-github>.github.io/Braves-Bim-Field-/
+```
+
+**Passo único, manual, de configuração** (só precisa fazer uma vez): no GitHub, abre o repositório → **Settings** → **Pages** → em "Build and deployment", em **Source** escolhe **GitHub Actions**. Depois disso, todo push novo já publica sozinho — não precisa repetir esse passo.
+
+Pra abrir no iPhone/iPad como um app (ícone na tela, tela cheia, sem barra do Safari): abre o link acima no **Safari**, toca no ícone de compartilhar → **"Adicionar à Tela de Início"**.
+
+Importante: isso publica o **código** (a versão mais recente do app) — não sincroniza **dados** entre aparelhos. Cada aparelho guarda os próprios elementos/quantitativos/execução localmente, sem um servidor por trás ainda (ver Roadmap, item de backend).
+
 ## O que o MVP faz
 
 1. **Criar elementos** (barra lateral esquerda): sapata, pilar de arranque, viga baldrame — cada um com uma identificação (tag) de campo, ex. `S1`, `P1`, `VB1`. A lista fica agrupada por tipo, com cada grupo retrátil (clica no cabeçalho pra abrir/fechar) e mostrando a quantidade e o peso total do grupo — útil com dezenas de elementos importados. Selecionar um elemento pelo viewer 3D expande o grupo dele sozinho na lista.
