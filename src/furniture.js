@@ -4,14 +4,18 @@
 // proportions, same part list) that shows up in 3D and in the exported
 // JSON, instead of two independently-drawn approximations drifting apart.
 //
-// Each family is a flat list of box/cylinder "parts" in METERS, local to
-// the instance's own origin and rotation: dx runs along the family's own
-// width axis, dy along its own depth axis (dy<0 = the family's own "back"/
-// headboard/backrest side, by convention — arbitrary but consistent), and
-// baseY is each part's own height off the floor. A placed element then
+// Each family is a flat list of box/cylinder/sphere "parts" in METERS,
+// local to the instance's own origin and rotation: dx runs along the
+// family's own width axis, dy along its own depth axis (dy<0 = the
+// family's own "back"/headboard/backrest side, by convention — arbitrary
+// but consistent), and baseY is each part's own height off the floor (its
+// BOTTOM, for box/cyl; a sphere's own baseY+r is its center, since a
+// sphere has no flat bottom face to measure from). A placed element then
 // only needs to store {familyId, x, y, rotation} — every part's real-world
 // position/size is derived from here, both for the 2D top-down footprint
-// (w × d) and the 3D box/cylinder (w × d × h, or r × h for a cylinder).
+// (w × d, or 2r × 2r — a sphere reads exactly like a cylinder from
+// straight above, so 2D draws both the same way) and the 3D mesh (box,
+// cylinder, or sphere).
 export const FURNITURE_FAMILIES = {
   cama_casal: {
     label: "Cama de casal", category: "Dormitório", wM: 1.4, dM: 2.0, hM: 0.55,
@@ -68,9 +72,69 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0, dy: 0.01, w: 2.0, d: 0.62, h: 0.04, baseY: 0.9, color: "#D9D4C8" },
     ],
   },
+  // ---- Área externa ----
+  piscina: {
+    label: "Piscina", category: "Área externa", wM: 4.0, dM: 8.0, hM: 1.3,
+    parts: [
+      { shape: "box", dx: 0, dy: 0, w: 4.0, d: 8.0, h: 0.06, baseY: 0, color: "#C9C4B8" },
+      { shape: "box", dx: 0, dy: 0, w: 3.5, d: 7.5, h: 1.3, baseY: -1.3, color: "#4A9CB0" },
+    ],
+  },
+  banco: {
+    label: "Banco", category: "Área externa", wM: 1.2, dM: 0.45, hM: 0.8,
+    parts: [
+      { shape: "box", dx: 0, dy: 0.08, w: 1.2, d: 0.4, h: 0.45, baseY: 0, color: "#8A6A47" },
+      { shape: "box", dx: 0, dy: -0.17, w: 1.2, d: 0.06, h: 0.35, baseY: 0.45, color: "#8A6A47" },
+    ],
+  },
+  mesa_externa: {
+    label: "Mesa externa (4 lugares)", category: "Área externa", wM: 1.3, dM: 1.3, hM: 0.75,
+    parts: [
+      { shape: "cyl", dx: 0, dy: 0, r: 0.6, h: 0.05, baseY: 0.7, color: "#E8E4DA" },
+      { shape: "cyl", dx: 0, dy: 0, r: 0.08, h: 0.7, baseY: 0, color: "#8C8C86" },
+      { shape: "cyl", dx: 0, dy: -0.85, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
+      { shape: "cyl", dx: 0, dy: 0.85, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
+      { shape: "cyl", dx: -0.85, dy: 0, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
+      { shape: "cyl", dx: 0.85, dy: 0, r: 0.18, h: 0.45, baseY: 0, color: "#D9D4C8" },
+    ],
+  },
+  // ---- Paisagismo ----
+  vaso_planta: {
+    label: "Vaso de planta", category: "Paisagismo", wM: 0.5, dM: 0.5, hM: 0.8,
+    parts: [
+      { shape: "cyl", dx: 0, dy: 0, r: 0.16, h: 0.25, baseY: 0, color: "#B5623A" },
+      { shape: "sphere", dx: 0, dy: 0, r: 0.26, baseY: 0.25, color: "#4A7C3F" },
+    ],
+  },
+  planta_alta: {
+    label: "Planta alta", category: "Paisagismo", wM: 0.8, dM: 0.8, hM: 1.1,
+    parts: [
+      { shape: "cyl", dx: 0, dy: 0, r: 0.2, h: 0.3, baseY: 0, color: "#B5623A" },
+      { shape: "sphere", dx: 0, dy: 0, r: 0.4, baseY: 0.3, color: "#3C6E38" },
+    ],
+  },
+  planta_baixa: {
+    label: "Planta baixa", category: "Paisagismo", wM: 0.5, dM: 0.5, hM: 0.5,
+    parts: [
+      { shape: "sphere", dx: 0, dy: 0, r: 0.25, baseY: 0, color: "#5A8C4E" },
+    ],
+  },
+  palmeira: {
+    label: "Palmeira", category: "Paisagismo", wM: 1.6, dM: 1.6, hM: 3.2,
+    parts: [
+      { shape: "cyl", dx: 0, dy: 0, r: 0.1, h: 2.2, baseY: 0, color: "#8A6A47" },
+      { shape: "sphere", dx: 0, dy: 0, r: 0.7, baseY: 2.3, color: "#3C6E38" },
+      { shape: "sphere", dx: 0.3, dy: 0.15, r: 0.42, baseY: 2.65, color: "#4A7C3F" },
+    ],
+  },
 };
-// Display order for the catalog picker — grouped by category, basic
-// interior set first (the scope confirmed for this first delivery).
+// Display order for the catalog picker — grouped by category (header rows
+// in the 2D tool panel key off each family's own `category` field, in the
+// order their first member appears here).
 export const FURNITURE_LIST = [
-  "cama_casal", "cama_solteiro", "guarda_roupa", "sofa", "mesa_jantar", "bancada_cozinha",
+  "cama_casal", "cama_solteiro", "guarda_roupa",
+  "sofa", "mesa_jantar",
+  "bancada_cozinha",
+  "piscina", "banco", "mesa_externa",
+  "vaso_planta", "planta_alta", "planta_baixa", "palmeira",
 ];

@@ -761,10 +761,19 @@ export default function ThreeDView({ buildingLevels, elevationsById, roofs = EMP
           group.position.set(f.x, elev, f.y);
           group.rotation.y = (toNum(f.rotation, 0) * Math.PI) / 180;
           fam.parts.forEach(p => {
-            const mesh = p.shape === "box"
-              ? new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.75 }))
-              : new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r, p.h, 16), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.7 }));
-            mesh.position.set(p.dx, p.baseY + p.h / 2, p.dy);
+            let mesh;
+            if (p.shape === "box") {
+              mesh = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.75 }));
+              mesh.position.set(p.dx, p.baseY + p.h / 2, p.dy);
+            } else if (p.shape === "sphere") {
+              // No flat bottom to measure from like box/cyl — baseY+r is
+              // this one's own CENTER instead (foliage/canopy parts).
+              mesh = new THREE.Mesh(new THREE.SphereGeometry(p.r, 14, 10), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.85 }));
+              mesh.position.set(p.dx, p.baseY + p.r, p.dy);
+            } else {
+              mesh = new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r, p.h, 16), new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.7 }));
+              mesh.position.set(p.dx, p.baseY + p.h / 2, p.dy);
+            }
             mesh.castShadow = true; mesh.receiveShadow = true;
             group.add(mesh);
           });

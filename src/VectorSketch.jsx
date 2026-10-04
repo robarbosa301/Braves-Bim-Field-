@@ -3751,28 +3751,43 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
         </div>
       )}
 
-      {tool === "mobilia" && planMode === "piso" && (
-        <div className="flex flex-col gap-1.5 mb-2">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {FURNITURE_LIST.map(fid => {
-              const fam = FURNITURE_FAMILIES[fid];
-              const active = furnitureFamily === fid;
-              return (
-                <button key={fid} onClick={() => setFurnitureFamily(fid)}
-                  className="px-2 py-1 rounded text-[11px]"
-                  style={{ ...heading, fontWeight: 600, background: active ? C.gold : C.panelAlt, color: active ? "#141311" : C.mute, border: `1px solid ${active ? C.gold : C.line}` }}>
-                  {fam.label}
-                </button>
-              );
-            })}
+      {tool === "mobilia" && planMode === "piso" && (() => {
+        // Grouped by category (order of first appearance in FURNITURE_LIST)
+        // instead of one long flat row, now that the catalog spans
+        // interior + área externa + paisagismo.
+        const byCategory = [];
+        FURNITURE_LIST.forEach(fid => {
+          const fam = FURNITURE_FAMILIES[fid];
+          let group = byCategory.find(g => g.category === fam.category);
+          if (!group) { group = { category: fam.category, items: [] }; byCategory.push(group); }
+          group.items.push(fid);
+        });
+        return (
+          <div className="flex flex-col gap-1.5 mb-2">
+            {byCategory.map(({ category, items }) => (
+              <div key={category} className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] w-20 shrink-0" style={{ color: C.muteDim }}>{category}</span>
+                {items.map(fid => {
+                  const fam = FURNITURE_FAMILIES[fid];
+                  const active = furnitureFamily === fid;
+                  return (
+                    <button key={fid} onClick={() => setFurnitureFamily(fid)}
+                      className="px-2 py-1 rounded text-[11px]"
+                      style={{ ...heading, fontWeight: 600, background: active ? C.gold : C.panelAlt, color: active ? "#141311" : C.mute, border: `1px solid ${active ? C.gold : C.line}` }}>
+                      {fam.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            <span className="text-[10px]" style={{ color: C.mute }}>
+              {furnitureFamily
+                ? `Toque no croqui pra posicionar "${FURNITURE_FAMILIES[furnitureFamily].label}" — pode tocar várias vezes pra colocar mais de um.`
+                : "Escolha uma família acima, depois toque no croqui pra posicionar."}
+            </span>
           </div>
-          <span className="text-[10px]" style={{ color: C.mute }}>
-            {furnitureFamily
-              ? `Toque no croqui pra posicionar "${FURNITURE_FAMILIES[furnitureFamily].label}" — pode tocar várias vezes pra colocar mais de um.`
-              : "Escolha uma família acima, depois toque no croqui pra posicionar."}
-          </span>
-        </div>
-      )}
+        );
+      })()}
 
       {tool === "estender" && planMode === "piso" && (
         <div className="mb-2 text-[10px]" style={{ color: extendMsg ? C.bad : C.mute }}>
