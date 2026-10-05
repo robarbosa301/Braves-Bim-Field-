@@ -34,16 +34,29 @@ export const CANOPY_CLUSTER = [
 // backrest panel on the side FACING AWAY from the table) instead of a
 // bare circle — "dir" is the unit vector pointing from the table center
 // out through the chair (where its backrest sits), "axis" picks which
-// side of the seat that panel spans (the seat's own width or depth).
+// side of the seat that panel spans (the seat's own width, "x", for a
+// chair pulled out along dy — front/back of the table — or its own
+// depth, "y", for one pulled out along dx — the table's sides).
+// The offset MUST move along `dir`, not along `axis`: a front/back chair
+// has dir=[0,±1], so the backrest has to shift by dir[1] (not dir[0],
+// which is 0 for that chair and used to silently collapse the backrest
+// onto the seat instead of past its outer edge).
 function chairParts(dx, dy, dir, axis, color) {
   const back = axis === "x"
-    ? { shape: "box", dx: dx + dir[0] * 0.19, dy, w: 0.36, d: 0.05, h: 0.43, baseY: 0.4, color }
-    : { shape: "box", dx, dy: dy + dir[1] * 0.19, w: 0.05, d: 0.36, h: 0.43, baseY: 0.4, color };
+    ? { shape: "box", dx, dy: dy + dir[1] * 0.19, w: 0.36, d: 0.05, h: 0.43, baseY: 0.4, color }
+    : { shape: "box", dx: dx + dir[0] * 0.19, dy, w: 0.05, d: 0.36, h: 0.43, baseY: 0.4, color };
   return [
     { shape: "box", dx, dy, w: 0.36, d: 0.36, h: 0.4, baseY: 0, color },
     back,
   ];
 }
+// The backrest sits 0.19m beyond the chair's own center point (the dx/dy
+// a caller passes in) plus its own half-thickness — this is how far past
+// THAT point the chair's outermost edge reaches, so a table family's
+// wM/dM should be at least 2×(chair center offset + CHAIR_REACH) to
+// actually contain every chair, matching the real footprint the whole
+// table+chairs set needs in a room instead of just the bare tabletop.
+const CHAIR_REACH = 0.19 + 0.025;
 
 export const FURNITURE_FAMILIES = {
   cama_casal: {
@@ -99,8 +112,13 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0.65, dy: -0.2, w: 0.3, d: 0.26, h: 0.3, baseY: 0.4, color: "#B08968" },
     ],
   },
+  // wM/dM cover the whole set (table + the 4 pulled-out chairs), not just
+  // the 1.5×0.9m tabletop — a real dining set needs clearance to pull a
+  // chair out and sit, and the room-fit math (selection footprint,
+  // hit-test, "fit all") has to see that real size or the set reads as
+  // fitting somewhere it actually doesn't.
   mesa_jantar: {
-    label: "Mesa de jantar (4 lugares)", category: "Sala", wM: 1.5, dM: 0.9, hM: 0.75,
+    label: "Mesa de jantar (4 lugares)", category: "Sala", wM: 2 * (1.05 + CHAIR_REACH), dM: 2 * (0.75 + CHAIR_REACH), hM: 0.75,
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 1.5, d: 0.9, h: 0.05, baseY: 0.7, color: "#8A6A47" },
       { shape: "box", dx: -0.65, dy: -0.35, w: 0.06, d: 0.06, h: 0.7, baseY: 0, color: "#3A3834" },
@@ -157,8 +175,10 @@ export const FURNITURE_FAMILIES = {
       { shape: "box", dx: 0.57, dy: 0, w: 0.04, d: 0.4, h: 0.22, baseY: 0.45, color: "#8A6A47" },
     ],
   },
+  // Same real-footprint fix as mesa_jantar — wM/dM cover the 1.2m table
+  // PLUS its 4 pulled-out chairs, the actual space the set needs.
   mesa_externa: {
-    label: "Mesa externa (4 lugares)", category: "Área externa", wM: 1.3, dM: 1.3, hM: 0.75,
+    label: "Mesa externa (4 lugares)", category: "Área externa", wM: 2 * (0.85 + CHAIR_REACH), dM: 2 * (0.85 + CHAIR_REACH), hM: 0.75,
     parts: [
       { shape: "cyl", dx: 0, dy: 0, r: 0.6, h: 0.05, baseY: 0.7, color: "#E8E4DA" },
       { shape: "cyl", dx: 0, dy: 0, r: 0.08, h: 0.7, baseY: 0, color: "#8C8C86" },
@@ -328,22 +348,25 @@ export const FURNITURE_FAMILIES = {
       // plain bar, with a generous rx so it actually reads as a fairing.
       { shape: "box", dx: 0, dy: -0.15, w: 0.32, d: 0.75, h: 0.5, baseY: 0, color: "#4A5568", rx: 0.14 },
       { shape: "box", dx: 0, dy: 0.42, w: 0.22, d: 0.5, h: 0.42, baseY: 0, color: "#4A5568", rx: 0.1 },
-      { shape: "cyl", dx: 0, dy: -0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
-      { shape: "cyl", dx: 0, dy: 0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
+      { shape: "cyl", dx: 0, dy: -0.72, r: 0.19, h: 0.6, baseY: 0, color: "#232220" },
+      { shape: "cyl", dx: 0, dy: 0.72, r: 0.19, h: 0.6, baseY: 0, color: "#232220" },
       // Handlebar and seat.
       { shape: "box", dx: 0, dy: -0.78, w: 0.45, d: 0.04, h: 0.04, baseY: 0.95, color: "#232220", rx: 0.02 },
       { shape: "box", dx: 0, dy: 0.1, w: 0.3, d: 0.4, h: 0.08, baseY: 0.5, color: "#232220", rx: 0.08 },
     ],
   },
+  // A real adult bike's wheels are ~0.65-0.70m in diameter, not the 0.24m
+  // toy-sized ones this had before — that alone made the whole family read
+  // about half its real size next to anything parked beside it.
   bicicleta: {
-    label: "Bicicleta", category: "Garagem", wM: 0.3, dM: 1.2, hM: 1.0,
+    label: "Bicicleta", category: "Garagem", wM: 0.6, dM: 1.75, hM: 1.05,
     parts: [
       { shape: "box", dx: 0, dy: 0, w: 0.08, d: 1.0, h: 0.3, baseY: 0, color: "#3A3834", rx: 0.04 },
-      { shape: "cyl", dx: 0, dy: -0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
-      { shape: "cyl", dx: 0, dy: 0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
+      { shape: "cyl", dx: 0, dy: -0.52, r: 0.33, h: 0.04, baseY: 0, color: "#232220" },
+      { shape: "cyl", dx: 0, dy: 0.52, r: 0.33, h: 0.04, baseY: 0, color: "#232220" },
       // Handlebar and seat.
-      { shape: "box", dx: 0, dy: -0.5, w: 0.4, d: 0.03, h: 0.03, baseY: 0.85, color: "#3A3834", rx: 0.015 },
-      { shape: "box", dx: 0, dy: 0.38, w: 0.1, d: 0.22, h: 0.03, baseY: 0.78, color: "#232220", rx: 0.05 },
+      { shape: "box", dx: 0, dy: -0.46, w: 0.5, d: 0.03, h: 0.03, baseY: 0.95, color: "#3A3834", rx: 0.015 },
+      { shape: "box", dx: 0, dy: 0.35, w: 0.1, d: 0.22, h: 0.03, baseY: 0.88, color: "#232220", rx: 0.05 },
     ],
   },
   // ---- Sala (continuação) ----
