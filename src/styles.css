@@ -28,6 +28,25 @@ body {
   border-bottom: 1px solid #2b2f36;
 }
 
+.topbar-identidade {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Identidade fixa do app — sempre visível, distinta do nome editável da obra/projeto, pra nunca
+   ficar parecendo o mesmo app que o Braves Minfield (ou qualquer outro app da Braves). */
+.app-nome {
+  color: #7fa6f5;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .obra-nome {
   background: transparent;
   border: none;
@@ -35,6 +54,7 @@ body {
   font-size: 1.1rem;
   font-weight: 600;
   padding: 4px;
+  min-width: 0;
 }
 
 .obra-nome:focus {
@@ -619,8 +639,12 @@ button:disabled {
     padding: 10px 12px;
   }
 
-  .obra-nome {
+  .topbar-identidade {
     width: 100%;
+  }
+
+  .obra-nome {
+    flex: 1;
     font-size: 1.05rem;
   }
 

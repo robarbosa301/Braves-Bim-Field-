@@ -25,7 +25,7 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set) => ({
-      nomeObra: 'Minha Obra',
+      nomeObra: 'Residencial Eddy',
       elementos: [],
       elementoSelecionadoId: null,
 

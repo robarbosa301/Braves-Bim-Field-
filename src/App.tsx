@@ -81,7 +81,13 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <input className="obra-nome" value={nomeObra} onChange={(e) => setNomeObra(e.target.value)} />
+        <div className="topbar-identidade">
+          {/* Identidade fixa do app (visualizador BIM 5D) — separada do nome da obra/projeto,
+              que é editável. Esse app é uma ferramenta própria, não faz parte do Braves Minfield
+              nem de qualquer outro app da Braves. */}
+          <span className="app-nome">BIM Field</span>
+          <input className="obra-nome" value={nomeObra} onChange={(e) => setNomeObra(e.target.value)} />
+        </div>
         <div className="topbar-right">
           {elementoSelecionado && (
             <button className={`toggle-isolado ${modoIsolado ? 'active' : ''}`} onClick={() => setModoIsolado((v) => !v)}>
