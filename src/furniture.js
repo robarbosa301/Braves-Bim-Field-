@@ -324,23 +324,26 @@ export const FURNITURE_FAMILIES = {
   moto: {
     label: "Moto", category: "Garagem", wM: 0.5, dM: 2.0, hM: 1.1,
     parts: [
-      { shape: "box", dx: 0, dy: 0, w: 0.35, d: 1.3, h: 0.5, baseY: 0, color: "#4A5568" },
+      // Tapered teardrop body (tank narrower toward the tail) instead of a
+      // plain bar, with a generous rx so it actually reads as a fairing.
+      { shape: "box", dx: 0, dy: -0.15, w: 0.32, d: 0.75, h: 0.5, baseY: 0, color: "#4A5568", rx: 0.14 },
+      { shape: "box", dx: 0, dy: 0.42, w: 0.22, d: 0.5, h: 0.42, baseY: 0, color: "#4A5568", rx: 0.1 },
       { shape: "cyl", dx: 0, dy: -0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
       { shape: "cyl", dx: 0, dy: 0.75, r: 0.15, h: 0.6, baseY: 0, color: "#232220" },
       // Handlebar and seat.
-      { shape: "box", dx: 0, dy: -0.78, w: 0.45, d: 0.04, h: 0.04, baseY: 0.95, color: "#232220" },
-      { shape: "box", dx: 0, dy: 0.1, w: 0.3, d: 0.4, h: 0.08, baseY: 0.5, color: "#232220" },
+      { shape: "box", dx: 0, dy: -0.78, w: 0.45, d: 0.04, h: 0.04, baseY: 0.95, color: "#232220", rx: 0.02 },
+      { shape: "box", dx: 0, dy: 0.1, w: 0.3, d: 0.4, h: 0.08, baseY: 0.5, color: "#232220", rx: 0.08 },
     ],
   },
   bicicleta: {
     label: "Bicicleta", category: "Garagem", wM: 0.3, dM: 1.2, hM: 1.0,
     parts: [
-      { shape: "box", dx: 0, dy: 0, w: 0.08, d: 1.0, h: 0.3, baseY: 0, color: "#3A3834" },
+      { shape: "box", dx: 0, dy: 0, w: 0.08, d: 1.0, h: 0.3, baseY: 0, color: "#3A3834", rx: 0.04 },
       { shape: "cyl", dx: 0, dy: -0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
       { shape: "cyl", dx: 0, dy: 0.55, r: 0.12, h: 0.04, baseY: 0, color: "#232220" },
       // Handlebar and seat.
-      { shape: "box", dx: 0, dy: -0.5, w: 0.4, d: 0.03, h: 0.03, baseY: 0.85, color: "#3A3834" },
-      { shape: "box", dx: 0, dy: 0.38, w: 0.1, d: 0.22, h: 0.03, baseY: 0.78, color: "#232220" },
+      { shape: "box", dx: 0, dy: -0.5, w: 0.4, d: 0.03, h: 0.03, baseY: 0.85, color: "#3A3834", rx: 0.015 },
+      { shape: "box", dx: 0, dy: 0.38, w: 0.1, d: 0.22, h: 0.03, baseY: 0.78, color: "#232220", rx: 0.05 },
     ],
   },
   // ---- Sala (continuação) ----

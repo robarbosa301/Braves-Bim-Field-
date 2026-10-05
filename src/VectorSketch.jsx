@@ -4674,10 +4674,19 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
               onMouseDown={e => beginDragFurnitureMove(el, e)} onTouchStart={e => beginDragFurnitureMove(el, e)}
               style={{ cursor: tool === "selecionar" ? "move" : "default" }}>
               {fam.parts.map((p, i) => {
-                if (p.shape === "box") return (
-                  <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx={p.rx != null ? mToPx(p.rx) : 1}
-                    fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
-                );
+                if (p.shape === "box") {
+                  // Default corner rounding: a realistic small radius (like
+                  // an actual furniture edge) that gracefully becomes a full
+                  // pill shape on thin accent strips (handles, seams) since
+                  // SVG clamps rx to half the shorter side on its own — a
+                  // part only needs its own `rx` when it wants something
+                  // OTHER than that default (the car's body panels, mainly).
+                  const rxM = p.rx != null ? p.rx : Math.min(0.04, Math.min(p.w, p.d) / 2);
+                  return (
+                    <rect key={i} x={mToPx(p.dx - p.w / 2)} y={mToPx(p.dy - p.d / 2)} width={mToPx(p.w)} height={mToPx(p.d)} rx={mToPx(rxM)}
+                      fill={p.color} stroke={isSel ? "#3E7CA6" : "#5B5650"} strokeWidth={isSel ? 1.4 : 0.6} />
+                  );
+                }
                 // A "canopy" part (tree/shrub foliage) draws as the same
                 // fixed cluster of overlapping circles every time — an
                 // actual organic tree-plan symbol instead of one flat
