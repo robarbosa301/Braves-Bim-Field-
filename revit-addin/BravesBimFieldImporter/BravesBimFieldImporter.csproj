@@ -10,8 +10,9 @@
           between 2025 and 2026, so ONE net8.0-windows build covers both —
           install.ps1 copies that same DLL into both versions' Addins
           folders. If something really did change between them, the fix is
-          to build net8.0-windows twice with a different RevitInstallDir
-          each time, not to add a third TFM here.)
+          to build net8.0-windows twice, once per RevitAPI package version
+          below — see the PackageReference ItemGroups further down — not to
+          add a third TFM here.)
     -->
     <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
     <LangVersion>latest</LangVersion>
@@ -22,15 +23,6 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-
-    <!--
-      Adjust these if your Revit install isn't in the default location, e.g.
-      by passing /p:RevitInstallDir="D:\Autodesk\Revit 2025" to msbuild, or
-      editing the defaults below. net8.0-windows defaults to the 2025 folder
-      since that's the one actually being compiled against (see note above).
-    -->
-    <RevitInstallDir Condition="'$(RevitInstallDir)'=='' And '$(TargetFramework)'=='net48'">C:\Program Files\Autodesk\Revit 2024</RevitInstallDir>
-    <RevitInstallDir Condition="'$(RevitInstallDir)'=='' And '$(TargetFramework)'=='net8.0-windows'">C:\Program Files\Autodesk\Revit 2025</RevitInstallDir>
   </PropertyGroup>
 
   <!-- net8.0-windows pulls in WinForms/WPF through the Windows Desktop
@@ -44,6 +36,36 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!--
+    RevitAPI/RevitAPIUI from NuGet instead of a HintPath into a local Revit
+    install — Nice3point.Revit.Api.* (community-maintained, one of the
+    standard ways Revit plugins are built in CI; see
+    https://github.com/Nice3point/RevitTemplates) republishes the same DLLs
+    Revit itself ships, versioned by year, purely for compiling against.
+    This is what makes it possible to build this add-in on a machine (or a
+    CI runner) that has never had Revit installed — see
+    .github/workflows/revit-addin-build.yml at the repo root, which builds
+    both TFMs on every push using exactly this.
+
+    net8.0-windows is compiled against the 2025 package on purpose (not
+    2026) — same reasoning as the TargetFrameworks comment above: Autodesk
+    didn't break this add-in's slice of the API between 2025 and 2026, so
+    compiling against the older of the two is the safer bet (anything it
+    can see was already there in 2025) and the one resulting DLL runs on
+    both. ExcludeAssets="runtime" is the PackageReference equivalent of the
+    old Reference/Private=false — compile against it, but never copy it
+    into the add-in's own output (Revit already has it loaded; shipping a
+    second copy is actively wrong, not just extra).
+  -->
+  <ItemGroup Condition="'$(TargetFramework)'=='net48'">
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2024.3.30" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2024.3.30" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)'=='net8.0-windows'">
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.4.20" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2025.4.20" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
@@ -64,18 +86,6 @@
     <!-- PushButtonData images are WPF ImageSource (BitmapImage). -->
     <Reference Include="PresentationCore" />
     <Reference Include="WindowsBase" />
-  </ItemGroup>
-
-  <!-- These ship with Revit itself — never redistribute them, hence Private=false. -->
-  <ItemGroup>
-    <Reference Include="RevitAPI">
-      <HintPath>$(RevitInstallDir)\RevitAPI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="RevitAPIUI">
-      <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
 
 </Project>

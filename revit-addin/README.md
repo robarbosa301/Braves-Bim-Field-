@@ -127,15 +127,48 @@ O mesmo aviso vale, com ainda mais força, pra build `net8.0-windows`
 .NET Framework pra .NET 8 é uma mudança de verdade no jeito como o projeto
 compila, não só mais uma versão — é a parte com mais chance de precisar de
 ajuste na primeira tentativa. A build `net48` (2024) é a mesma de antes,
-só com uma configuração nova ao lado.
+só com uma configuração nova ao lado. A build automática (próxima seção)
+ajuda aqui: se o GitHub Actions falhar, o log do erro já aparece ali, sem
+precisar reproduzir nada manualmente — é só mandar pra mim.
 
-## Pré-requisitos
+## Build automática — sem precisar abrir o Visual Studio
 
-- Windows com **Revit 2024, 2025 e/ou 2026** instalado (pode ter mais de um)
+Toda vez que o código deste add-in muda, o GitHub já compila as duas
+versões (net48 e net8.0-windows) sozinho, na nuvem — não precisa de
+Windows, Revit nem Visual Studio na sua máquina pra isso:
+
+1. No repositório no GitHub, abra a aba **Actions**.
+2. Clique em **Revit Add-in Build** na lista à esquerda.
+3. Abra o run mais recente (ou clique em **Run workflow** pra forçar um
+   novo, caso queira recompilar sem ter mudado nada).
+4. Role até o final da página do run — em **Artifacts** tem 3 arquivos
+   pra baixar:
+   - **BravesBimFieldImporter-completo** — as duas builds + `install.ps1` +
+     o instalador `.exe` opcional, tudo junto. É esse que você quer na
+     maioria das vezes.
+   - **BravesBimFieldImporter-Revit2024-net48** — só a build do 2024.
+   - **BravesBimFieldImporter-Revit2025-2026-net8.0-windows** — só a build
+     do 2025/2026.
+5. Baixa o `.zip`, descompacta, e segue pra [Como instalar no Revit](#como-instalar-no-revit)
+   abaixo — já tem tudo que o `install.ps1` precisa.
+
+Isso é possível porque `RevitAPI.dll`/`RevitAPIUI.dll` agora vêm de um
+pacote NuGet (`Nice3point.Revit.Api.*`, veja o comentário em
+`BravesBimFieldImporter.csproj`) em vez de precisar de uma pasta de uma
+instalação real do Revit — o mesmo motivo que torna opcional, não mais
+obrigatório, ter Visual Studio/Revit instalados só pra gerar o `.dll`.
+
+Compilar manualmente (próxima seção) continua funcionando e é útil se você
+for mexer no código C# e quiser testar mudanças antes de dar push.
+
+## Pré-requisitos (só pra compilar localmente — veja a seção acima se só quer os DLLs prontos)
+
+- Windows (não precisa mais do Revit instalado — veja a nota sobre o NuGet
+  `Nice3point.Revit.Api.*` acima)
 - **Visual Studio 2022** (a versão Community, gratuita, serve) com a carga
   de trabalho **".NET desktop development"** marcada na instalação
-- Conexão com a internet na primeira compilação (para baixar o pacote
-  Newtonsoft.Json via NuGet)
+- Conexão com a internet na primeira compilação (pra baixar os pacotes
+  NuGet — Newtonsoft.Json e as duas `Nice3point.Revit.Api.*`)
 
 ### Duas builds, por causa da troca de runtime da Autodesk
 
@@ -150,18 +183,13 @@ as duas pastas de saída são geradas juntas.
 ## Como compilar
 
 1. Abra `BravesBimFieldImporter.sln` no Visual Studio.
-2. Por padrão o projeto compila contra o Revit 2024 (`net48`) e o Revit 2025
-   (`net8.0-windows`, que também serve pro 2026). Se o seu Revit **não**
-   estiver instalado nas pastas padrão (`C:\Program Files\Autodesk\Revit 2024`
-   / `...\Revit 2025`), edite `RevitInstallDir` em
-   `BravesBimFieldImporter\BravesBimFieldImporter.csproj` (tem uma linha pra
-   cada TFM) — ou passe pelo msbuild, ex:
-   `msbuild /p:TargetFramework=net8.0-windows /p:RevitInstallDir="D:\Autodesk\Revit 2026"`.
-3. Selecione a configuração **Release** e plataforma **x64** (barra de
+2. Selecione a configuração **Release** e plataforma **x64** (barra de
    ferramentas do Visual Studio).
-4. Menu **Compilar → Compilar Solução** (ou `Ctrl+Shift+B`) — compila as
-   duas TFMs de uma vez.
-5. Os arquivos `BravesBimFieldImporter.dll` vão aparecer em:
+3. Menu **Compilar → Compilar Solução** (ou `Ctrl+Shift+B`) — a primeira vez
+   baixa os pacotes NuGet (precisa de internet), depois compila as duas
+   TFMs de uma vez. Não precisa indicar nenhuma pasta de instalação do
+   Revit — isso não existe mais no projeto.
+4. Os arquivos `BravesBimFieldImporter.dll` vão aparecer em:
    - `BravesBimFieldImporter\bin\x64\Release\net48\` (Revit 2024)
    - `BravesBimFieldImporter\bin\x64\Release\net8.0-windows\` (Revit 2025/2026)
 
@@ -169,7 +197,8 @@ as duas pastas de saída são geradas juntas.
 
 ### Opção 1 — script `install.ps1` (recomendado)
 
-Depois de compilar, abra o PowerShell **nesta pasta** (`revit-addin/`) e rode:
+Depois de compilar (ou de baixar o `.zip` da [build automática](#build-automática--sem-precisar-abrir-o-visual-studio)
+acima), abra o PowerShell **nesta pasta** (`revit-addin/`) e rode:
 
 ```powershell
 .\install.ps1
@@ -198,7 +227,12 @@ Se quiser um instalador de clicar-e-pronto pra levar pra outro computador
 baixe em [jrsoftware.org](https://jrsoftware.org/isinfo.php)) em
 `installer\BravesBimFieldImporterSetup.iss`. Ele empacota as duas builds já
 compiladas e, por baixo dos panos, roda o mesmo `install.ps1` — veja os
-comentários no topo do `.iss` pro passo a passo de gerar o `.exe`.
+comentários no topo do `.iss` pro passo a passo de gerar o `.exe`. As
+"duas builds já compiladas" podem vir tanto de compilar localmente quanto
+do `.zip` baixado da [build automática](#build-automática--sem-precisar-abrir-o-visual-studio)
+— só precisam estar nas pastas `bin\x64\Release\net48\` e
+`...\net8.0-windows\` de onde o `.iss` espera (extraia o `.zip` mantendo
+essa estrutura de pastas).
 
 **Esta opção 2 nunca foi testada de verdade** (o ambiente onde foi escrita
 não tem Windows nem o Inno Setup Compiler) — se o `.exe` gerado não rodar a
