@@ -1,0 +1,385 @@
+# Braves BIM Field — Importador para Revit
+
+Add-in para **Revit 2024, 2025 e 2026** que lê o arquivo `levantamento_bim.json` exportado
+pelo app (aba **Sincronização → JSON**) e cria no Revit, no projeto aberto:
+
+- **Níveis** (reaproveitando um nível existente com nome ou cota parecida; cria os que faltarem)
+- **Paredes** (tenta casar o tipo do levantamento — ex: "Alvenaria 15cm" — com um
+  tipo de parede do seu projeto com o **mesmo nome exato**; se não achar, usa o
+  tipo padrão do projeto; se marcada como "Demolir" ou "À construir" no app,
+  vira Fase de Demolição/Fase Criada no Revit — veja
+  [Reforma: Demolir/À construir](#reforma-demolirà-construir-vira-fases-do-revit))
+- **Portas e janelas** (usa a primeira família de porta/janela carregada no
+  projeto; ajusta largura/altura se a família tiver esses parâmetros; mesma
+  marcação de Demolir/À construir das paredes)
+- **Ambientes** (cria um `Room` no centro de cada contorno fechado desenhado
+  no Croqui — precisa que as paredes já formem um contorno fechado — e grava
+  o piso/forro escolhido no app nos parâmetros nativos "Acabamento do Piso"/
+  "Acabamento do Forro" do `Room`)
+- **Luminárias** (usa a primeira família de luminária carregada no projeto,
+  posicionada na altura do forro de cada nível)
+- **Escadas** (cria uma `Stairs` de lance reto entre o nível de origem e o
+  nível de destino escolhidos no Croqui)
+- **Coberturas** (cria um `FootPrintRoof` — veja a limitação importante
+  abaixo, o app ainda não desenha o contorno real do telhado)
+
+### Limitações desta primeira versão de escadas e coberturas
+
+Estas duas são bem mais aproximadas que o resto do import, porque o Croqui
+ainda não guarda geometria detalhada o suficiente para modelá-las de verdade:
+
+- **Escadas**: o app só guarda uma linha reta (início/fim) e, se houver
+  patamar, sua posição e altura ao longo do trajeto — não a direção do giro.
+  O add-in cria um lance reto simples entre os dois níveis; se a escada
+  levantada tem patamar, os dados reais (posição/altura) ficam gravados em
+  "Comentários" mas **não são modelados** — ajuste manualmente no Revit.
+  Diferente de paredes/portas/ambientes, uma escada já importada antes é
+  sempre **apagada e recriada do zero** a cada nova importação (editar a
+  geometria de uma escada existente via API é bem mais arriscado sem poder
+  testar contra um Revit de verdade) — qualquer ajuste manual feito nela
+  direto no Revit se perde numa reimportação.
+- **Coberturas**: o app guarda só um nome, o nível, e a inclinação/área de
+  cada "água" como texto — nenhum contorno/formato real. O add-in aproxima
+  o contorno pelo **retângulo que envolve todas as paredes do nível**
+  (não o formato real do telhado) e aplica a inclinação da primeira água a
+  todas as bordas; os dados completos de todas as águas ficam em
+  "Comentários" para conferência. Também é sempre apagada e recriada a cada
+  importação.
+
+Se essas simplificações não servem pro seu caso, o jeito mais confiável por
+enquanto é ajustar a escada/cobertura manualmente no Revit depois de importar
+— ou não usar o import automático para elas e modelar do zero.
+
+### Reforma: Demolir/À construir vira Fases do Revit
+
+No Croqui do app, uma parede/porta/janela pode ser marcada como **Demolir**
+(vermelho tracejado) ou **À construir** (verde tracejado) — pense numa
+reforma, onde é preciso distinguir o que existe e sai do que é novo. O add-in
+lê essa marcação e usa o mecanismo nativo de **Fases** do Revit (Gerenciar →
+Fases) para reproduzi-la:
+
+- **Demolir** → a **Fase de Criação** do elemento vira a fase mais antiga do
+  projeto, e sua **Fase de Demolição** vira a fase mais recente — o Revit
+  passa a mostrá-lo demolido (tracejado/esmaecido, conforme os filtros de
+  fase da sua vista) a partir dali.
+- **À construir** → a **Fase de Criação** vira a fase mais recente do
+  projeto — o Revit passa a tratá-lo como obra nova.
+
+Isso usa exatamente os mesmos parâmetros que você ajustaria manualmente na
+paleta de Propriedades — então filtros de fase, "Mostrar Anterior + Demolição"/
+"Mostrar Novo" e as substituições gráficas de cada fase (tracejado/esmaecido
+para demolido, etc.) funcionam sem nenhum ajuste extra de template de vista.
+
+**Pré-requisito**: seu projeto Revit precisa ter **pelo menos 2 fases**
+cadastradas (Gerenciar → Fases) — a maioria dos templates de arquitetura já
+vem com duas (ex: "Existente" e "Construção Nova"), e é a mais antiga e a
+mais recente da sua lista que o add-in usa, seja qual for o nome delas. Se o
+projeto só tiver uma fase, essas marcações são ignoradas (nada quebra, só não
+tem "antes/depois" pra aplicar) e o resumo final avisa: "O projeto precisa de
+pelo menos 2 fases... nenhuma foi aplicada".
+
+### Piso/forro do ambiente não vira um Floor/Ceiling de verdade
+
+O acabamento de piso/forro escolhido no Croqui é gravado nos parâmetros de
+texto do `Room` ("Acabamento do Piso"/"Acabamento do Forro"), não como um
+elemento `Floor`/`Ceiling` real com um `Material` do Revit associado — o app
+guarda esses acabamentos como um nome de uma lista fixa (ex: "Porcelanato"),
+não como referência a um material real do seu projeto, então não há como
+casar automaticamente um `Material` sem arriscar pegar o errado.
+
+### Importar de novo não duplica
+
+Rodar qualquer um dos dois comandos de novo no mesmo projeto Revit
+**atualiza** as paredes/portas/janelas/ambientes/luminárias já importados
+(posição, tipo, dimensões) em vez de criar um segundo conjunto por cima do
+primeiro — o add-in reconhece cada elemento por um identificador oculto
+gravado no campo Comentários dele. Elementos **novos** no levantamento (ex:
+uma porta que você acabou de adicionar no app) são criados normalmente.
+Escadas e coberturas são a exceção — veja a seção
+[Limitações desta primeira versão](#limitações-desta-primeira-versão-de-escadas-e-coberturas)
+acima, elas são sempre apagadas e recriadas do zero a cada importação.
+
+Importante: se você **apagar** algo no app (uma parede, porta, etc.) e
+importar de novo, o elemento correspondente **não é apagado automaticamente**
+do Revit — isso é proposital, pra nunca descartar sem avisar algo que você
+possa ter ajustado manualmente lá. Nesse caso, apague-o você mesmo no Revit
+(pode identificar pelo texto em Comentários).
+
+## ⚠️ Aviso importante
+
+Este código foi escrito consultando a documentação da API do Revit, mas
+**nunca foi compilado nem testado contra uma instalação real do Revit** —
+o ambiente onde ele foi criado não tem Windows nem Revit instalados. É bem
+provável que a primeira tentativa de build dê algum erro de compilação ou
+que algo precise de ajuste ao rodar de verdade. Isso é esperado — me manda
+a mensagem de erro (do Visual Studio ou do Revit) que eu corrijo.
+
+A parte de **escadas** (`StairsEditScope`/`StairsRun`) e **coberturas**
+(`FootPrintRoof`) usa partes da API do Revit bem mais intrincadas que o
+resto do add-in (paredes/portas/janelas/ambientes já vinham de antes e
+foram usadas com mais confiança) — é onde um erro de compilação ou de
+execução é mais provável de aparecer primeiro. Se o import falhar só
+nessas duas partes, os avisos "⚠ N escada(s)/cobertura(s) ignorada(s)" no
+resumo final ajudam a isolar qual delas.
+
+O mesmo aviso vale, com ainda mais força, pra build `net8.0-windows`
+(Revit 2025/2026) e pro `install.ps1`/instalador `.exe`: a troca de
+.NET Framework pra .NET 8 é uma mudança de verdade no jeito como o projeto
+compila, não só mais uma versão — é a parte com mais chance de precisar de
+ajuste na primeira tentativa. A build `net48` (2024) é a mesma de antes,
+só com uma configuração nova ao lado. A build automática (próxima seção)
+ajuda aqui: se o GitHub Actions falhar, o log do erro já aparece ali, sem
+precisar reproduzir nada manualmente — é só mandar pra mim.
+
+## Build automática — sem precisar abrir o Visual Studio
+
+Toda vez que o código deste add-in muda, o GitHub já compila as duas
+versões (net48 e net8.0-windows) sozinho, na nuvem — não precisa de
+Windows, Revit nem Visual Studio na sua máquina pra isso:
+
+1. No repositório no GitHub, abra a aba **Actions**.
+2. Clique em **Revit Add-in Build** na lista à esquerda.
+3. Abra o run mais recente (ou clique em **Run workflow** pra forçar um
+   novo, caso queira recompilar sem ter mudado nada).
+4. Role até o final da página do run — em **Artifacts** tem 3 arquivos
+   pra baixar:
+   - **BravesBimFieldImporter-completo** — as duas builds + `install.ps1` +
+     o instalador `.exe` opcional, tudo junto. É esse que você quer na
+     maioria das vezes.
+   - **BravesBimFieldImporter-Revit2024-net48** — só a build do 2024.
+   - **BravesBimFieldImporter-Revit2025-2026-net8.0-windows** — só a build
+     do 2025/2026.
+5. Baixa o `.zip`, descompacta, e segue pra [Como instalar no Revit](#como-instalar-no-revit)
+   abaixo — já tem tudo que o `install.ps1` precisa.
+
+Isso é possível porque `RevitAPI.dll`/`RevitAPIUI.dll` agora vêm de um
+pacote NuGet (`Nice3point.Revit.Api.*`, veja o comentário em
+`BravesBimFieldImporter.csproj`) em vez de precisar de uma pasta de uma
+instalação real do Revit — o mesmo motivo que torna opcional, não mais
+obrigatório, ter Visual Studio/Revit instalados só pra gerar o `.dll`.
+
+Compilar manualmente (próxima seção) continua funcionando e é útil se você
+for mexer no código C# e quiser testar mudanças antes de dar push.
+
+## Pré-requisitos (só pra compilar localmente — veja a seção acima se só quer os DLLs prontos)
+
+- Windows (não precisa mais do Revit instalado — veja a nota sobre o NuGet
+  `Nice3point.Revit.Api.*` acima)
+- **Visual Studio 2022** (a versão Community, gratuita, serve) com a carga
+  de trabalho **".NET desktop development"** marcada na instalação
+- Conexão com a internet na primeira compilação (pra baixar os pacotes
+  NuGet — Newtonsoft.Json e as duas `Nice3point.Revit.Api.*`)
+
+### Duas builds, por causa da troca de runtime da Autodesk
+
+O Revit 2024 roda add-ins em **.NET Framework 4.8**; a partir do **Revit
+2025** (e também no 2026) a Autodesk passou a exigir **.NET 8**. O projeto
+já está configurado para compilar os dois ao mesmo tempo — `net48` (2024) e
+`net8.0-windows` (2025 **e** 2026, que usam o mesmo binário: a API pública
+que este add-in usa não mudou entre essas duas versões). Você não precisa
+fazer nada de especial para isso, só compilar normalmente (próxima seção) —
+as duas pastas de saída são geradas juntas.
+
+## Como compilar
+
+1. Abra `BravesBimFieldImporter.sln` no Visual Studio.
+2. Selecione a configuração **Release** e plataforma **x64** (barra de
+   ferramentas do Visual Studio).
+3. Menu **Compilar → Compilar Solução** (ou `Ctrl+Shift+B`) — a primeira vez
+   baixa os pacotes NuGet (precisa de internet), depois compila as duas
+   TFMs de uma vez. Não precisa indicar nenhuma pasta de instalação do
+   Revit — isso não existe mais no projeto.
+4. Os arquivos `BravesBimFieldImporter.dll` vão aparecer em:
+   - `BravesBimFieldImporter\bin\x64\Release\net48\` (Revit 2024)
+   - `BravesBimFieldImporter\bin\x64\Release\net8.0-windows\` (Revit 2025/2026)
+
+## Como instalar no Revit
+
+### Opção 1 — script `install.ps1` (recomendado)
+
+Depois de compilar (ou de baixar o `.zip` da [build automática](#build-automática--sem-precisar-abrir-o-visual-studio)
+acima), abra o PowerShell **nesta pasta** (`revit-addin/`) e rode:
+
+```powershell
+.\install.ps1
+```
+
+Ele detecta sozinho quais Revit (2024/2025/2026) estão instalados na
+máquina, copia a build certa de cada um (DLL + `Newtonsoft.Json.dll` +
+manifesto `.addin`) pra `%APPDATA%\Autodesk\Revit\Addins\<ano>\`, e já
+desbloqueia os arquivos (equivalente ao passo manual de "Propriedades →
+Desbloquear" que costuma fazer o add-in sumir sem erro nenhum). Não mexe num
+`firebase.config.json` que você já tenha configurado numa instalação
+anterior.
+
+Útil também pra reinstalar/atualizar depois de uma mudança no código: só
+rodar de novo. Para desinstalar: `.\install.ps1 -Uninstall`. Mais opções
+(instalar só numa versão específica, usar a build Debug, etc.) em
+`Get-Help .\install.ps1 -Full`.
+
+Se o Windows bloquear a execução do script (política de execução), rode:
+`powershell -ExecutionPolicy Bypass -File .\install.ps1`.
+
+### Opção 2 — instalador `.exe` (opcional, pra distribuir pra outra máquina)
+
+Se quiser um instalador de clicar-e-pronto pra levar pra outro computador
+(sem precisar compilar nada lá), tem um script do **Inno Setup** (gratuito,
+baixe em [jrsoftware.org](https://jrsoftware.org/isinfo.php)) em
+`installer\BravesBimFieldImporterSetup.iss`. Ele empacota as duas builds já
+compiladas e, por baixo dos panos, roda o mesmo `install.ps1` — veja os
+comentários no topo do `.iss` pro passo a passo de gerar o `.exe`. As
+"duas builds já compiladas" podem vir tanto de compilar localmente quanto
+do `.zip` baixado da [build automática](#build-automática--sem-precisar-abrir-o-visual-studio)
+— só precisam estar nas pastas `bin\x64\Release\net48\` e
+`...\net8.0-windows\` de onde o `.iss` espera (extraia o `.zip` mantendo
+essa estrutura de pastas).
+
+**Esta opção 2 nunca foi testada de verdade** (o ambiente onde foi escrita
+não tem Windows nem o Inno Setup Compiler) — se o `.exe` gerado não rodar a
+etapa final (a tela de "Detectando versões do Revit..." travar ou falhar),
+rode `install.ps1` manualmente (Opção 1) na pasta onde o instalador
+extraiu os arquivos, funciona igual.
+
+### Opção 3 — copiar os arquivos manualmente
+
+Caso prefira não rodar scripts, o jeito manual continua funcionando — é
+basicamente o que o `install.ps1` automatiza:
+
+1. Localize a pasta de add-ins da versão do Revit que quer instalar (crie
+   se não existir): `%APPDATA%\Autodesk\Revit\Addins\<ano>\` (ex: `2025`)
+   (cole esse caminho no Explorer de arquivos — `%APPDATA%` já expande sozinho.
+   Repare que é `Addins\<ano>\` — não crie uma subpasta `Addins` **dentro**
+   do ano, os arquivos ficam soltos direto ali.)
+2. Copie para essa pasta, da pasta de build correspondente —
+   `BravesBimFieldImporter\bin\x64\Release\net48\` pro **2024**, ou
+   `BravesBimFieldImporter\bin\x64\Release\net8.0-windows\` pro **2025/2026**:
+   - `BravesBimFieldImporter.dll`
+   - `Newtonsoft.Json.dll` (dependência — o Revit precisa dela junto)
+   - `firebase.config.json.example`
+
+   E da raiz de `revit-addin/`:
+   - `BravesBimFieldImporter.addin`
+3. **Se os arquivos vieram de um ZIP baixado da internet**, clique com o
+   botão direito em `BravesBimFieldImporter.dll` e `Newtonsoft.Json.dll` →
+   **Propriedades** → marque **"Desbloquear"** (se aparecer essa opção) → OK.
+   O Windows marca arquivos baixados como "bloqueados" e o Revit ignora
+   add-ins bloqueados sem avisar nada.
+4. Renomeie `firebase.config.json.example` para `firebase.config.json` e
+   edite ele com as mesmas credenciais do `.env` do app (veja
+   [Configurar a importação pela nuvem](#configurar-a-importação-pela-nuvem)
+   abaixo) — só precisa disso se for usar o comando "Importar da nuvem".
+5. Repita para cada versão do Revit instalada na máquina.
+
+### Depois de instalar (qualquer uma das opções acima)
+
+Abra (ou reabra) o Revit. Deve aparecer uma aba própria **"Braves BIM Field"**
+na faixa de opções (ribbon), com dois botões grandes:
+- **Braves Cloud** — importa direto da nuvem (mesmo comando "Importar da
+  nuvem" abaixo)
+- **Braves Import** — importa de um arquivo `levantamento_bim.json`
+
+Os mesmos dois comandos também continuam disponíveis em
+**Complementos → Ferramentas Externas**, caso a aba não apareça por algum
+motivo (ex: versão do Revit mais restrita quanto a plugins de interface).
+
+## Importar da nuvem (recomendado — sem precisar de arquivo)
+
+Com o Firebase já configurado no app (veja o README principal do repositório),
+o levantamento sincroniza sozinho pra nuvem a cada alteração. O comando
+**"Importar da nuvem"**:
+
+1. Pede as credenciais do seu Firebase (arquivo `firebase.config.json` — passo
+   4 acima)
+2. Mostra uma janela com todos os projetos já sincronizados, com uma caixa de
+   busca por nome
+3. Digite parte do nome do projeto, escolha na lista (ou dê duplo clique) e
+   clique em **Abrir**
+4. Importa direto — sem precisar exportar/transferir nenhum arquivo
+
+### Configurar a importação pela nuvem
+
+Abra o arquivo `.env` que você criou pra configurar o Firebase do app (na
+raiz do repositório principal) e copie dois valores pro
+`firebase.config.json` do add-in:
+
+```json
+{
+  "apiKey": "valor de VITE_FIREBASE_API_KEY no seu .env",
+  "projectId": "valor de VITE_FIREBASE_PROJECT_ID no seu .env"
+}
+```
+
+Esse arquivo precisa estar na **mesma pasta** do `BravesBimFieldImporter.dll`
+(dentro de `Addins\<ano>\` — ex: `Addins\2025\`). Se instalou em mais de uma
+versão do Revit, repita em cada pasta de ano.
+
+## Importar de arquivo (alternativa, sem Firebase)
+
+1. No app (celular/tablet), faça o levantamento normalmente.
+2. Na aba **Sincronização**, clique em **JSON** para baixar `levantamento_bim.json`.
+3. Transfira esse arquivo pro computador com Revit (e-mail, nuvem, cabo USB — como preferir).
+4. Abra o projeto Revit onde quer importar (de preferência um projeto que já
+   tenha os níveis certos, já que você escolheu reaproveitar níveis existentes).
+5. Rode o comando **"Importar de arquivo"** e selecione o arquivo.
+
+## Personalizando o casamento de tipos
+
+Hoje o add-in casa tipo de parede pelo **nome exato** (comparação sem diferenciar
+maiúsculas/minúsculas) entre o `tipo` do JSON (ex: `"Alvenaria 15cm"`) e os
+`WallType` já existentes no seu projeto/template Revit. Se os nomes não
+baterem, ele usa o tipo padrão do projeto. Para ter tipos de parede corretos
+automaticamente, crie no seu template Revit tipos de parede com esses nomes
+exatos (a lista completa usada pelo app está em `WALL_TYPES` no arquivo
+`src/App.jsx` do repositório principal).
+
+### Portas e janelas — tipo (correr, pivotante...) e número de folhas
+
+O add-in **não modela a geometria da porta/janela** — ele só escolhe, entre as
+famílias de porta/janela **já carregadas no seu projeto Revit**, a que parecer
+mais parecida com o que foi levantado no app, comparando o nome da família/tipo
+com o campo `tipo` (ex: `"Correr — alumínio"`) e o número de `folhas` (ex: `4`).
+Se o seu projeto só tiver uma porta genérica de 1 folha carregada, é essa que
+vai ser usada mesmo que o levantamento diga "4 folhas" — o Revit não sabe criar
+uma família de 4 folhas do nada.
+
+Para o casamento funcionar (e a porta/janela sair com o número de folhas certo):
+
+1. Carregue no projeto Revit as famílias de porta/janela que você realmente
+   usa (inclusive as de correr com múltiplas folhas — o próprio Revit tem
+   famílias como `Porta de Correr - 4 Folhas` na biblioteca padrão).
+2. Nomeie os **tipos** dessas famílias de um jeito que inclua a palavra-chave
+   do estilo (ex: "correr", "pivotante", "sanfonada", "basculante") e, quando
+   for o caso, a palavra "folhas" junto do número (ex: `"Correr 4 folhas"`).
+3. O add-in escolhe o tipo carregado com mais palavras em comum com o `tipo`
+   do levantamento (ignorando acentos/maiúsculas) — quanto mais parecido o
+   nome, melhor o casamento.
+
+Já a **largura e altura** de cada porta/janela são sempre ajustadas para bater
+com o que foi medido no app (tentando os parâmetros `Height`/`Width` e também
+`Altura`/`Largura`, seja como parâmetro de instância ou de tipo) — isso
+funciona independente do casamento de família ter sido perfeito ou não.
+
+Quando largura/altura só existem como parâmetro de **tipo** na família (comum
+em famílias mais simples) e o projeto tem poucas famílias carregadas, duas
+portas/janelas de tamanhos diferentes podem acabar casando com o **mesmo**
+tipo — nesse caso o add-in cria automaticamente uma cópia desse tipo dedicada
+a cada tamanho (ex: `Porta Simples - 80x210`), em vez de ajustar o tipo
+compartilhado e sem querer redimensionar todas as outras portas que o usam
+também. Reimportar reaproveita essas cópias em vez de criar novas a cada vez.
+
+#### Nenhuma informação do levantamento é perdida
+
+Mesmo quando nenhuma família carregada no projeto parece com o que foi
+levantado (ex: você levantou uma porta de correr de 4 folhas mas só tem uma
+porta genérica de 1 folha no Revit), o add-in **nunca descarta** o que foi
+medido: o tipo real (`"Correr — alumínio"`), o número de folhas, as dimensões
+e (nas janelas) o peitoril são sempre escritos no campo **Comentários** de
+cada porta/janela importada, por exemplo:
+
+> Levantamento: Correr — alumínio · 4 folha(s) · 1.60×2.10 m — família/tipo
+> não encontrado no projeto, AJUSTAR MANUALMENTE.
+
+Ao final da importação, a mensagem de resumo do Revit avisa quantas
+portas/janelas caíram nesse caso. Pra revisar todas de uma vez, crie uma
+**Tabela de quantidades** de Portas (ou Janelas) no Revit e adicione a coluna
+"Comentários" — as que precisam de ajuste manual aparecem com o aviso.
