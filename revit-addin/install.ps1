@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Instala (ou desinstala) o add-in Braves BIM Field Importer nas versões do
   Revit encontradas na máquina (2024, 2025 e/ou 2026).
