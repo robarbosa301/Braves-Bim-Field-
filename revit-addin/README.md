@@ -1,6 +1,6 @@
 # Braves BIM Field — Importador para Revit
 
-Add-in para Revit 2024 que lê o arquivo `levantamento_bim.json` exportado
+Add-in para **Revit 2024, 2025 e 2026** que lê o arquivo `levantamento_bim.json` exportado
 pelo app (aba **Sincronização → JSON**) e cria no Revit, no projeto aberto:
 
 - **Níveis** (reaproveitando um nível existente com nome ou cota parecida; cria os que faltarem)
@@ -122,39 +122,107 @@ execução é mais provável de aparecer primeiro. Se o import falhar só
 nessas duas partes, os avisos "⚠ N escada(s)/cobertura(s) ignorada(s)" no
 resumo final ajudam a isolar qual delas.
 
+O mesmo aviso vale, com ainda mais força, pra build `net8.0-windows`
+(Revit 2025/2026) e pro `install.ps1`/instalador `.exe`: a troca de
+.NET Framework pra .NET 8 é uma mudança de verdade no jeito como o projeto
+compila, não só mais uma versão — é a parte com mais chance de precisar de
+ajuste na primeira tentativa. A build `net48` (2024) é a mesma de antes,
+só com uma configuração nova ao lado.
+
 ## Pré-requisitos
 
-- Windows com **Revit 2024** instalado
+- Windows com **Revit 2024, 2025 e/ou 2026** instalado (pode ter mais de um)
 - **Visual Studio 2022** (a versão Community, gratuita, serve) com a carga
   de trabalho **".NET desktop development"** marcada na instalação
 - Conexão com a internet na primeira compilação (para baixar o pacote
   Newtonsoft.Json via NuGet)
 
+### Duas builds, por causa da troca de runtime da Autodesk
+
+O Revit 2024 roda add-ins em **.NET Framework 4.8**; a partir do **Revit
+2025** (e também no 2026) a Autodesk passou a exigir **.NET 8**. O projeto
+já está configurado para compilar os dois ao mesmo tempo — `net48` (2024) e
+`net8.0-windows` (2025 **e** 2026, que usam o mesmo binário: a API pública
+que este add-in usa não mudou entre essas duas versões). Você não precisa
+fazer nada de especial para isso, só compilar normalmente (próxima seção) —
+as duas pastas de saída são geradas juntas.
+
 ## Como compilar
 
 1. Abra `BravesBimFieldImporter.sln` no Visual Studio.
-2. Se o seu Revit 2024 **não** estiver instalado em
-   `C:\Program Files\Autodesk\Revit 2024`, edite essa pasta no arquivo
-   `BravesBimFieldImporter\BravesBimFieldImporter.csproj` (propriedade
-   `RevitInstallDir`).
+2. Por padrão o projeto compila contra o Revit 2024 (`net48`) e o Revit 2025
+   (`net8.0-windows`, que também serve pro 2026). Se o seu Revit **não**
+   estiver instalado nas pastas padrão (`C:\Program Files\Autodesk\Revit 2024`
+   / `...\Revit 2025`), edite `RevitInstallDir` em
+   `BravesBimFieldImporter\BravesBimFieldImporter.csproj` (tem uma linha pra
+   cada TFM) — ou passe pelo msbuild, ex:
+   `msbuild /p:TargetFramework=net8.0-windows /p:RevitInstallDir="D:\Autodesk\Revit 2026"`.
 3. Selecione a configuração **Release** e plataforma **x64** (barra de
    ferramentas do Visual Studio).
-4. Menu **Compilar → Compilar Solução** (ou `Ctrl+Shift+B`).
-5. O arquivo `BravesBimFieldImporter.dll` vai aparecer em
-   `BravesBimFieldImporter\bin\x64\Release\net48\`.
+4. Menu **Compilar → Compilar Solução** (ou `Ctrl+Shift+B`) — compila as
+   duas TFMs de uma vez.
+5. Os arquivos `BravesBimFieldImporter.dll` vão aparecer em:
+   - `BravesBimFieldImporter\bin\x64\Release\net48\` (Revit 2024)
+   - `BravesBimFieldImporter\bin\x64\Release\net8.0-windows\` (Revit 2025/2026)
 
 ## Como instalar no Revit
 
-1. Localize a pasta de add-ins do Revit 2024 (crie se não existir):
-   `%APPDATA%\Autodesk\Revit\Addins\2024\`
+### Opção 1 — script `install.ps1` (recomendado)
+
+Depois de compilar, abra o PowerShell **nesta pasta** (`revit-addin/`) e rode:
+
+```powershell
+.\install.ps1
+```
+
+Ele detecta sozinho quais Revit (2024/2025/2026) estão instalados na
+máquina, copia a build certa de cada um (DLL + `Newtonsoft.Json.dll` +
+manifesto `.addin`) pra `%APPDATA%\Autodesk\Revit\Addins\<ano>\`, e já
+desbloqueia os arquivos (equivalente ao passo manual de "Propriedades →
+Desbloquear" que costuma fazer o add-in sumir sem erro nenhum). Não mexe num
+`firebase.config.json` que você já tenha configurado numa instalação
+anterior.
+
+Útil também pra reinstalar/atualizar depois de uma mudança no código: só
+rodar de novo. Para desinstalar: `.\install.ps1 -Uninstall`. Mais opções
+(instalar só numa versão específica, usar a build Debug, etc.) em
+`Get-Help .\install.ps1 -Full`.
+
+Se o Windows bloquear a execução do script (política de execução), rode:
+`powershell -ExecutionPolicy Bypass -File .\install.ps1`.
+
+### Opção 2 — instalador `.exe` (opcional, pra distribuir pra outra máquina)
+
+Se quiser um instalador de clicar-e-pronto pra levar pra outro computador
+(sem precisar compilar nada lá), tem um script do **Inno Setup** (gratuito,
+baixe em [jrsoftware.org](https://jrsoftware.org/isinfo.php)) em
+`installer\BravesBimFieldImporterSetup.iss`. Ele empacota as duas builds já
+compiladas e, por baixo dos panos, roda o mesmo `install.ps1` — veja os
+comentários no topo do `.iss` pro passo a passo de gerar o `.exe`.
+
+**Esta opção 2 nunca foi testada de verdade** (o ambiente onde foi escrita
+não tem Windows nem o Inno Setup Compiler) — se o `.exe` gerado não rodar a
+etapa final (a tela de "Detectando versões do Revit..." travar ou falhar),
+rode `install.ps1` manualmente (Opção 1) na pasta onde o instalador
+extraiu os arquivos, funciona igual.
+
+### Opção 3 — copiar os arquivos manualmente
+
+Caso prefira não rodar scripts, o jeito manual continua funcionando — é
+basicamente o que o `install.ps1` automatiza:
+
+1. Localize a pasta de add-ins da versão do Revit que quer instalar (crie
+   se não existir): `%APPDATA%\Autodesk\Revit\Addins\<ano>\` (ex: `2025`)
    (cole esse caminho no Explorer de arquivos — `%APPDATA%` já expande sozinho.
-   Repare que é `Addins\2024\` — não crie uma subpasta `Addins` **dentro**
-   de `2024`, os arquivos ficam soltos direto ali.)
-2. Copie para essa pasta, da pasta `BravesBimFieldImporter\bin\x64\Release\net48\`:
+   Repare que é `Addins\<ano>\` — não crie uma subpasta `Addins` **dentro**
+   do ano, os arquivos ficam soltos direto ali.)
+2. Copie para essa pasta, da pasta de build correspondente —
+   `BravesBimFieldImporter\bin\x64\Release\net48\` pro **2024**, ou
+   `BravesBimFieldImporter\bin\x64\Release\net8.0-windows\` pro **2025/2026**:
    - `BravesBimFieldImporter.dll`
    - `Newtonsoft.Json.dll` (dependência — o Revit precisa dela junto)
    - `firebase.config.json.example`
-   
+
    E da raiz de `revit-addin/`:
    - `BravesBimFieldImporter.addin`
 3. **Se os arquivos vieram de um ZIP baixado da internet**, clique com o
@@ -166,16 +234,19 @@ resumo final ajudam a isolar qual delas.
    edite ele com as mesmas credenciais do `.env` do app (veja
    [Configurar a importação pela nuvem](#configurar-a-importação-pela-nuvem)
    abaixo) — só precisa disso se for usar o comando "Importar da nuvem".
-5. Abra (ou reabra) o Revit.
-6. Deve aparecer uma aba própria **"Braves BIM Field"** na faixa de opções
-   (ribbon), com dois botões grandes:
-   - **Braves Cloud** — importa direto da nuvem (mesmo comando "Importar da
-     nuvem" abaixo)
-   - **Braves Import** — importa de um arquivo `levantamento_bim.json`
+5. Repita para cada versão do Revit instalada na máquina.
 
-   Os mesmos dois comandos também continuam disponíveis em
-   **Complementos → Ferramentas Externas**, caso a aba não apareça por algum
-   motivo (ex: versão do Revit mais restrita quanto a plugins de interface).
+### Depois de instalar (qualquer uma das opções acima)
+
+Abra (ou reabra) o Revit. Deve aparecer uma aba própria **"Braves BIM Field"**
+na faixa de opções (ribbon), com dois botões grandes:
+- **Braves Cloud** — importa direto da nuvem (mesmo comando "Importar da
+  nuvem" abaixo)
+- **Braves Import** — importa de um arquivo `levantamento_bim.json`
+
+Os mesmos dois comandos também continuam disponíveis em
+**Complementos → Ferramentas Externas**, caso a aba não apareça por algum
+motivo (ex: versão do Revit mais restrita quanto a plugins de interface).
 
 ## Importar da nuvem (recomendado — sem precisar de arquivo)
 
@@ -205,7 +276,8 @@ raiz do repositório principal) e copie dois valores pro
 ```
 
 Esse arquivo precisa estar na **mesma pasta** do `BravesBimFieldImporter.dll`
-(dentro de `Addins\2024\`).
+(dentro de `Addins\<ano>\` — ex: `Addins\2025\`). Se instalou em mais de uma
+versão do Revit, repita em cada pasta de ano.
 
 ## Importar de arquivo (alternativa, sem Firebase)
 
