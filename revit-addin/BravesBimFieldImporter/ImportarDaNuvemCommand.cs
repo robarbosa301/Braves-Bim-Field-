@@ -3,6 +3,11 @@ using System.Windows.Forms;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+// .NET 8's WinForms added its own TaskDialog (wrapping the Windows common
+// control) that collides with Revit's — net48 never had that type, so this
+// alias is only load-bearing on the net8.0-windows build, but harmless on
+// both.
+using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 
 namespace BravesBimFieldImporter
 {
