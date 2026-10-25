@@ -1818,6 +1818,16 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     return { x: fixedPt.x + Math.cos(nearest) * d, y: fixedPt.y + Math.sin(nearest) * d };
   }
   function findAt(p) {
+    // Every distance check below is a SCREEN-pixel radius converted to
+    // world/SVG units via the current zoom (viewBox.w/dims.w) — same
+    // pattern as nearestWall/findNearbyEndpoint/findGhostWallAt elsewhere
+    // in this file. Before this, these were flat SVG-unit numbers, so the
+    // actual on-screen touch target shrank the moment the view was zoomed
+    // out even slightly (viewBox.w/dims.w > 1) — exactly the state you're
+    // in while trying to tap two walls that are far apart on screen, which
+    // made a basic "tap a wall" gesture miss far more often than it should
+    // the more of the drawing was visible at once.
+    const worldTol = screenPx => screenPx * (viewBox.w / dims.w);
     // Checked first — furniture sits visually on top of everything else,
     // and (unlike a door/window's small fixed point) can be a meter-plus
     // across, so a tap anywhere inside its own rotated footprint must hit
@@ -1837,7 +1847,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const dw = elements.filter(e => e.type === "door" || e.type === "window" || e.type === "luminaria");
     let best = null, bestD = Infinity;
     dw.forEach(e => { const d = dist(p, { x: e.x, y: e.y }); if (d < bestD) { bestD = d; best = e; } });
-    if (best && bestD < 18) return best;
+    if (best && bestD < worldTol(18)) return best;
     const walls = elements.filter(e => e.type === "wall" || e.type === "stair");
     let bestWall = null, bestWD = Infinity;
     walls.forEach(w => {
@@ -1845,7 +1855,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const d = dist(p, proj);
       if (d < bestWD) { bestWD = d; bestWall = w; }
     });
-    if (bestWall && bestWD < 16) return bestWall;
+    if (bestWall && bestWD < worldTol(16)) return bestWall;
     // Checked before rooms/pisos — a manually-placed cota's line/label
     // often sits right over a room's open floor area, which would
     // otherwise always win the point-in-polygon test below and make the
@@ -1859,7 +1869,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
       const d = Math.min(dist(p, proj), dist(p, { x: g.labelX, y: g.labelY }));
       if (d < bestCotaD) { bestCotaD = d; bestCota = el; }
     });
-    if (bestCota && bestCotaD < 14) return bestCota;
+    if (bestCota && bestCotaD < worldTol(14)) return bestCota;
     // Checked before rooms: a "piso" zone is drawn specifically because it
     // doesn't just mirror the room underneath it (a wet-area-only tile
     // zone, say), so a tap landing inside one most likely means that zone,
@@ -2521,7 +2531,7 @@ export default function VectorSketch({ level, allLevels, rooms, onChange, onMeta
     const ix = wall.x1 + d1x * t, iy = wall.y1 + d1y * t;
     const targetLenSq = d2x * d2x + d2y * d2y || 1;
     const s = ((ix - target.x1) * d2x + (iy - target.y1) * d2y) / targetLenSq;
-    if (s < -0.05 || s > 1.05) return "Essa parede não chega até ali — o cruzamento fica fora dela.";
+    if (s < -0.05 || s > 1.05) return "Essa parede não chega até ali — o cruzamento fica fora dela. Pra unir as pontas de duas paredes formando um canto, use a ferramenta \"Unir canto de paredes\" (ao lado desta) em vez de Estender — ela move as duas, sem essa restrição de distância.";
     const d1sq = (ix - wall.x1) ** 2 + (iy - wall.y1) ** 2;
     const d2sq = (ix - wall.x2) ** 2 + (iy - wall.y2) ** 2;
     const movingEnd = d1sq < d2sq ? "start" : "end";
