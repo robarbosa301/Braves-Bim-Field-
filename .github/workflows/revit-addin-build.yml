@@ -1,0 +1,95 @@
+name: Revit Add-in Build
+
+# Compila o add-in do Revit sozinho — sem precisar abrir o Visual Studio em
+# nenhuma máquina. RevitAPI/RevitAPIUI vêm do NuGet (pacotes
+# Nice3point.Revit.Api.*, veja o comentário no .csproj), então nem o Revit
+# precisa estar instalado no runner, só o .NET SDK.
+#
+# Dispara em todo push/PR que mexer em revit-addin/, e também manualmente
+# (aba Actions → Revit Add-in Build → Run workflow). O resultado (os DLLs
+# prontos pra instalar, net48 + net8.0-windows) fica disponível como
+# "artifact" do run — aba Actions do GitHub, abra o run, seção Artifacts
+# no final da página, baixa um .zip.
+
+on:
+  push:
+    paths:
+      - "revit-addin/**"
+      - ".github/workflows/revit-addin-build.yml"
+  pull_request:
+    paths:
+      - "revit-addin/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Precisa do Windows: UseWindowsForms/UseWPF (net8.0-windows) e o
+    # próprio net48 só compilam de verdade em runner Windows.
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: revit-addin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # Cobre net48 (via MSBuild/.NET Framework targeting pack, que o
+          # runner windows-latest já traz) e net8.0-windows.
+          dotnet-version: "8.0.x"
+
+      # net48 precisa do MSBuild "de verdade" (não o `dotnet build`, que não
+      # sabe compilar .NET Framework) — já vem pronto no runner windows-latest
+      # junto com o Visual Studio Build Tools.
+      - name: Configurar MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restaurar pacotes NuGet
+        run: msbuild BravesBimFieldImporter.sln -t:Restore -p:Configuration=Release -p:Platform=x64
+
+      - name: Compilar (net48 — Revit 2024, e net8.0-windows — Revit 2025/2026)
+        run: msbuild BravesBimFieldImporter.sln -p:Configuration=Release -p:Platform=x64 -m
+
+      - name: Publicar build net48 (Revit 2024)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BravesBimFieldImporter-Revit2024-net48
+          path: |
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net48/BravesBimFieldImporter.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net48/Newtonsoft.Json.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net48/firebase.config.json.example
+            revit-addin/BravesBimFieldImporter.addin
+          if-no-files-found: error
+
+      - name: Publicar build net8.0-windows (Revit 2025/2026)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BravesBimFieldImporter-Revit2025-2026-net8.0-windows
+          path: |
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net8.0-windows/BravesBimFieldImporter.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net8.0-windows/Newtonsoft.Json.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net8.0-windows/firebase.config.json.example
+            revit-addin/BravesBimFieldImporter.addin
+          if-no-files-found: error
+
+      # Pacote único com tudo (as duas builds + install.ps1 + o instalador
+      # .iss) — baixa isso, descompacta, roda install.ps1 (veja o README em
+      # revit-addin/), pronto.
+      - name: Publicar pacote completo (pra instalar com install.ps1)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BravesBimFieldImporter-completo
+          path: |
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net48/BravesBimFieldImporter.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net48/Newtonsoft.Json.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net48/firebase.config.json.example
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net8.0-windows/BravesBimFieldImporter.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net8.0-windows/Newtonsoft.Json.dll
+            revit-addin/BravesBimFieldImporter/bin/x64/Release/net8.0-windows/firebase.config.json.example
+            revit-addin/BravesBimFieldImporter.addin
+            revit-addin/install.ps1
+            revit-addin/installer/BravesBimFieldImporterSetup.iss
+          if-no-files-found: error
