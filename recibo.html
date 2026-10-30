@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recibo Braves</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: formulário à esquerda, recibo ao vivo à direita como folha de papel; empilha no celular. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --paper:#ffffff; --ink:#18212b; --muted:#5d6b79;
+  --line:#cfd7df; --accent:#1f4e79; --accent-soft:#e3ecf5; --stamp:#b4532a;
+  --f-display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161c; --panel:#18202a; --paper:#f7f8f6; --ink:#e5eaf0; --muted:#97a5b4;
+  --line:#2c3846; --accent:#7fb0de; --accent-soft:#1d2b3a; --stamp:#e08a5f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161c; --panel:#18202a; --paper:#f7f8f6; --ink:#e5eaf0; --muted:#97a5b4;
+  --line:#2c3846; --accent:#7fb0de; --accent-soft:#1d2b3a; --stamp:#e08a5f; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin-bottom:20px}
+header.top h1{font-family:var(--f-display);font-weight:800;font-size:1.6rem;letter-spacing:-.01em;margin:0;text-wrap:balance}
+header.top p{margin:0;color:var(--muted);font-size:.9rem}
+.grid{display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;gap:14px}
+fieldset{border:0;padding:0;margin:0;display:grid;gap:10px}
+legend{font-family:var(--f-display);font-weight:700;font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:420px){.row{grid-template-columns:1fr}}
+label{display:grid;gap:4px;font-size:.8rem;font-weight:600;color:var(--muted);min-width:0}
+input,select,textarea{font:inherit;font-size:.95rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:62px}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.money{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.swap{justify-self:start;font-size:.8rem}
+.actions{display:flex;flex-wrap:wrap;gap:8px;padding-top:4px;border-top:1px solid var(--line);padding-top:14px}
+button{font:inherit;font-size:.88rem;font-weight:600;border-radius:6px;padding:9px 14px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+button:hover{filter:brightness(1.06)}
+.check{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink);font-size:.88rem}
+.check input{width:auto}
+.toast{font-size:.82rem;color:var(--accent);min-height:1.2em}
+.badge{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:2px 6px}
+
+/* Folha do recibo: sempre papel claro, com tinta escura, nos dois temas */
+.sheet{--p-ink:#18212b;--p-muted:#5d6b79;--p-line:#c3ccd5;--p-accent:#1f4e79;
+  display:grid;gap:0;min-width:0}
+.receipt{background:var(--paper);color:var(--p-ink);border:1px solid var(--p-line);border-radius:4px;padding:28px 30px;
+  box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(16,24,40,.08);display:grid;gap:18px;min-width:0}
+@media (max-width:520px){.receipt{padding:20px 18px}}
+.r-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:2px solid var(--p-ink);padding-bottom:12px}
+.r-title{font-family:var(--f-display);font-weight:800;font-size:2rem;letter-spacing:.14em;line-height:1}
+.r-num{font-family:var(--f-mono);font-size:.85rem;color:var(--p-muted);margin-top:6px}
+.r-via{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--p-muted)}
+.r-value{border:2px solid var(--p-ink);border-radius:3px;padding:8px 14px;font-family:var(--f-mono);font-weight:600;font-size:1.35rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.r-value small{font-family:var(--f-body);font-size:.68rem;font-weight:700;letter-spacing:.1em;display:block;color:var(--p-muted)}
+.r-body{font-size:1rem;line-height:1.75;margin:0;overflow-wrap:anywhere}
+.r-body b{font-weight:600}
+.r-ext{font-style:italic}
+.r-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 20px;font-size:.85rem;border-top:1px dashed var(--p-line);padding-top:12px}
+.r-meta dt{font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--p-muted)}
+.r-meta dd{margin:0;overflow-wrap:anywhere}
+.r-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;margin-top:6px}
+.r-date{font-size:.92rem}
+.r-sign{min-width:min(260px,100%);text-align:center;font-size:.85rem}
+.r-sign .line{border-top:1px solid var(--p-ink);margin-top:44px;padding-top:6px;font-weight:600}
+.r-sign .doc{color:var(--p-muted);font-family:var(--f-mono);font-size:.78rem}
+.cut{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;padding:14px 0}
+.cut::before,.cut::after{content:"";flex:1;border-top:1px dashed var(--line)}
+.preview-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:.8rem;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.receipt{transition:box-shadow .2s}}
+@media print{
+  body{background:#fff}
+  header.top,form,.preview-label{display:none!important}
+  .grid{display:block}
+  .wrap{padding:0;max-width:none}
+  .receipt{box-shadow:none;border:1px solid #999;break-inside:avoid}
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Recibo Braves</h1>
+    <p>Preencha ao lado. O recibo se monta sozinho, com o valor por extenso.</p>
+  </header>
+
+  <div class="grid">
+    <form id="f" autocomplete="off">
+      <fieldset>
+        <legend>Recibo</legend>
+        <div class="row">
+          <label for="num">Nº do recibo<input id="num" class="money" value="0001"></label>
+          <label for="valor">Valor (R$)<input id="valor" class="money" inputmode="decimal" placeholder="0,00" value="1.250,00"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Quem recebe</legend>
+        <label for="rec">Nome / razão social<input id="rec" value="João da Silva (exemplo)"></label>
+        <label for="recDoc">CPF / CNPJ<input id="recDoc" class="money" placeholder="000.000.000-00" value="123.456.789-00"></label>
+      </fieldset>
+
+      <button type="button" class="swap" id="swap">Inverter recebedor e pagador</button>
+
+      <fieldset>
+        <legend>Quem paga</legend>
+        <label for="pag">Nome / razão social<input id="pag" value="Braves"></label>
+        <label for="pagDoc">CPF / CNPJ<input id="pagDoc" class="money" placeholder="00.000.000/0000-00"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pagamento</legend>
+        <label for="ref">Referente a<textarea id="ref">mão de obra de alvenaria do 2º pavimento, medição 03</textarea></label>
+        <label for="obra">Obra / endereço<input id="obra" value="Residencial exemplo, Rua das Flores, 120"></label>
+        <div class="row">
+          <label for="forma">Forma de pagamento
+            <select id="forma">
+              <option>PIX</option><option>Transferência bancária</option><option>Dinheiro</option>
+              <option>Boleto</option><option>Cheque</option><option>Cartão</option>
+            </select>
+          </label>
+          <label for="cidade">Cidade<input id="cidade" value="São Paulo"></label>
+        </div>
+        <label for="data">Data<input id="data" type="date"></label>
+        <label class="check" for="duasVias"><input id="duasVias" type="checkbox"> Duas vias (pagador e recebedor)</label>
+      </fieldset>
+
+      <div class="actions">
+        <button type="button" class="primary" id="copiar">Copiar texto</button>
+        <button type="button" id="imprimir" hidden>Imprimir / PDF</button>
+        <button type="button" id="novo">Novo recibo</button>
+      </div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </form>
+
+    <section aria-label="Pré-visualização do recibo" style="min-width:0">
+      <div class="preview-label"><span>Pré-visualização</span><span class="badge" id="exBadge">Dados de exemplo</span></div>
+      <div class="sheet" id="sheet"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const ids = ["num","valor","rec","recDoc","pag","pagDoc","ref","obra","forma","cidade","data","duasVias"];
+  const KEY = "recibo-braves-v1";
+
+  // ---- valor por extenso (pt-BR) ----
+  const U=["","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"];
+  const D=["","","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"];
+  const C=["","cento","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
+  function ate999(n){
+    if(n===100) return "cem";
+    const p=[], c=Math.floor(n/100), r=n%100;
+    if(c) p.push(C[c]);
+    if(r>0 && r<20) p.push(U[r]);
+    else if(r>=20){ const d=Math.floor(r/10), u=r%10; p.push(u? D[d]+" e "+U[u] : D[d]); }
+    return p.join(" e ");
+  }
+  function inteiro(n){
+    if(n===0) return "zero";
+    const g=[
+      [Math.floor(n/1e9)%1000,"bilhão","bilhões"],
+      [Math.floor(n/1e6)%1000,"milhão","milhões"],
+      [Math.floor(n/1e3)%1000,"mil","mil"],
+      [n%1000,"",""]
+    ];
+    const parts=[];
+    g.forEach(([v,s,pl],i)=>{
+      if(!v) return;
+      let t = (i===2 && v===1) ? "mil" : ate999(v)+(s? " "+(v===1? s : pl):"");
+      parts.push({t,v,last:i===3});
+    });
+    let out="";
+    parts.forEach((p,i)=>{
+      if(i===0){ out=p.t; return; }
+      const isFinal = i===parts.length-1;
+      const useE = isFinal && (p.v<100 || p.v%100===0);
+      out += useE ? " e "+p.t : (isFinal ? " "+p.t : ", "+p.t);
+    });
+    return out;
+  }
+  function extenso(valor){
+    const cents=Math.round(valor*100), r=Math.floor(cents/100), c=cents%100;
+    if(cents===0) return "zero real";
+    let s="";
+    if(r>0){
+      s = inteiro(r) + (r>=1e6 && r%1e6===0 ? " de reais" : (r===1? " real":" reais"));
+    }
+    if(c>0){
+      const cs = inteiro(c) + (c===1? " centavo":" centavos");
+      s = s? s+" e "+cs : cs;
+    }
+    return s;
+  }
+  function parseValor(str){
+    const t=String(str||"").replace(/[^\d,.-]/g,"");
+    if(!t) return 0;
+    const norm = t.includes(",") ? t.replace(/\./g,"").replace(",",".") : t;
+    const n=parseFloat(norm);
+    return isFinite(n)&&n>0 ? Math.min(n,999999999999.99) : 0;
+  }
+  const brl = n => n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const esc = s => String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+  function dataExtenso(iso){
+    if(!iso) return "____ de ____________ de ______";
+    const [y,m,d]=iso.split("-").map(Number);
+    const meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    return d+" de "+meses[m-1]+" de "+y;
+  }
+  function v(id){ const el=$(id); return el.type==="checkbox"? el.checked : el.value.trim(); }
+  const blank = s => s || "________________";
+
+  function dados(){
+    const valor=parseValor(v("valor"));
+    return {
+      num:v("num")||"—", valor, ext:extenso(valor),
+      rec:v("rec"), recDoc:v("recDoc"), pag:v("pag"), pagDoc:v("pagDoc"),
+      ref:v("ref"), obra:v("obra"), forma:v("forma"), cidade:v("cidade"), data:v("data"), vias:v("duasVias")
+    };
+  }
+
+  function receiptHTML(x, via){
+    const ext = x.ext.charAt(0).toUpperCase()+x.ext.slice(1);
+    return `<article class="receipt">
+      <div class="r-head">
+        <div><div class="r-title">RECIBO</div><div class="r-num">Nº ${esc(x.num)}</div>${via?`<div class="r-via">${via}</div>`:""}</div>
+        <div class="r-value"><small>VALOR</small>R$ ${brl(x.valor)}</div>
+      </div>
+      <p class="r-body">Recebi(emos) de <b>${esc(blank(x.pag))}</b>${x.pagDoc?`, inscrito(a) no CPF/CNPJ <b>${esc(x.pagDoc)}</b>,`:""}
+        a importância de <b>R$ ${brl(x.valor)}</b> (<span class="r-ext">${esc(ext)}</span>),
+        referente a <b>${esc(blank(x.ref))}</b>, dando por este a mais plena e geral quitação do valor recebido.</p>
+      <dl class="r-meta">
+        <div><dt>Obra</dt><dd>${esc(x.obra||"—")}</dd></div>
+        <div><dt>Forma de pagamento</dt><dd>${esc(x.forma)}</dd></div>
+      </dl>
+      <div class="r-foot">
+        <div class="r-date">${esc(x.cidade||"__________")}, ${dataExtenso(x.data)}.</div>
+        <div class="r-sign"><div class="line">${esc(blank(x.rec))}</div><div class="doc">${x.recDoc?"CPF/CNPJ "+esc(x.recDoc):"CPF/CNPJ ____________"}</div></div>
+      </div>
+    </article>`;
+  }
+
+  function textoPlano(x){
+    const ext = x.ext.charAt(0).toUpperCase()+x.ext.slice(1);
+    return [
+      `RECIBO Nº ${x.num} — R$ ${brl(x.valor)}`,
+      ``,
+      `Recebi(emos) de ${blank(x.pag)}${x.pagDoc?`, CPF/CNPJ ${x.pagDoc},`:""} a importância de R$ ${brl(x.valor)} (${ext}), referente a ${blank(x.ref)}, dando por este a mais plena e geral quitação do valor recebido.`,
+      ``,
+      `Obra: ${x.obra||"—"}`,
+      `Forma de pagamento: ${x.forma}`,
+      ``,
+      `${x.cidade||"__________"}, ${dataExtenso(x.data)}.`,
+      ``,
+      `______________________________`,
+      `${blank(x.rec)}`,
+      `CPF/CNPJ ${x.recDoc||"____________"}`
+    ].join("\n");
+  }
+
+  const EXEMPLO = {rec:"João da Silva (exemplo)", obra:"Residencial exemplo, Rua das Flores, 120"};
+  function render(){
+    const x=dados();
+    $("sheet").innerHTML = x.vias
+      ? receiptHTML(x,"Via do pagador")+`<div class="cut">corte aqui</div>`+receiptHTML(x,"Via do recebedor")
+      : receiptHTML(x,"");
+    $("exBadge").hidden = !(x.rec===EXEMPLO.rec || x.obra===EXEMPLO.obra);
+    try{ const s={}; ids.forEach(i=>s[i]=v(i)); localStorage.setItem(KEY,JSON.stringify(s)); }catch(e){}
+  }
+
+  function toast(msg){ $("toast").textContent=msg; clearTimeout(toast.t); toast.t=setTimeout(()=>$("toast").textContent="",2600); }
+
+  // restaurar rascunho
+  try{
+    const s=JSON.parse(localStorage.getItem(KEY)||"null");
+    if(s) ids.forEach(i=>{ if(i in s){ const el=$(i); if(el.type==="checkbox") el.checked=!!s[i]; else el.value=s[i]; } });
+  }catch(e){}
+  if(!$("data").value){ const d=new Date(); $("data").value=new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); }
+
+  $("f").addEventListener("input",render);
+  $("f").addEventListener("change",render);
+  $("f").addEventListener("submit",e=>e.preventDefault());
+
+  $("valor").addEventListener("blur",()=>{ const n=parseValor($("valor").value); if(n) $("valor").value=brl(n); render(); });
+
+  $("swap").addEventListener("click",()=>{
+    [["rec","pag"],["recDoc","pagDoc"]].forEach(([a,b])=>{ const t=$(a).value; $(a).value=$(b).value; $(b).value=t; });
+    render(); toast("Recebedor e pagador invertidos.");
+  });
+
+  $("copiar").addEventListener("click",()=>{
+    const txt=textoPlano(dados());
+    const fallback=()=>{
+      const ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      let ok=false; try{ ok=document.execCommand("copy"); }catch(e){}
+      ta.remove(); toast(ok?"Texto copiado.":"Não foi possível copiar. Selecione o recibo e copie manualmente.");
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(()=>toast("Texto copiado. Cole no WhatsApp ou e-mail."),fallback);
+    } else fallback();
+  });
+
+  $("novo").addEventListener("click",()=>{
+    const n=$("num").value, m=n.match(/(\d+)(?!.*\d)/);
+    if(m){ const nx=String(parseInt(m[1],10)+1).padStart(m[1].length,"0"); $("num").value=n.slice(0,m.index)+nx+n.slice(m.index+m[1].length); }
+    ["valor","rec","recDoc","ref"].forEach(i=>$(i).value="");
+    render(); $("valor").focus(); toast("Novo recibo nº "+$("num").value+".");
+  });
+
+  // Imprimir só funciona quando o arquivo é aberto direto no navegador (fora do visualizador)
+  let topLevel=false; try{ topLevel = window.self===window.top; }catch(e){}
+  if(topLevel){ $("imprimir").hidden=false; $("imprimir").addEventListener("click",()=>window.print()); }
+
+  render();
+})();
+</script>
+</body>
+</html>
