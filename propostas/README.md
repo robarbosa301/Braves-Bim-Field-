@@ -7,7 +7,7 @@ Proposta para transformar o Hotel Madalena II (São Miguel do Guamá – PA) em 
 | Arquivo | O que é |
 |---|---|
 | `ROTEIRO_Reuniao_Apresentacao.pdf` | Roteiro de fala slide a slide, respostas às objeções e o pedido final |
-| `APRESENTACAO_Condominio_Residencial_Madalena.pdf` | Apresentação de 14 slides para o proprietário: mudança de hotelaria para multifamily (locação residencial), com antes e depois, números e custo de esperar |
+| `APRESENTACAO_Condominio_Residencial_Madalena.pdf` | Apresentação de 15 slides para o proprietário: mudança de setor, da hotelaria para o multifamily residencial, com público, marca, antes e depois e ganhos do reposicionamento |
 | `FINAL_Residencial_Madalena_Proposta_16_unidades.pdf` | Proposta completa em 7 páginas: ideia, plantas, quadro de unidades, lista de obras e viabilidade |
 | `FINAL_Fachada_Completa_Prancha_A3.pdf` | Fachada completa (A3 retrato): manhã, noite, foto de antes, logo, paleta e materiais |
 | `FINAL_Fachada_Completa_Manha.jpg` / `FINAL_Fachada_Completa_Noite.jpg` | Fachada completa revitalizada sobre as duas fotos unidas |
