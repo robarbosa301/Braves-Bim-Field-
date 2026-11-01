@@ -7,6 +7,9 @@ Proposta para transformar o Hotel Madalena II (São Miguel do Guamá – PA) em 
 | Arquivo | O que é |
 |---|---|
 | `FINAL_Residencial_Madalena_Proposta_16_unidades.pdf` | Proposta completa em 7 páginas: ideia, plantas, quadro de unidades, lista de obras e viabilidade |
+| `FINAL_Fachada_Prancha_A3.pdf` | Proposta de fachada (A3 retrato): versões manhã e noite, logo, paleta e materiais |
+| `FINAL_Fachada_Manha.jpg` / `FINAL_Fachada_Noite.jpg` | Fachada revitalizada sobre a foto real, de manhã e à noite |
+| `FINAL_Logo_Residencial_Madalena.png` | Logo proposta (fundo grafite e versão em fundo claro) |
 | `FINAL_Planta_Humanizada_A3_Retrato.pdf` | Planta humanizada em retrato (A3): porcelanato em tons alternados por kitnet, móveis, piso externo existente e quadro de áreas |
 | `FINAL_Planta_Humanizada_Retrato.jpg` | A mesma planta humanizada, em alta resolução |
 | `FINAL_Planta_Geral_Completa_A3.pdf` | Planta geral: os dois blocos juntos no terreno, com as 16 kitnets mobiliadas (A3) |
