@@ -1,0 +1,39 @@
+[
+  {
+    "numero": "0001",
+    "titulo": "Pagamento de mão de obra",
+    "valor": 4615,
+    "declaracao": "Eu, João Exemplo da Silva, empreiteiro, inscrito no CPF 000.000.000-00, declaro que recebi de Maria Exemplo Proprietária, proprietária da obra, inscrita no CPF 111.111.111-11,",
+    "referente": "mão de obra de duas semanas de trabalho, de 28/09/2026 a 09/10/2026 (9 dias trabalhados), no valor de R$ 3.965,00, e de material, no valor de R$ 650,00",
+    "periodo": ["1ª semana: 28/09 a 02/10/2026", "2ª semana: 05/10 a 09/10/2026"],
+    "composicao": [["Mão de obra (duas semanas)", 3965], ["Material", 650]],
+    "detalhes": [["Forma de pagamento", "PIX em 10/10/2026 às 11:27"], ["ID da transação", "E0000000000000000000000000000000"]],
+    "obra": "Residência Exemplo · Rua Exemplo, 100, Centro, São Miguel do Guamá/PA",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "10 de outubro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      { "nome": "João Exemplo da Silva", "papel": "Empreiteiro (recebedor)", "documento": "CPF 000.000.000-00" },
+      { "nome": "Maria Exemplo Proprietária", "papel": "Proprietária da obra (pagadora)", "documento": "CPF 111.111.111-11" },
+      { "nome": "Engenheiro Exemplo", "papel": "Engenheiro civil (testemunha)", "documento": "CPF 222.222.222-22 · CREA 000000/D" }
+    ]
+  },
+  {
+    "numero": "0002",
+    "titulo": "Contratação de projetos e gestão",
+    "valor": 2200,
+    "declaracao": "Eu, Engenheiro Exemplo, engenheiro civil, CREA 000000/D, inscrito no CPF 222.222.222-22, pela Braves Engenharia, declaro que recebi de Maria Exemplo Proprietária, inscrita no CPF 111.111.111-11,",
+    "referente": "entrada da contratação do pacote Opção 3 – Levantamento + Projetos + Gestão da Obra, já com desconto de R$ 300,00",
+    "servicos": ["✓ Levantamento métrico e cadastral", "✓ Projeto arquitetônico e complementares", "✓ Compatibilização de projetos", "✓ Gestão técnica da obra", "✓ Relatórios periódicos de andamento"],
+    "composicao": [["Entrada do pacote Opção 3", 2500], ["Desconto concedido", -300]],
+    "detalhes": [["PIX", "R$ 2.000,00 em 14/09/2026"], ["Espécie (dinheiro)", "R$ 200,00 em 01/10/2026"]],
+    "obra": "Residência Exemplo · Rua Exemplo, 100, Centro, São Miguel do Guamá/PA",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "1º de outubro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      { "nome": "Engenheiro Exemplo", "papel": "Engenheiro civil · Braves Engenharia (recebedor)", "documento": "CPF 222.222.222-22 · CREA 000000/D" },
+      { "nome": "Maria Exemplo Proprietária", "papel": "Proprietária da obra (pagadora)", "documento": "CPF 111.111.111-11" }
+    ]
+  }
+]
