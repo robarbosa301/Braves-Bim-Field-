@@ -1,0 +1,274 @@
+[
+  {
+    "numero": "0001",
+    "titulo": "Pagamento de mão de obra",
+    "valor": 1260,
+    "declaracao": "Eu, **Marcos Antonio da Silva**, empreiteiro, inscrito no CPF ___.___.___-__, declaro que recebi de **Valdeilton Moreira do Nascimento**, proprietário da obra, inscrito no CPF ___.___.___-__,",
+    "referente": "mão de obra da 1ª semana de trabalho, de 21/09/2026 a 25/09/2026 (5 dias trabalhados)",
+    "periodo": [
+      "1ª semana: 21/09 a 25/09/2026"
+    ],
+    "detalhes": [
+      [
+        "Forma de pagamento",
+        "PIX em 26/09/2026 às 17:12 · Sicoob → Nu Pagamentos"
+      ],
+      [
+        "PIX enviado por",
+        "Rogerio Otavio dos Santos Barbosa (engenheiro), em nome do proprietário"
+      ],
+      [
+        "ID da transação",
+        "E052416192026092620129y2agpeXaSk"
+      ]
+    ],
+    "obra": "Residência Pixuta · Av. Magalhães Barata, S/N, Perpétuo Socorro, São Miguel do Guamá/PA, CEP 68660-000",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "26 de setembro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      {
+        "nome": "Marcos Antonio da Silva",
+        "papel": "Empreiteiro (recebedor)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Valdeilton Moreira do Nascimento",
+        "papel": "Proprietário da obra (pagador)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Rogerio Otavio dos Santos Barbosa",
+        "papel": "Engenheiro civil (testemunha)",
+        "documento": "CPF ___.___.___-__ · CREA 180228/D"
+      }
+    ]
+  },
+  {
+    "numero": "0002",
+    "titulo": "Pagamento de mão de obra e material",
+    "valor": 4615,
+    "declaracao": "Eu, **Marcos Antonio da Silva**, empreiteiro, inscrito no CPF ___.___.___-__, declaro que recebi de **Valdeilton Moreira do Nascimento**, proprietário da obra, inscrito no CPF ___.___.___-__,",
+    "referente": "mão de obra de duas semanas de trabalho, de 28/09/2026 a 09/10/2026 (9 dias trabalhados), no valor de R$ 3.965,00, e de material, no valor de R$ 650,00",
+    "periodo": [
+      "1ª semana: 28/09 a 02/10/2026",
+      "2ª semana: 05/10 a 09/10/2026"
+    ],
+    "detalhes": [
+      [
+        "Forma de pagamento",
+        "PIX em 10/10/2026 às 11:27 · Nu Pagamentos → Nu Pagamentos"
+      ],
+      [
+        "PIX enviado por",
+        "Valdeilton Moreira do Nascimento (proprietário)"
+      ],
+      [
+        "ID da transação",
+        "E18236120202610101427s1722d28f9a"
+      ]
+    ],
+    "obra": "Residência Pixuta · Av. Magalhães Barata, S/N, Perpétuo Socorro, São Miguel do Guamá/PA, CEP 68660-000",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "10 de outubro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      {
+        "nome": "Marcos Antonio da Silva",
+        "papel": "Empreiteiro (recebedor)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Valdeilton Moreira do Nascimento",
+        "papel": "Proprietário da obra (pagador)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Rogerio Otavio dos Santos Barbosa",
+        "papel": "Engenheiro civil (testemunha)",
+        "documento": "CPF ___.___.___-__ · CREA 180228/D"
+      }
+    ],
+    "composicao": [
+      [
+        "Mão de obra (duas semanas)",
+        3965
+      ],
+      [
+        "Material",
+        650
+      ]
+    ]
+  },
+  {
+    "numero": "0003",
+    "titulo": "Pagamento de mão de obra",
+    "valor": 5580,
+    "declaracao": "Eu, **Marcos Antonio da Silva**, empreiteiro, inscrito no CPF ___.___.___-__, declaro que recebi de **Valdeilton Moreira do Nascimento**, proprietário da obra, inscrito no CPF ___.___.___-__,",
+    "referente": "mão de obra de duas semanas de trabalho, de 12/10/2026 a 23/10/2026 (10 dias trabalhados)",
+    "periodo": [
+      "1ª semana: 12/10 a 16/10/2026",
+      "2ª semana: 19/10 a 23/10/2026"
+    ],
+    "detalhes": [
+      [
+        "Forma de pagamento",
+        "PIX em 24/10/2026 às 11:09 · Banco do Brasil → Nu Pagamentos"
+      ],
+      [
+        "PIX enviado por",
+        "Valdeilton Moreira do Nascimento (proprietário)"
+      ]
+    ],
+    "obra": "Residência Pixuta · Av. Magalhães Barata, S/N, Perpétuo Socorro, São Miguel do Guamá/PA, CEP 68660-000",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "24 de outubro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      {
+        "nome": "Marcos Antonio da Silva",
+        "papel": "Empreiteiro (recebedor)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Valdeilton Moreira do Nascimento",
+        "papel": "Proprietário da obra (pagador)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Rogerio Otavio dos Santos Barbosa",
+        "papel": "Engenheiro civil (testemunha)",
+        "documento": "CPF ___.___.___-__ · CREA 180228/D"
+      }
+    ]
+  },
+  {
+    "numero": "0004",
+    "titulo": "Pagamento de mão de obra",
+    "valor": 5865,
+    "declaracao": "Eu, **Marcos Antonio da Silva**, empreiteiro, inscrito no CPF ___.___.___-__, declaro que recebi de **Valdeilton Moreira do Nascimento**, proprietário da obra, inscrito no CPF ___.___.___-__,",
+    "referente": "mão de obra de duas semanas de trabalho, de 26/10/2026 a 06/11/2026 (9,5 dias trabalhados)",
+    "periodo": [
+      "1ª semana: 26/10 a 31/10/2026 (sábado meio período)",
+      "2ª semana: 03/11 a 06/11/2026 (02/11 feriado)"
+    ],
+    "detalhes": [
+      [
+        "Forma de pagamento",
+        "PIX em 07/11/2026 às 11:14 · Nu Pagamentos → Nu Pagamentos"
+      ],
+      [
+        "PIX enviado por",
+        "Valdeilton Moreira do Nascimento (proprietário)"
+      ],
+      [
+        "ID da transação",
+        "E18236120202611071413s17bf62c8cd"
+      ]
+    ],
+    "obra": "Residência Pixuta · Av. Magalhães Barata, S/N, Perpétuo Socorro, São Miguel do Guamá/PA, CEP 68660-000",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "7 de novembro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      {
+        "nome": "Marcos Antonio da Silva",
+        "papel": "Empreiteiro (recebedor)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Valdeilton Moreira do Nascimento",
+        "papel": "Proprietário da obra (pagador)",
+        "documento": "CPF ___.___.___-__"
+      },
+      {
+        "nome": "Rogerio Otavio dos Santos Barbosa",
+        "papel": "Engenheiro civil (testemunha)",
+        "documento": "CPF ___.___.___-__ · CREA 180228/D"
+      }
+    ]
+  },
+  {
+    "numero": "0005",
+    "titulo": "Contratação de projetos e gestão",
+    "valor": 2200,
+    "declaracao": "Eu, **Rogerio Otavio dos Santos Barbosa**, engenheiro civil, CREA 180228/D, inscrito no CPF ___.___.___-__, pela **Braves Engenharia**, declaro que recebi de **Valdeilton Moreira do Nascimento**, inscrito no CPF ___.___.___-__,",
+    "referente": "entrada da contratação do pacote Opção 3 – Levantamento + Projetos + Gestão da Obra, conforme proposta orçamentária de 27/08/2026, já com desconto de R$ 300,00",
+    "servicos": [
+      "✓ Levantamento métrico e cadastral da edificação existente",
+      "✓ Projeto arquitetônico completo e projetos complementares",
+      "✓ Compatibilização entre todos os projetos",
+      "✓ Gestão e acompanhamento técnico da execução da obra até a conclusão",
+      "✓ Relatórios periódicos de andamento"
+    ],
+    "composicao": [
+      [
+        "Entrada do pacote Opção 3",
+        2500
+      ],
+      [
+        "Desconto concedido",
+        -300
+      ]
+    ],
+    "detalhes": [
+      [
+        "PIX",
+        "R$ 2.000,00 em 14/09/2026 às 19:09 · Banco do Brasil → Sicoob"
+      ],
+      [
+        "Espécie (dinheiro)",
+        "R$ 200,00 em 01/10/2026"
+      ]
+    ],
+    "obra": "Residência Pixuta · Av. Magalhães Barata, S/N, Perpétuo Socorro, São Miguel do Guamá/PA, CEP 68660-000",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "1º de outubro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      {
+        "nome": "Rogerio Otavio dos Santos Barbosa",
+        "papel": "Engenheiro civil · Braves Engenharia (recebedor)",
+        "documento": "CPF ___.___.___-__ · CREA 180228/D"
+      },
+      {
+        "nome": "Valdeilton Moreira do Nascimento",
+        "papel": "Proprietário da obra (pagador)",
+        "documento": "CPF ___.___.___-__"
+      }
+    ]
+  },
+  {
+    "numero": "0006",
+    "titulo": "Gerenciamento de obra · mensalidade",
+    "valor": 700,
+    "declaracao": "Eu, **Rogerio Otavio dos Santos Barbosa**, engenheiro civil, CREA 180228/D, inscrito no CPF ___.___.___-__, pela **Braves Engenharia**, declaro que recebi de **Valdeilton Moreira do Nascimento**, inscrito no CPF ___.___.___-__,",
+    "referente": "mensalidade de gerenciamento e acompanhamento técnico da obra do mês de outubro de 2026, conforme pacote Opção 3 contratado (R$ 700,00/mês durante toda a obra)",
+    "servicos": [
+      "✓ Gestão e acompanhamento técnico da execução da obra",
+      "✓ Relatórios periódicos de andamento"
+    ],
+    "detalhes": [
+      [
+        "Forma de pagamento",
+        "Espécie (dinheiro), recebido em 24/10/2026"
+      ]
+    ],
+    "obra": "Residência Pixuta · Av. Magalhães Barata, S/N, Perpétuo Socorro, São Miguel do Guamá/PA, CEP 68660-000",
+    "cidade": "São Miguel do Guamá/PA",
+    "dataQuitacao": "24 de outubro de 2026",
+    "dataEntrega": "09/11/2026",
+    "assinaturas": [
+      {
+        "nome": "Rogerio Otavio dos Santos Barbosa",
+        "papel": "Engenheiro civil · Braves Engenharia (recebedor)",
+        "documento": "CPF ___.___.___-__ · CREA 180228/D"
+      },
+      {
+        "nome": "Valdeilton Moreira do Nascimento",
+        "papel": "Proprietário da obra (pagador)",
+        "documento": "CPF ___.___.___-__"
+      }
+    ]
+  }
+]

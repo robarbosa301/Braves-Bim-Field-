@@ -43,7 +43,8 @@ const assinatura = p => `<div class="sign"><div class="line">${esc(p.nome)}</div
 
 function recibo(r) {
   const valor = brl(r.valor);
-  const texto = `${esc(r.declaracao)} a importância de <b>R$ ${valor}</b> (<i>${extenso(r.valor)}</i>), referente ao pagamento de <b>${esc(r.referente)}</b>, dando por este a mais plena e geral quitação do valor recebido.`;
+  const negrito = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  const texto = `${negrito(r.declaracao)} a importância de <b>R$ ${valor}</b> (<i>${extenso(r.valor)}</i>), referente ao pagamento de <b>${esc(r.referente)}</b>, dando por este a mais plena e geral quitação do valor recebido.`;
   const lista = (titulo, itens) => itens?.length ? `<div class="per"><div class="pl">${titulo}</div>${itens.map(i => `<div class="pi">${esc(i)}</div>`).join('')}</div>` : '';
   const comp = r.composicao?.length ? `<table class="comp"><thead><tr><th>Composição do valor</th><th>Valor</th></tr></thead><tbody>${r.composicao.map(([d, v]) => `<tr><td>${esc(d)}</td><td class="mono">${v < 0 ? '− ' : ''}R$ ${brl(Math.abs(v))}</td></tr>`).join('')}<tr class="tot"><td>Total pago</td><td class="mono">R$ ${valor}</td></tr></tbody></table>` : '';
   const detalhes = (r.detalhes || []).map(([k, v]) => `<div class="wide"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
@@ -70,6 +71,7 @@ function recibo(r) {
 const EXTRA_CSS = `
 .per .pi{width:100%;font-size:10.5pt}
 .entrega{font-size:10pt;margin-top:-2mm}
+.sigs{gap:7mm}
 .entrega span{font-size:7.5pt;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-ink);margin-right:2mm}`;
 
 async function gerarPDF(recibos, saida) {
