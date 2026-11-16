@@ -2,6 +2,26 @@
 
 Este guia reúne o que foi **aprovado**, os **erros a não repetir** e o **passo a passo técnico** do vídeo 1 ("Projetos da Braves não são só planta"). Leia inteiro antes de editar qualquer vídeo da Braves. A conversa com o cliente é sempre em português do Brasil, frases curtas, sem mostrar código ou caminho de arquivo.
 
+## 0. Regra principal do cliente: nunca simplificar
+O cliente pediu, com todas as letras: **não simplificar nada; deixar sempre bem chamativo e bem trabalhado; entender o nicho, o público e o objetivo; entregar imagens, animações e motions melhores.** Isso vale para todos os vídeos.
+- **Padrão mínimo de riqueza em cada vídeo:** capa animada; gancho animado; pelo menos 1 motion ilustrativo próprio (planta CAD, 3D montado por etapas ou diagrama); pelo menos 1 cena de apontamento ou lista animada; 4 ou mais transições **diferentes**; efeitos sonoros por animação; final com chamada animada e logo; tratamento de cor profissional.
+- **Chamativo não é poluído.** Cada elemento precisa ter função ligada à fala (a fita zebrada e os prédios com janelas foram reprovados). Uma ideia por vez, legível no celular, fora do rosto e dentro da zona segura.
+- **Imagens melhores:** use o 4K original com a cor HDR convertida certo; peça ao cliente **plantas, renders e imagens reais de obras da Braves** para trocar as ilustrações genéricas. Sempre avise o que é ilustração minha.
+- **Banco de motions já criados** (reaproveitar e evoluir, em `montar_v21.py` e `casa.py`): planta CAD com cursor, modelo 3D montado por etapas com câmera e etiquetas, pessoas com balão e X, palavras de impacto, escada com seta, lista de ícones (vigas, laje, cobertura, hidráulica, pia, vaso, chuveiro, lavanderia, armar), carimbo, barra de andamento, bússola/escudo/gráfico, apontamento com B e personagens, comentário digitando com confete, logo revelado, capa animada.
+
+## 0.1 Nicho, público e objetivo (a confirmar com o cliente)
+O que o cliente já disse e o que se deduz:
+- **Nicho:** engenharia civil, projeto e obra com **modelagem BIM** (projeto 2D e 3D), com foco na **experiência visual do projeto antes de construir**. Empresa: Braves Construções Eficientes.
+- **Público:** (1) o **cliente** que vai construir ou reformar e precisa entender o projeto; (2) a **mão de obra** (equipe, mestre de obras) que executa. O vídeo 1 fala dos dois.
+- **Objetivo:** gerar conversa qualificada no **direct** ("Chama no direct") e posicionar a Braves como quem entrega a **melhor experiência visual em projetos**, com segurança física e orçamentária na obra.
+- **Tom:** profissional, didático e confiante, de engenheiro. Sem preço, prazo ou promessa de ganho (política das plataformas).
+- **Ainda não sabemos (perguntar):** cidade ou região de atuação; tipo de cliente principal; serviços (projeto, execução, gestão); obras entregues e imagens reais para prova; diferenciais frente à concorrência; meta (quantos contatos, qual rede é a principal).
+
+## 0.2 Ganchos (padrão e ideias)
+- Sempre nos **3 primeiros segundos**: tarjas animadas (branca e azul-ciano) com a ideia central em até 2 linhas e 6 a 8 palavras, tiradas da fala, acompanhadas de um **motion que ilustra** (ex.: "só uma planta" riscada de vermelho).
+- Formatos para variar: contraste ("não é X, é Y"); pergunta ao cliente; antes e depois (planta vira 3D); erro comum; "próxima etapa da obra".
+- Exemplos aprovados: "NÃO É SÓ UMA PLANTA / É EXPERIÊNCIA VISUAL", "PRÓXIMA ETAPA DA OBRA / VIGAS E LAJE".
+
 ## 1. Identidade (não mudar sem pedido)
 - **Empresa:** Braves Construções Eficientes. Escreva sempre **"Braves"** (nunca "Bravos"). O logo oficial está em `logos/` (versão branca com fundo transparente; o ícone do B sozinho é `icon_white.png`).
 - **Pessoa:** Rogério Otávio, Engenheiro Civil. Nome e cargo foram dados pelo cliente. **Nunca invente nome, cargo, slogan, handle ou número.**
