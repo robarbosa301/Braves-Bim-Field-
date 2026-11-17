@@ -67,6 +67,18 @@ O que o cliente já disse e o que se deduz:
 11. **Números na tela que não foram falados.** Só mostre número que a pessoa disse (cotas da planta saíram sem número).
 12. **Arquivos pesados** (56 MB com grão). Meta: 7 a 15 MB. `crf 20 a 25`, sem grão, H.264 High, `yuv420p`, `faststart` (o app não abre prévia de arquivos fora disso).
 13. **Apagar código sem querer** ao trocar um bloco: sempre conferir quadros do vídeo depois de cada edição.
+14. **Pessoa que o cliente não quer ver:** no vídeo da reunião a mulher que aparece na filmagem foi excluída. Audite o material e use só os trechos livres (`SAFE` em `gera_reuniao.py`). Pergunte quem não deve aparecer.
+15. **Filtro de cor (rosa/pôr do sol) sobre pessoas:** reprovado. Em vídeo com pessoas, cor natural; o estilo game vai só na interface, nos letreiros e em cenas sem gente.
+16. **Hidrossanitário errado no modelo BIM:** caixa de gordura e de inspeção dentro da casa e tubos sem lógica. O certo é lançamento **por ambiente**: banheiro (vaso, lavatório, chuveiro), cozinha (pia), área de serviço (tanque); água desce da caixa d'água por prumada; esgoto vai para caixas **fora da casa**. Revise o lançamento como engenheiro antes de renderizar.
+17. **Título sobre rostos ou no topo da tela:** o topo (acima de y ~230) é coberto pela interface do Instagram/TikTok e o meio cobre as pessoas. Use a área segura livre de rostos (ex.: onde ficava a placa do nome).
+18. **Take longo de filmagem da reunião:** troque por simulação animada (chat, painel do projeto BIM, chips de aprovação) em vez de repetir o mesmo vídeo.
+19. **Modelo 3D repetido em todo vídeo:** varie (modelos A e B em `casa_bim.py`) e mostre as disciplinas BIM (estrutura, arquitetura, hidrossanitário, elétrica, compatibilização).
+
+## 3.1 Vídeos novos (reunião com o cliente) e versão estilo game
+- **Vídeo 3 "Projeto feito junto com o cliente":** `gera_reuniao.py` gera `montar_reuniao.py` (cortes sem a mulher, legenda estilo C, simulação da conversa com painel BIM). Áudio e capa: `mix_reuniao.py`, `capa_reuniao.py`, `intro_reuniao.py`.
+- **Vídeo 4 versão game:** `gera_game.py` gera `montar_game.py` a partir do vídeo 3 (HUD de objetivo, habilidades desbloqueadas, MISSÃO CUMPRIDA). Capa estilo GTA VI em `capa_game.py` (céu de pôr do sol, palmeiras, skyline, foto **natural**). É só inspiração visual: sem logo, nome ou arte do jogo (propriedade intelectual). Áudio: `mix_game.py`.
+- **Modelo BIM:** `casa_bim.py` (modelos A e B, linha do tempo `TL`, legendas por ambiente). Teste com `python3 -I teste_bim.py saida.jpg A 6 7.5`.
+- Cada renderização leva cerca de 10 min (4 CPUs): rode em segundo plano e confira por quadros.
 
 ## 4. Como o trabalho com o cliente deve fluir
 - Uma decisão por vez, opções numeradas com a recomendação. Quando for escolha de estilo, **mande prévias em imagem** (ex.: `exemplos/previas_legendas.png`).
@@ -85,5 +97,6 @@ O que o cliente já disse e o que se deduz:
 
 ## 6. Arquivos desta pasta
 - `PLAYBOOK.md` este guia · `configurar.sh` ajusta caminhos · `montar_v21.py` vídeo 1 final · `casa.py` planta e 3D · `capa.py` capa · `intro.py` capa animada · `mix_final3.py` áudio e export · `previa_legendas.py` prévias de estilos de legenda · `transcrever2.py` transcrição.
+- `casa_bim.py`, `gera_reuniao.py`, `gera_game.py`, `capa_game.py`, `intro_game.py`, `mix_game.py` e variantes `_reuniao` (vídeos 3 e 4).
 - `fontes/`, `logos/`, `video1/*.wav` recursos · `exemplos/` capa, prévias e o estado aprovado do vídeo 1.
 - Os vídeos originais e os vídeos prontos **não** estão no repositório (são pesados); ficam no Drive do cliente.
