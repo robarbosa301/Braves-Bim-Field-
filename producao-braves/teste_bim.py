@@ -1,6 +1,6 @@
 import importlib.util, sys, time
 import numpy as np, cv2
-spec = importlib.util.spec_from_file_location("cb", "BASE_AQUI/casa_bim.py")
+spec = importlib.util.spec_from_file_location("cb", "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/casa_bim.py")
 cb = importlib.util.module_from_spec(spec); spec.loader.exec_module(cb)
 key = sys.argv[2]; ts = [float(x) for x in sys.argv[3:]]
 tiles = []

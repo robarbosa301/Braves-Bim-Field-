@@ -1,5 +1,5 @@
 import json, subprocess, os
-V = "BASE_AQUI/video2/"; os.chdir(V)
+V = "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/video2/"; os.chdir(V)
 T = json.load(open("tempos_reuniao.json")); OFF = 1.2; total = T["total"] + OFF
 fc = []; labs = []
 for i, sg in enumerate(T["segs"]):

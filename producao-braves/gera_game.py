@@ -1,5 +1,5 @@
 """Gera montar_game.py: versão em estilo jogo de mundo aberto (pôr do sol, interface de missão) do vídeo da reunião."""
-BASE = "BASE_AQUI/"
+BASE = "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/"
 s = open(BASE + "montar_reuniao.py").read()
 def rep(a, b):
     global s

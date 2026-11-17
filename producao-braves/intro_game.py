@@ -1,7 +1,7 @@
 import subprocess, math
 import numpy as np, cv2
 from PIL import Image
-V = "BASE_AQUI/video2/"
+V = "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/video2/"
 W, H, FPS = 1080, 1920, 30
 CYAN, WHITE = (255, 64, 140), (255, 255, 255)
 def ease(p): p = min(max(p, 0.0), 1.0); return 1 - (1 - p) ** 3

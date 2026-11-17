@@ -1,5 +1,5 @@
 """Gera montar_reuniao.py (vídeo "projeto feito junto com o cliente") reaproveitando as peças do vídeo 1 e da obra."""
-BASE = "BASE_AQUI/"
+BASE = "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/"
 s = open(BASE + "montar_v21.py").read()
 g = open(BASE + "gera_obra.py").read()
 def between(a, b): return s[s.index(a):s.index(b)]

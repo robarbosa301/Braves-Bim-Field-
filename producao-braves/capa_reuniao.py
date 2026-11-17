@@ -1,7 +1,7 @@
 import math, random, subprocess
 import numpy as np, cv2
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-BASE="BASE_AQUI/"; V=BASE+"video1/"
+BASE="/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/"; V=BASE+"video1/"
 W,H=1080,1920
 YEL,WHITE,CYAN,RED,DARK=(255,196,0),(255,255,255),(0,229,255),(225,6,0),(20,20,24)
 def F(s): return ImageFont.truetype(BASE+"fontes/Anton-Regular.ttf",s)

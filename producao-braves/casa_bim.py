@@ -4,7 +4,7 @@ import math, importlib.util
 import numpy as np, cv2
 from PIL import Image, ImageDraw
 
-BASE = "BASE_AQUI/"
+BASE = "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/"
 _sp = importlib.util.spec_from_file_location("casa", BASE + "casa.py"); C = importlib.util.module_from_spec(_sp); _sp.loader.exec_module(C)
 ease, easeio, back, lerp, mix = C.ease, C.easeio, C.back, C.lerp, C.mix
 RW, RH = 1000, 705
@@ -175,7 +175,7 @@ def roof_state(u):
     return lift * 2.4, 1 - 0.97 * lift
 
 ZOOM = 1.0
-FONT_B = "BASE_AQUI/fontes/Montserrat.ttf"
+FONT_B = "/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/fontes/Montserrat.ttf"
 def render(u, key="A", yaw0=32.0):
     m = MODELS[key]; els = ELS[key]; W_, D_ = m["W"], m["D"]
     S = ZOOM * 800.0 / ((W_ + D_) * 0.866)

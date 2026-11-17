@@ -1,5 +1,5 @@
 import json,subprocess,sys
-V="BASE_AQUI/video1/"
+V="/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/video1/"
 vin,tempos,vout=sys.argv[1:4]
 import os; os.chdir(V)
 T=json.load(open(tempos))

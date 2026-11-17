@@ -1,7 +1,7 @@
 import subprocess, math, importlib.util
 import numpy as np, cv2
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-BASE="BASE_AQUI/"; V2=BASE+"video2/"
+BASE="/tmp/claude-0/-home-user-Braves-Bim-Field-/3f640666-8982-5ee9-9c23-19b2a7448cf6/scratchpad/edit-ia-pro/"; V2=BASE+"video2/"
 W,H=1080,1920
 def F(s): return ImageFont.truetype(BASE+"fontes/Anton-Regular.ttf",s)
 def M(s,w=800):
