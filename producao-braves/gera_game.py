@@ -46,7 +46,20 @@ def gtext_layer(size, items):
         for c in range(3): g[..., c] = (c0[c] * (1 - tt_) + c1[c] * tt_).astype(np.uint8)
         layer = Image.fromarray(g).convert("RGBA"); layer.putalpha(mask); base_.alpha_composite(layer)
     return np.array(base_)
-TITLE_IMG = gtext_layer((1080, 470), [("PROJETO", F(210), (540, 120), (255, 255, 255), (255, 214, 90), 0), ("EM CONJUNTO", F(132), (540, 300), (255, 236, 150), (255, 190, 60), 0)])
+def _mont9(sz):
+    f = ImageFont.truetype(BASE + "fontes/Montserrat.ttf", sz)
+    try: f.set_variation_by_axes([900])
+    except Exception: pass
+    return f
+def make_title():
+    k = 2; im = Image.new("RGBA", (1080 * k, 260 * k), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+    d.rounded_rectangle((70 * k, 20 * k, 1010 * k, 150 * k), 30 * k, fill=(24, 8, 40, 255))      # sombra
+    d.rounded_rectangle((70 * k, 4 * k, 1010 * k, 134 * k), 30 * k, fill=(255, 214, 40, 255))
+    f = _mont9(56 * k); t = "VOCÊ JÁ PROJETOU ASSIM?"; w = d.textlength(t, font=f); d.text(((1080 * k - w) / 2, 34 * k), t, font=f, fill=(24, 8, 40, 255))
+    d.rounded_rectangle((250 * k, 154 * k, 830 * k, 239 * k), 24 * k, fill=(255, 64, 140, 255), outline=(24, 8, 40, 255), width=4 * k)
+    f2 = _mont9(48 * k); t2 = "JUNTO COM A GENTE"; w2 = d.textlength(t2, font=f2); d.text(((1080 * k - w2) / 2, 168 * k), t2, font=f2, fill=(255, 255, 255, 255))
+    return np.array(im.resize((1080, 260), Image.LANCZOS))
+TITLE_IMG = make_title()
 MISSION_IMG = gtext_layer((1080, 620), [("MISSÃO", F(210), (540, 130), (255, 215, 90), (255, 150, 40), 0), ("CUMPRIDA", F(210), (540, 345), (255, 215, 90), (255, 150, 40), 0)])
 _mi = Image.fromarray(MISSION_IMG); _md = ImageDraw.Draw(_mi); _f = M_ = None
 def _mont(sz, w=800):
@@ -87,8 +100,8 @@ def overlays(out, t):
         e = back((t - 0.15) / 0.4); ex = ease((t - 1.45) / 0.28) if t > 1.45 else 0.0
         blend(out, CARD_IMG, int(lerp(-1000, 117, min(1.2, e))) - int(ex * 1100), 262, min(1, (t - 0.15) / 0.1))
     if 1.6 <= t < HOOK_END + 0.35:
-        exit_p = ease((t - HOOK_END) / 0.3) if t > HOOK_END else 0.0; fa = 1 - exit_p; p = back((t - 1.6) / 0.45); sc = max(0.2, min(0.62, 0.25 + 0.37 * p))
-        im2 = cv2.resize(TITLE_IMG, (int(1080 * sc), int(470 * sc))); blend(out, im2, (W - im2.shape[1]) // 2, 255 + int((470 * 0.62 - im2.shape[0]) / 2) - int(exit_p * 70), fa * min(1, (t - 1.6) / 0.2))
+        exit_p = ease((t - HOOK_END) / 0.3) if t > HOOK_END else 0.0; fa = 1 - exit_p; p = back((t - 1.6) / 0.45); sc = max(0.3, min(1.05, 0.55 + 0.45 * p))
+        im2 = cv2.resize(TITLE_IMG, (int(1080 * sc), int(260 * sc))); blend(out, im2, (W - im2.shape[1]) // 2, 262 + int((260 - im2.shape[0]) / 2) - int(exit_p * 70), fa * min(1, (t - 1.6) / 0.2))
     objective_hud(out, t)
     top_chip_anim(out, t, *E_chip); top_chip_anim(out, t, *E_chip2)
     for (t0_, d_, txt_, col_) in E_imp: impact(out, t, t0_, d_, txt_, col_, y=300)

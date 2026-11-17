@@ -78,6 +78,8 @@ O que o cliente já disse e o que se deduz:
 - **Vídeo 3 "Projeto feito junto com o cliente":** `gera_reuniao.py` gera `montar_reuniao.py` (cortes sem a mulher, legenda estilo C, simulação da conversa com painel BIM). Áudio e capa: `mix_reuniao.py`, `capa_reuniao.py`, `intro_reuniao.py`.
 - **Vídeo 4 versão game:** `gera_game.py` gera `montar_game.py` a partir do vídeo 3 (HUD de objetivo, habilidades desbloqueadas, MISSÃO CUMPRIDA). Capa estilo GTA VI em `capa_game.py` (céu de pôr do sol, palmeiras, skyline, foto **natural**). É só inspiração visual: sem logo, nome ou arte do jogo (propriedade intelectual). Áudio: `mix_game.py`.
 - **Modelo BIM:** `casa_bim.py` (modelos A e B, linha do tempo `TL`, legendas por ambiente). Teste com `python3 -I teste_bim.py saida.jpg A 6 7.5`.
+- **Título do vídeo 4 (aprovado):** caixa amarela "VOCÊ JÁ PROJETOU ASSIM?" + etiqueta rosa "JUNTO COM A GENTE" (Montserrat 900), acima dos rostos e abaixo da área coberta pela interface. "Projeto em conjunto" e a fonte condensada dourada foram reprovados. Prévia de opções: `previa_titulo.py`. Capa: foto estilizada como arte realista (sem avatares; avatares foram reprovados).
+- Textos de postagem: `textos/legendas_video4_game.md`.
 - Cada renderização leva cerca de 10 min (4 CPUs): rode em segundo plano e confira por quadros.
 
 ## 4. Como o trabalho com o cliente deve fluir
